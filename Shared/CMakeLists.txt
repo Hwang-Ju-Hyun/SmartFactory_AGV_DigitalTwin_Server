@@ -1,0 +1,19 @@
+set(CMAKE_BUILD_TYPE Debug)
+
+add_library(Shared STATIC
+    SocketAddress.cpp
+    SocketUtil.cpp
+    TCPSocket.cpp    
+    MemoryStream.cpp        
+    SocketAddressFactory.cpp                 
+    TCPSession.cpp
+    Object.cpp
+    Robo.cpp
+    LinkingContext.cpp
+    ObjectRegistry.cpp    
+)
+
+target_include_directories(Shared PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
