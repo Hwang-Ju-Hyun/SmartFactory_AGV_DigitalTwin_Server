@@ -16,7 +16,6 @@ int main(void)
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
     assert(sockServerTcp->Bind(*serverAddr)!=ERROR);
 
-
     assert(sockServerTcp->Listen()!=ERROR);
 
     std::cout<<"Server: Checking for data"<<std::endl<<std::endl;
@@ -36,7 +35,7 @@ int main(void)
     while(g_LOOP)
     {
         timeval timeoutValue;
-        timeoutValue.tv_sec = 1;
+        timeoutValue.tv_sec = 0;
         timeoutValue.tv_usec = 33333; // 33.3ms
         int toRet=SocketUtil::Select(&readBlockSockets,&readAbleSockets,nullptr,nullptr,nullptr,nullptr,&timeoutValue);
         
@@ -57,13 +56,13 @@ int main(void)
                     SocketAddress newClientAddr;
                     TCPSocketPtr newClientSock=sockServerTcp->Accept(newClientAddr);
                     if(newClientSock)
-                    {
+                    {   
                         std::cout<<"New Client Connected : "<<newClientAddr.ToString()<<std::endl;
                         newSockets.push_back(newClientSock);
-
-                        //hello packet을 똑바로 주고 받으면 session id 0이 아니라 갱신이 됨                    
+                        
+                        //hello packet을 똑바로 주고 받으면 session id 0이 아니라 갱신이 됨
                         NetworkManagerServer::sInstance->OnClientAccepted(newClientSock);
-                    }
+                    }  
                 }
                 else
                 {
@@ -73,7 +72,7 @@ int main(void)
                     for(int i=0;i<proxies.size();i++)
                     {                    
                         if(proxies[i]->GetSession()->GetSocket()==socket)
-                        {   
+                        {
                             currentClientPtr=proxies[i];
                             foundIdx=proxies[i]->GetSessionID();
                             break;

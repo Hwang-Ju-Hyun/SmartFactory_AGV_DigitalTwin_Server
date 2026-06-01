@@ -3,8 +3,8 @@
 #include "header.hpp"
 #include <vector>
 
-static int init_row=5;
-static int init_col=5;
+static int init_row=0;
+static int init_col=0;
 
 class OutputMemoryStream;
 

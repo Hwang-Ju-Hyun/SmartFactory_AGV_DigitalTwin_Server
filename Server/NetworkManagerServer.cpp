@@ -6,6 +6,8 @@
 #include "ObjectRegistry.hpp"
 #include "RoboServer.hpp"
 #include "ReplicationManagerServer.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <cassert>
 
@@ -68,17 +70,17 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
         _proxy->GetReplicationManagerServer().ReplicateCreate(existingNetworkID);
     }
 
-
+    
     ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
     RegisterObject(newRobo);
 
 
-    _proxy->SetPossessedNetworkID( newRobo->GetNetworkID() );        
+    _proxy->SetPossessedNetworkID( newRobo->GetNetworkID());
 
     newRobo->SetPosX(init_row);
-    newRobo->SetPosY(init_col);        
+    newRobo->SetPosY(init_col);  
 
-    SendHello_Packet(_proxy,newRobo);    
+    SendHello_Packet(_proxy,newRobo);
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj)
@@ -175,7 +177,23 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     {
         ClientProxy* proxy = iter->second;        
         Robo* obj = dynamic_cast<Robo*>(m_LinkingContext->GetObject(iter->first).get());        
-        obj->AddPosX(1);
+        obj->AddPosX(0.01f);
+        obj->AddPosY(0.01f);        
+
+        
+        float speed=90.f;
+        float currentAngle = obj->GetHeadingAngle(); // 현재 로봇이 가진 각도(Degree) 가져오기
+        currentAngle +=  speed*_deltaTime;          // 초당 90도 속도로 누적 증가
+        obj->SetHeadingAngle(currentAngle);          // 오브젝트에 갱신
+
+        if (currentAngle >= 360.f) 
+            currentAngle -= 360.f; // 360도 컷 보정
+
+
+        glm::quat rot =glm::angleAxis(glm::radians(currentAngle),glm::vec3(0,1,0));
+
+        obj->SetRotation(rot);
+
         proxy->GetReplicationManagerServer().SetStateDirty(iter->first);        
     }    
 }
