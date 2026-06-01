@@ -84,17 +84,15 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
         newRobo->SetPos(startX,startY);        
     }        
     
-    SendHello_Packet(_proxy,mainRobo);
+    SendHello_Packet(_proxy);
 }
 
-void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj)
+void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
 {
     OutputMemoryStream outStream;
     uint8_t packetType=PacketType::PT_Hello;    
 
-    outStream.Write(packetType);
-    uint32_t networkID = m_LinkingContext->GetNetworkID(_obj);
-    outStream.Write(networkID);
+    outStream.Write(packetType);    
     
     outStream.Write(_proxy->GetSessionID());
 
