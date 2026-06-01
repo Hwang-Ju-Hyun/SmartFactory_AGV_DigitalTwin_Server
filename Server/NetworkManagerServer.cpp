@@ -64,23 +64,27 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
 
     std::cout<<"[서버] 새 클라이언트 접속 승인! 부여된 ID : "<<newClientSessionID<<std::endl;         
 
+
     for(auto& obj : m_LinkingContext->GetAllObjects())
     {
         uint32_t existingNetworkID=obj.first;
         _proxy->GetReplicationManagerServer().ReplicateCreate(existingNetworkID);
     }
-
     
-    ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
-    RegisterObject(newRobo);
+    int spawnCount=5;
+    ObjectPtr mainRobo=nullptr;
+    for(int i=0;i<spawnCount;i++)
+    {
+        ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
+        RegisterObject(newRobo);
 
+        float startX=(i%5)*5.f-30.f;
+        float startY=(i/5)*5.f;
 
-    _proxy->SetPossessedNetworkID( newRobo->GetNetworkID());
-
-    newRobo->SetPosX(init_row);
-    newRobo->SetPosY(init_col);  
-
-    SendHello_Packet(_proxy,newRobo);
+        newRobo->SetPos(startX,startY);        
+    }        
+    
+    SendHello_Packet(_proxy,mainRobo);
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj)
@@ -89,8 +93,8 @@ void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj)
     uint8_t packetType=PacketType::PT_Hello;    
 
     outStream.Write(packetType);
-    uint32_t a = m_LinkingContext->GetNetworkID(_obj);
-    outStream.Write(a);
+    uint32_t networkID = m_LinkingContext->GetNetworkID(_obj);
+    outStream.Write(networkID);
     
     outStream.Write(_proxy->GetSessionID());
 
@@ -100,29 +104,6 @@ void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj)
 
 void NetworkManagerServer::HandleInput_Packet(ClientProxy* _session, InputMemoryStream& _inStream)
 {
-    int moveX = 0, moveY = 0;
-    _inStream.Read(moveX);
-    _inStream.Read(moveY);
-
-        // 핑이 오는지 확인용 대형 로그!
-        std::cout << "\n===================================" << std::endl;
-        std::cout << "[서버 수신] 클라이언트 이동 명령 도착!" << std::endl;
-        std::cout << "moveX : " << moveX << " / moveY : " << moveY << std::endl;
-        std::cout << "===================================\n" << std::endl;
-
-    // 1. "누구 파이프에서 온 거지? 아, _session(2번 손님)이 보냈네!"
-    // 2. "2번 손님이 조종하는 로봇 번호가 뭐였지?"
-    uint32_t myRoboID = _session->GetPossessedNetworkID();
-
-    // 3. 호적부에서 내 로봇 찾기
-    ObjectPtr myRobo = m_LinkingContext->GetObject(myRoboID);
-    
-    if (myRobo != nullptr)
-    {
-        // 1. 현재 좌표에서 클라이언트가 원하는 이동량을 더해 '가상의 다음 좌표'를 구합니다.
-        int nextX = myRobo->GetPosX() + moveX;
-        int nextY = myRobo->GetPosY() + moveY;                          
-    }
 }
 
 void NetworkManagerServer::OnClientAccepted(TCPSocketPtr _tcpSocket)
@@ -140,8 +121,7 @@ void NetworkManagerServer::RegisterObject(ObjectPtr _obj)
     uint32_t networkID = m_LinkingContext->GenerateNewNextNeworkID();
     _obj->SetNetworkID(networkID);
     m_LinkingContext->AddObject(_obj,networkID);    
-
-    //이제 접속한 모든 손님들의 '개인 장부'에 "야, 이거 새로 만들어라"라고 적어둡니다.
+    
     for(auto iter=m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
     {    
         ClientProxy* session=iter->second;        
@@ -173,18 +153,18 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {
-    for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
-    {
-        ClientProxy* proxy = iter->second;        
-        Robo* obj = dynamic_cast<Robo*>(m_LinkingContext->GetObject(iter->first).get());        
-        obj->AddPosX(0.01f);
-        obj->AddPosY(0.01f);        
+
+    for(auto obj:m_LinkingContext->GetAllObjects())
+    {        
+        ObjectPtr robo = obj.second;
+        robo->AddPosX(0.01f);
+        robo->AddPosY(0.01f);        
 
         
         float speed=90.f;
-        float currentAngle = obj->GetHeadingAngle(); // 현재 로봇이 가진 각도(Degree) 가져오기
+        float currentAngle = robo->GetHeadingAngle(); // 현재 로봇이 가진 각도(Degree) 가져오기
         currentAngle +=  speed*_deltaTime;          // 초당 90도 속도로 누적 증가
-        obj->SetHeadingAngle(currentAngle);          // 오브젝트에 갱신
+        robo->SetHeadingAngle(currentAngle);          // 오브젝트에 갱신
 
         if (currentAngle >= 360.f) 
             currentAngle -= 360.f; // 360도 컷 보정
@@ -192,8 +172,12 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
 
         glm::quat rot =glm::angleAxis(glm::radians(currentAngle),glm::vec3(0,1,0));
 
-        obj->SetRotation(rot);
+        robo->SetRotation(rot);                        
 
-        proxy->GetReplicationManagerServer().SetStateDirty(iter->first);        
+        for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
+        {
+           ClientProxy* proxy = iter->second;      
+            proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());   
+        }
     }    
 }

@@ -16,7 +16,7 @@ public:
     void ProcessPacket(ClientProxy* _cs,InputMemoryStream& _stream);
 private:
     void HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
-    void SendHello_Packet(ClientProxy* _proxy,ObjectPtr _obj);
+    void SendHello_Packet(ClientProxy* _proxy);
 
     void HandleInput_Packet(ClientProxy* _session, InputMemoryStream& _inStream);    
 private:

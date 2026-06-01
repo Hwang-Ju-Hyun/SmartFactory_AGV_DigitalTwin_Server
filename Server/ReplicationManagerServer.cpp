@@ -34,8 +34,7 @@ void ReplicationManagerServer::Write(OutputMemoryStream& _outStream)
             ObjectPtr obj= NetworkManagerServer::sInstance->GetLinkingContext()->GetObject(networkdID);            
             assert(obj!=nullptr);            
             
-            uint32_t classID=obj->GetClassID();
-            //uint32_t networkClassID=htonl(classID);
+            uint32_t classID=obj->GetClassID();            
             _outStream.Write(classID);                 
             obj->Write(_outStream);
         }

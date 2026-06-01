@@ -12,8 +12,7 @@ class ClientProxy
 private:
     TCPSessionPtr m_TCPSession;
     uint32_t m_SessionID;
-    ReplicationManagerServer m_ReplicationManagerServer;
-    uint32_t m_PossessedNetworkID; 
+    ReplicationManagerServer m_ReplicationManagerServer;    
 public:
     ClientProxy(TCPSessionPtr _session,uint32_t _sessionID);
     ~ClientProxy();
@@ -23,9 +22,6 @@ public:
     const uint32_t GetSessionID()const{return m_SessionID;}
     void SendPacket(OutputMemoryStream& _inStream);  
     TCPSessionPtr GetSession(){return m_TCPSession;}
-
-    void SetPossessedNetworkID(uint32_t _id) { m_PossessedNetworkID = _id; }
-    uint32_t GetPossessedNetworkID() const { return m_PossessedNetworkID; }
 
     friend class TCPSession;
 };
