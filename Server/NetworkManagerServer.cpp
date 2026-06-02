@@ -6,6 +6,7 @@
 #include "ObjectRegistry.hpp"
 #include "RoboServer.hpp"
 #include "ReplicationManagerServer.hpp"
+#include "Map.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -20,7 +21,7 @@ NetworkManagerServer::NetworkManagerServer()
     m_LinkingContext = new LinkingContext;
 }
 
-void  NetworkManagerServer::StaticInit()
+void NetworkManagerServer::StaticInit()
 {
     sInstance.reset(new NetworkManagerServer());    
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
@@ -43,16 +44,14 @@ void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream
     case PT_Disconnected:
         /* code */
         break;        
-    case PT_INPUT:
-    {
-        HandleInput_Packet(_session,_inStream);       
-    }        
+    case PT_INPUT:            
         break;
     default:  
         printf("Inavalid PacketData\n\a");
         break;
     }
 }
+
 
 void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {                
@@ -78,13 +77,15 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
         RegisterObject(newRobo);
 
-        float startX=(i%5)*5.f-30.f;
-        float startY=(i/5)*5.f;
+        float startX=(i%5)*2.f;
+        float startY=(i/5)*2.f;
 
         newRobo->SetPos(startX,startY);        
-    }        
-    
+    }
+
     SendHello_Packet(_proxy);
+
+    SendMap_Packet(_proxy);
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
@@ -96,13 +97,24 @@ void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
     
     outStream.Write(_proxy->GetSessionID());
 
-    _proxy->SendPacket(outStream);    
+    _proxy->SendPacket(outStream);
 }
 
-
-void NetworkManagerServer::HandleInput_Packet(ClientProxy* _session, InputMemoryStream& _inStream)
+void NetworkManagerServer::SendMap_Packet(ClientProxy* _proxy)
 {
+    const std::vector<Node> nodes = MapManager::GetInstance().GetNodes();
+    std::vector<Link> links = MapManager::GetInstance().GetLinks();
+
+    OutputMemoryStream outStream;
+    uint8_t packetType=PacketType::PT_MAZE_DATA;
+    
+    outStream.Write(packetType);
+    outStream.Write(nodes);
+    outStream.Write(links);
+
+    _proxy->SendPacket(outStream);
 }
+
 
 void NetworkManagerServer::OnClientAccepted(TCPSocketPtr _tcpSocket)
 {

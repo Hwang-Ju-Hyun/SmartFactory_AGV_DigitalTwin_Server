@@ -6,8 +6,8 @@
 #include "SocketUtil.hpp"
 #include "NetworkManagerServer.hpp"
 #include "ObjectRegistry.hpp"
-#include <chrono>
 
+#include <chrono>
 bool g_LOOP=true;
 
 int main(void)
@@ -62,7 +62,9 @@ int main(void)
                         
                         //hello packet을 똑바로 주고 받으면 session id 0이 아니라 갱신이 됨
                         NetworkManagerServer::sInstance->OnClientAccepted(newClientSock);
-                    }  
+                        
+                        
+                    }
                 }
                 else
                 {

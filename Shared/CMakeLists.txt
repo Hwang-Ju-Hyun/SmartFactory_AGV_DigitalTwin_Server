@@ -11,6 +11,7 @@ add_library(Shared STATIC
     Robo.cpp
     LinkingContext.cpp
     ObjectRegistry.cpp    
+    Map.cpp
 )
 
 target_include_directories(Shared PUBLIC

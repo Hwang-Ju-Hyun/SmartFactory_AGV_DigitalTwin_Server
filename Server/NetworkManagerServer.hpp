@@ -11,13 +11,13 @@ private:
     NetworkManagerServer();
 public:
     static std::unique_ptr<NetworkManagerServer> sInstance;    
-    static void StaticInit();
+    static void StaticInit();    
 public:
     void ProcessPacket(ClientProxy* _cs,InputMemoryStream& _stream);
 private:
     void HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void SendHello_Packet(ClientProxy* _proxy);
-
+    void SendMap_Packet(ClientProxy* _proxy);
     void HandleInput_Packet(ClientProxy* _session, InputMemoryStream& _inStream);    
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
@@ -33,7 +33,6 @@ public:
     LinkingContext* GetLinkingContext()const{return m_LinkingContext;}
     void RegisterObject(ObjectPtr _obj);
     void SendOutgoingReplicationPackets();
-
 public:
     void UpdateWorld(float _deltaTime);
 };

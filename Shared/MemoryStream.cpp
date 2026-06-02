@@ -1,6 +1,8 @@
 #include "MemoryStream.hpp"
 #include <iostream>
 #include <algorithm>
+#include "Map.hpp"
+
 OutputMemoryStream::OutputMemoryStream()
 
     :m_Buffer(nullptr)
@@ -42,6 +44,40 @@ void OutputMemoryStream::Write(std::vector<int> _inData)
         Write(v);    
 }
 
+void OutputMemoryStream::Write(const std::vector<Node>& _inData)
+{
+    uint32_t element_count=static_cast<uint32_t>(_inData.size());
+    Write(element_count);
+    for(int i=0;i<element_count;i++)
+    {
+        uint32_t id = _inData[i].m_Id;
+        float posX=_inData[i].m_PosX;
+        float posY=_inData[i].m_PosY;
+        uint8_t type = _inData[i].type;
+
+        Write(id);
+        Write(posX);
+        Write(posY);
+        Write(type);
+    }
+}
+
+void OutputMemoryStream::Write(const std::vector<Link>& _inData)
+{
+    uint32_t element_count=static_cast<uint32_t>(_inData.size());
+    Write(element_count);
+    for(int i=0;i<element_count;i++)
+    {
+        uint32_t id = _inData[i].m_Id;
+        uint32_t FromNodeID =_inData[i].m_FromNodeID;
+        uint32_t ToNodeID =_inData[i].m_ToNodeID;        
+
+        Write(id);
+        Write(FromNodeID);
+        Write(ToNodeID);        
+    }
+}
+
 InputMemoryStream::InputMemoryStream(char* _inBuffer,uint32_t _inByteCount)
     :m_Buffer(_inBuffer)
     ,m_Capacity(_inByteCount)
@@ -76,5 +112,32 @@ void InputMemoryStream::Read(std::vector<int> _outData)
     for(auto& v: _outData)
     {
         Read(v);
+    }
+}
+
+void InputMemoryStream::Read( std::vector<Node> _outData)
+{
+    size_t element_Count;
+    Read(element_Count);
+    _outData.resize(element_Count);
+    for(int i=0;i<element_Count;i++)
+    {
+        Read(_outData[i].m_Id);
+        Read(_outData[i].m_PosX);
+        Read(_outData[i].m_PosY);
+        Read(_outData[i].type);
+    }
+}
+
+void InputMemoryStream::Read(std::vector<Link> _outData)
+{
+    size_t element_Count;
+    Read(element_Count);
+    _outData.resize(element_Count);
+    for(int i=0;i<element_Count;i++)
+    {
+        Read(_outData[i].m_Id);
+        Read(_outData[i].m_FromNodeID);
+        Read(_outData[i].m_ToNodeID);        
     }
 }
