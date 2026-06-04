@@ -70,15 +70,17 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
         _proxy->GetReplicationManagerServer().ReplicateCreate(existingNetworkID);
     }
     
-    int spawnCount=5;
+    int spawnCount=1;
     ObjectPtr mainRobo=nullptr;
     for(int i=0;i<spawnCount;i++)
     {
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
-        RegisterObject(newRobo);
+        RegisterObject(newRobo);        
 
         float startX=(i%5)*2.f;
         float startY=(i/5)*2.f;
+        
+
 
         newRobo->SetPos(startX,startY);        
     }
@@ -102,8 +104,8 @@ void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
 
 void NetworkManagerServer::SendMap_Packet(ClientProxy* _proxy)
 {
-    const std::vector<Node> nodes = MapManager::GetInstance().GetNodes();
-    std::vector<Link> links = MapManager::GetInstance().GetLinks();
+    const std::unordered_map<uint32_t,MapNode> nodes = MapManager::GetInstance().GetNodes();
+    std::vector<MapLink> links = MapManager::GetInstance().GetLinks();
 
     OutputMemoryStream outStream;
     uint8_t packetType=PacketType::PT_MAZE_DATA;
@@ -163,31 +165,22 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {
-
+    static bool a=false;
     for(auto obj:m_LinkingContext->GetAllObjects())
     {        
-        ObjectPtr robo = obj.second;
-        robo->AddPosX(0.01f);
-        robo->AddPosY(0.01f);        
-
-        
-        float speed=90.f;
-        float currentAngle = robo->GetHeadingAngle(); // 현재 로봇이 가진 각도(Degree) 가져오기
-        currentAngle +=  speed*_deltaTime;          // 초당 90도 속도로 누적 증가
-        robo->SetHeadingAngle(currentAngle);          // 오브젝트에 갱신
-
-        if (currentAngle >= 360.f) 
-            currentAngle -= 360.f; // 360도 컷 보정
-
-
-        glm::quat rot =glm::angleAxis(glm::radians(currentAngle),glm::vec3(0,1,0));
-
-        robo->SetRotation(rot);                        
+        ObjectPtr robo = obj.second;              
+        Robo* agv = dynamic_cast<Robo*>(robo.get());        
+        if(agv&&a==false)
+        {
+            agv->m_FinalPathNodeIDs= agv->pathFinder.FindPath(1,4,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks());    
+        }
+        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());
 
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {
            ClientProxy* proxy = iter->second;      
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());   
-        }
+        }                
     }    
+    a=true;
 }

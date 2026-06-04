@@ -3,7 +3,7 @@
 
 Object::Object()
     :m_posX(-1)
-    ,m_posY(-1)
+    ,m_posZ(-1)
     ,m_NetworkID(-1)
 {
     SetName("None");
@@ -12,7 +12,7 @@ Object::Object()
 void Object::Write(OutputMemoryStream& _outStream)
 {        
     _outStream.Write(GetPosX());
-    _outStream.Write(GetPosY());
+    _outStream.Write(GetPosZ());
     _outStream.Write(m_Rotation.x);
     _outStream.Write(m_Rotation.y);
     _outStream.Write(m_Rotation.z);
@@ -22,7 +22,7 @@ void Object::Write(OutputMemoryStream& _outStream)
 void Object::Read(InputMemoryStream& _outStream)
 {    
     _outStream.Read(m_posX);
-    _outStream.Read(m_posY);
+    _outStream.Read(m_posZ);
     _outStream.Read(m_Rotation.x);
     _outStream.Read(m_Rotation.y);
     _outStream.Read(m_Rotation.z);

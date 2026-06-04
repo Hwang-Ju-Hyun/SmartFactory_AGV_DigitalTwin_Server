@@ -12,6 +12,7 @@ add_library(Shared STATIC
     LinkingContext.cpp
     ObjectRegistry.cpp    
     Map.cpp
+    PathFinder.cpp
 )
 
 target_include_directories(Shared PUBLIC

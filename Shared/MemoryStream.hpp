@@ -1,12 +1,13 @@
 #pragma once
 #include "header.hpp"
 #include <vector>
+#include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 class Object;
-struct Node;
-struct Link;
+struct MapNode;
+struct MapLink;
 
 class OutputMemoryStream
 {
@@ -29,8 +30,10 @@ public:
     void Write(float _inData){Write(&_inData,sizeof(float));}
     void Write(size_t _inData){Write(&_inData,sizeof(size_t));}
     void Write(std::vector<int> _inData);
-    void Write(const std::vector<Node>& _inData);
-    void Write(const std::vector<Link>& _inData);
+    void Write(const std::vector<MapNode>& _inData);
+    void Write(const std::vector<MapLink>& _inData);
+
+    void Write(const std::unordered_map<uint32_t,MapNode>& _inData);    
 
     void Write(uint16_t _inData){Write(&_inData,sizeof(uint16_t));}
     void Write(uint8_t _inData){Write(&_inData,sizeof(uint8_t));}        
@@ -58,8 +61,8 @@ public:
     void Read(uint8_t& _outData){Read(&_outData,sizeof(uint8_t));};
     void Read(uint16_t& _outData){Read(&_outData,sizeof(uint16_t));}
     void Read(std::vector<int> _outData);    
-    void Read(std::vector<Node> _outData);    
-    void Read(std::vector<Link> _outData);    
+    void Read(std::vector<MapNode> _outData);    
+    void Read(std::vector<MapLink> _outData);    
 public:
     uint32_t GetRemainDataSize(){return m_Capacity-m_Head;}    
 };

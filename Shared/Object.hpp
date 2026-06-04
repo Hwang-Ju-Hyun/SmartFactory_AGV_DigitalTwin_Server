@@ -16,8 +16,8 @@ class Object
 public:
     Object();
     virtual ~Object(){}
-private:
-    float m_posX,m_posY;
+protected:
+    float m_posX,m_posZ;
     char m_Name[10];
     int m_NetworkID;
     float m_HeadingAngle;
@@ -26,17 +26,16 @@ protected:
     uint32_t m_ClassID= static_cast<uint32_t>(ClassID::OBJ_DEFAULT);
 public:
     void SetPosX(float _posX){m_posX=_posX;}
-    void SetPosY(float _posY){m_posY=_posY;}
+    void SetPosZ(float _posZ){m_posZ=_posZ;}
     void AddPosX(float _addX){m_posX+=_addX;}
-    void AddPosY(float _addY){m_posY+=_addY;}    
-    void SetPos(float _x,float _y){m_posX=_x,m_posY=_y;}
+    void AddPosZ(float _addZ){m_posZ+=_addZ;}
+    void SetPos(float _x,float _z){m_posX=_x,m_posZ=_z;}
 
     void SetRotation(glm::quat _rot){m_Rotation=_rot;}
     void SetHeadingAngle(float _angle){m_HeadingAngle=_angle;}
-
     
     float GetPosX()const{return m_posX;}
-    float GetPosY()const{return m_posY;}
+    float GetPosZ()const{return m_posZ;}
     glm::quat GetRotation()const{return m_Rotation;}
     float GetHeadingAngle()const{return m_HeadingAngle;}
 

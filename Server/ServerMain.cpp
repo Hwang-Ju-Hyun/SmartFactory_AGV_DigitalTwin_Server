@@ -12,7 +12,7 @@ bool g_LOOP=true;
 
 int main(void)
 {    
-    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("127.0.0.1:9999");    
+    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("127.0.0.1:6666");    
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
     assert(sockServerTcp->Bind(*serverAddr)!=ERROR);
 

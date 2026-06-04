@@ -2,19 +2,20 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
-struct Node
+struct MapNode
 {
 public:
     uint32_t m_Id;
 
     float m_PosX;
-    float m_PosY;
+    float m_PosZ;
 
     uint8_t type;
 };
 
-struct Link
+struct MapLink
 {
 public:
     uint32_t m_Id;
@@ -32,12 +33,12 @@ public:
         static MapManager s;        
         return s;
     }
-private:
-    std::vector<Node> m_Nodes;
-    std::vector<Link> m_Links;
+private:    
+    std::unordered_map<uint32_t,MapNode> m_Nodes;
+    std::vector<MapLink> m_Links;
 public:
     void Init(); 
 public:
-    std::vector<Node> GetNodes()const{return m_Nodes;}
-    std::vector<Link> GetLinks()const{return m_Links;}
+    std::unordered_map<uint32_t,MapNode>  GetNodes()const{return m_Nodes;}
+    std::vector<MapLink> GetLinks()const{return m_Links;}
 };

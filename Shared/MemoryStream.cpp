@@ -44,7 +44,7 @@ void OutputMemoryStream::Write(std::vector<int> _inData)
         Write(v);    
 }
 
-void OutputMemoryStream::Write(const std::vector<Node>& _inData)
+void OutputMemoryStream::Write(const std::vector<MapNode>& _inData)
 {
     uint32_t element_count=static_cast<uint32_t>(_inData.size());
     Write(element_count);
@@ -52,17 +52,17 @@ void OutputMemoryStream::Write(const std::vector<Node>& _inData)
     {
         uint32_t id = _inData[i].m_Id;
         float posX=_inData[i].m_PosX;
-        float posY=_inData[i].m_PosY;
+        float posZ=_inData[i].m_PosZ;
         uint8_t type = _inData[i].type;
 
         Write(id);
         Write(posX);
-        Write(posY);
+        Write(posZ);
         Write(type);
     }
 }
 
-void OutputMemoryStream::Write(const std::vector<Link>& _inData)
+void OutputMemoryStream::Write(const std::vector<MapLink>& _inData)
 {
     uint32_t element_count=static_cast<uint32_t>(_inData.size());
     Write(element_count);
@@ -77,6 +77,26 @@ void OutputMemoryStream::Write(const std::vector<Link>& _inData)
         Write(ToNodeID);        
     }
 }
+
+void OutputMemoryStream::Write(const std::unordered_map<uint32_t,MapNode>& _inData)
+{
+    uint32_t element_count=static_cast<uint32_t>(_inData.size());
+    Write(element_count);
+
+    for(auto iter =_inData.begin();iter!=_inData.end();iter++)
+    {
+        uint32_t id= iter->second.m_Id;
+        float posX=iter->second.m_PosX;
+        float posZ=iter->second.m_PosZ;
+        uint8_t type= iter->second.type;
+
+        Write(id);
+        Write(posX);
+        Write(posZ);
+        Write(type);
+    }    
+}
+
 
 InputMemoryStream::InputMemoryStream(char* _inBuffer,uint32_t _inByteCount)
     :m_Buffer(_inBuffer)
@@ -115,7 +135,7 @@ void InputMemoryStream::Read(std::vector<int> _outData)
     }
 }
 
-void InputMemoryStream::Read( std::vector<Node> _outData)
+void InputMemoryStream::Read( std::vector<MapNode> _outData)
 {
     size_t element_Count;
     Read(element_Count);
@@ -124,12 +144,12 @@ void InputMemoryStream::Read( std::vector<Node> _outData)
     {
         Read(_outData[i].m_Id);
         Read(_outData[i].m_PosX);
-        Read(_outData[i].m_PosY);
+        Read(_outData[i].m_PosZ);
         Read(_outData[i].type);
     }
 }
 
-void InputMemoryStream::Read(std::vector<Link> _outData)
+void InputMemoryStream::Read(std::vector<MapLink> _outData)
 {
     size_t element_Count;
     Read(element_Count);
