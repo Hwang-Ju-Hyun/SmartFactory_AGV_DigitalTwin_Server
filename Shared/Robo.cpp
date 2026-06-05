@@ -31,8 +31,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         m_CurrentPathIndex++;
 
         if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
-        {            
-            int a=0;
+        {                        
             return;
         }           
 
