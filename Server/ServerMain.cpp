@@ -14,7 +14,9 @@ int main(void)
 {    
     SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("127.0.0.1:6666");    
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
-    assert(sockServerTcp->Bind(*serverAddr)!=ERROR);
+    int option = 1;
+    setsockopt(sockServerTcp->GetSocket(), SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
+    assert(sockServerTcp->Bind(*serverAddr)!=ERROR);        
 
     assert(sockServerTcp->Listen()!=ERROR);
 
@@ -36,7 +38,7 @@ int main(void)
     {
         timeval timeoutValue;
         timeoutValue.tv_sec = 0;
-        timeoutValue.tv_usec = 33333; // 33.3ms
+        timeoutValue.tv_usec = 3333; // 33.3ms
         int toRet=SocketUtil::Select(&readBlockSockets,&readAbleSockets,nullptr,nullptr,nullptr,nullptr,&timeoutValue);
         
         if(toRet<0)

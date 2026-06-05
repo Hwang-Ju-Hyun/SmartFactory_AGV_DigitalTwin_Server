@@ -17,8 +17,9 @@ public:
 private:
     void HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void SendHello_Packet(ClientProxy* _proxy);
-    void SendMap_Packet(ClientProxy* _proxy);
-    void HandleInput_Packet(ClientProxy* _session, InputMemoryStream& _inStream);    
+    void SendMap_Packet(ClientProxy* _proxy);    
+    void HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
+    void HandleReadyObject_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    
@@ -33,6 +34,11 @@ public:
     LinkingContext* GetLinkingContext()const{return m_LinkingContext;}
     void RegisterObject(ObjectPtr _obj);
     void SendOutgoingReplicationPackets();
+private:
+    bool m_IsMapReady = false;
+    bool m_IsSimulationActive=false;
 public:
+    void StartSimulation(){m_IsSimulationActive=true;}
+    void StopSimulation(){m_IsSimulationActive=false;}
     void UpdateWorld(float _deltaTime);
 };

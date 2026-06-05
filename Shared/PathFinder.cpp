@@ -18,7 +18,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     {
         adjacencyList[link.m_FromNodeID].push_back(link);
     }
-    std::priority_queue<std::shared_ptr<AStarNode>> openList;
+    std::priority_queue<std::shared_ptr<AStarNode>,std::vector<std::shared_ptr<AStarNode>>,CompareNode> openList;
     std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> closedList;
     std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> openRegistryList;
 
@@ -89,9 +89,9 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
         while(traceNode!=nullptr)
         {
             finalPath.push_back(traceNode->id);
-
+            
             if(traceNode->parentID==0)
-                break;                
+                break;
             traceNode=closedList[traceNode->parentID];
         }    
         std::reverse(finalPath.begin(),finalPath.end());

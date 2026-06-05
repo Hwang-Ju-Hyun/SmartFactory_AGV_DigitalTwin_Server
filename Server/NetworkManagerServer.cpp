@@ -9,7 +9,7 @@
 #include "Map.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-
+#include "PathFinder.hpp"
 #include <cassert>
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
@@ -44,14 +44,17 @@ void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream
     case PT_Disconnected:
         /* code */
         break;        
-    case PT_INPUT:            
+    case PT_READY_MAP:
+        HandleReadyMap_Packet(_session,_inStream);
+        break;
+    case PT_READY_OBJECT:
+        HandleReadyObject_Packet(_session,_inStream);
         break;
     default:  
         printf("Inavalid PacketData\n\a");
         break;
     }
 }
-
 
 void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {                
@@ -68,26 +71,13 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
     {
         uint32_t existingNetworkID=obj.first;
         _proxy->GetReplicationManagerServer().ReplicateCreate(existingNetworkID);
-    }
-    
-    int spawnCount=1;
-    ObjectPtr mainRobo=nullptr;
-    for(int i=0;i<spawnCount;i++)
-    {
-        ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
-        RegisterObject(newRobo);        
-
-        float startX=(i%5)*2.f;
-        float startY=(i/5)*2.f;
-        
-
-
-        newRobo->SetPos(startX,startY);        
-    }
+    }       
 
     SendHello_Packet(_proxy);
 
-    SendMap_Packet(_proxy);
+    SendMap_Packet(_proxy);    
+
+    std::cout << "[서버] 맵 전송 완료. 클라이언트의 PT_READY_MAP을 기다립니다.\n";
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
@@ -162,25 +152,58 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
     }
 }
 
+void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
+{ 
+    StartSimulation();
+}
+
+
+void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
+{
+    int spawnCount=3;
+    ObjectPtr mainRobo=nullptr;
+
+    int startNodes[3]  = { 1, 11, 5 };
+    int targetNodes[3] = { 3,  7, 1 };
+
+    for(int i=0;i<spawnCount;i++)
+    {
+        ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
+        RegisterObject(newRobo);   
+
+        Robo* agv = dynamic_cast<Robo*>(newRobo.get());        
+        if(agv != nullptr)
+        {            
+            AstarPathFinder pathFinder;
+            std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks());
+            agv->SetNewTargetRoute(path);            
+            if (!path.empty())
+            {
+                uint32_t startNodeID = path[0];
+                MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
+                agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
+            }
+        } 
+    }
+    
+}
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {
-    static bool a=false;
+    if(!m_IsSimulationActive)
+    {                              
+        return;
+    }           
     for(auto obj:m_LinkingContext->GetAllObjects())
     {        
         ObjectPtr robo = obj.second;              
-        Robo* agv = dynamic_cast<Robo*>(robo.get());        
-        if(agv&&a==false)
-        {
-            agv->m_FinalPathNodeIDs= agv->pathFinder.FindPath(1,4,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks());    
-        }
-        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());
-
+        Robo* agv = dynamic_cast<Robo*>(robo.get());         
+        std::cout<<agv->GetPosX()<<agv->GetPosZ()<<std::endl;
+        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());    
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {
-           ClientProxy* proxy = iter->second;      
-            proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());   
-        }                
-    }    
-    a=true;
+           ClientProxy* proxy = iter->second;
+            proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
+        }
+    }
 }
