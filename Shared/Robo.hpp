@@ -3,6 +3,7 @@
 #include <vector>
 #include "Map.hpp"
 #include "PathFinder.hpp"
+#include "TrafficControlManager.hpp"
 
 class Robo:public Object
 {       
@@ -14,7 +15,10 @@ private:
     MapNode m_FromNode;
     MapNode m_ToNode;    
     float m_Speed;
-    float m_Progress;
+    float m_Progress;    
+    float m_StayTime=1.f;
+    float m_AccStayTime=0.f;
+    bool IsStayTime=false;
 public:
     AstarPathFinder pathFinder;
     std::vector<uint32_t> m_FinalPathNodeIDs;     
@@ -22,11 +26,13 @@ public:
     bool go=false;
     std::vector<uint32_t> GetFinalPathNodeIDs(){return m_FinalPathNodeIDs;}
 public:
+    void ReserveTimeLine(const std::vector<uint32_t>& _pathNode);
     void SetNewTargetRoute(const std::vector<uint32_t>& _newPath) 
     {
         m_FinalPathNodeIDs = _newPath;
-        m_CurrentPathIndex = 0; // 새 경로를 받았으니 첫 정거장부터 출발!
-        m_Progress = 0.0f;        
+        m_CurrentPathIndex = 0;
+        m_Progress = 0.0f;             
     }
     void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes);
+    void ResgistGoalNode(uint32_t _nodeID);
 };

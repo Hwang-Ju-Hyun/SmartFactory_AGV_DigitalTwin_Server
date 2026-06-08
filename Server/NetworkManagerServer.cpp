@@ -163,27 +163,36 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
     int spawnCount=3;
     ObjectPtr mainRobo=nullptr;
 
-    int startNodes[3]  = { 1, 11, 5 };
-    int targetNodes[3] = { 3,  7, 1 };
+    int startNodes[3]  = { 11,5,2 };
+    int targetNodes[3] = { 7, 1,3 };
 
+    std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
     {
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
-        RegisterObject(newRobo);   
-
-        Robo* agv = dynamic_cast<Robo*>(newRobo.get());        
+        RegisterObject(newRobo); 
+        Robo* agv = dynamic_cast<Robo*>(newRobo.get());  
+        agv->ResgistGoalNode(targetNodes[i]);
+        Robos.push_back(agv);
+    }    
+    
+    for(int i=0;i<Robos.size();i++)
+    {      
+        Robo* agv =Robos[i];
         if(agv != nullptr)
         {            
             AstarPathFinder pathFinder;
-            std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks());
-            agv->SetNewTargetRoute(path);            
+                              
+            const std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID());
+            agv->SetNewTargetRoute(path);
+            agv->ReserveTimeLine(path);              
             if (!path.empty())
             {
                 uint32_t startNodeID = path[0];
                 MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
                 agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
             }
-        } 
+        }         
     }
     
 }
@@ -197,8 +206,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     for(auto obj:m_LinkingContext->GetAllObjects())
     {        
         ObjectPtr robo = obj.second;              
-        Robo* agv = dynamic_cast<Robo*>(robo.get());         
-        std::cout<<agv->GetPosX()<<agv->GetPosZ()<<std::endl;
+        Robo* agv = dynamic_cast<Robo*>(robo.get());                 
         agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());    
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {

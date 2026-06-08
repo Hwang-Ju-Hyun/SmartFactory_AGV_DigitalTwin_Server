@@ -13,6 +13,7 @@ add_library(Shared STATIC
     ObjectRegistry.cpp    
     Map.cpp
     PathFinder.cpp
+    TrafficControlManager.cpp
 )
 
 target_include_directories(Shared PUBLIC

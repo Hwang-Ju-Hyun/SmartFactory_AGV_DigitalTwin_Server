@@ -4,7 +4,7 @@ add_executable(AGV_Server
     NetworkManagerServer.cpp
     ClientProxy.cpp
     RoboServer.cpp
-    ReplicationManagerServer.cpp    
+    ReplicationManagerServer.cpp        
 )
 
 # 🌟 정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
