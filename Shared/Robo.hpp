@@ -19,11 +19,12 @@ private:
     float m_StayTime=1.f;
     float m_AccStayTime=0.f;
     bool IsStayTime=false;
+    
 public:
+    MapNode m_GoalNode;
     AstarPathFinder pathFinder;
     std::vector<uint32_t> m_FinalPathNodeIDs;     
-    size_t m_CurrentPathIndex = 0;       // 현재 티켓의 몇 번째 정거장에 와있는지 (인덱스)   
-    bool go=false;
+    size_t m_CurrentPathIndex = 0;       // 현재 티켓의 몇 번째 정거장에 와있는지 (인덱스)       
     std::vector<uint32_t> GetFinalPathNodeIDs(){return m_FinalPathNodeIDs;}
 public:
     void ReserveTimeLine(const std::vector<uint32_t>& _pathNode);
@@ -33,6 +34,10 @@ public:
         m_CurrentPathIndex = 0;
         m_Progress = 0.0f;             
     }
-    void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes);
-    void ResgistGoalNode(uint32_t _nodeID);
+    void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes);    
+
+    MapNode GetCurrentNode();
+    MapNode FindNearestNode(float _x,float _z);    
+    void SetGoalNode(uint32_t _nodeID){m_GoalNode=MapManager::GetInstance().GetMapNode(_nodeID);}
+    MapNode GetGoalNode(){return m_GoalNode;}
 };

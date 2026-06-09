@@ -8,13 +8,13 @@ class AstarPathFinder
 public:
     struct AStarNode 
     {
+        AStarNode(uint32_t _id) : id(_id) {}
         uint32_t id;
         float g = 0.0f; // 출발지부터 여기까지 온 실제 거리
         float h = 0.0f; // 목적지까지 남은 유클리드 예상 거리
         float f = 0.0f; // 총점 (g + h)
         uint32_t parentID = 0; // 경로 역추적을 위한 부모 노드 ID
-        float accumulatedTime; //이 노드에 도착했을 때의 시간 축 정보
-        AStarNode(uint32_t _id) : id(_id) {}
+        float accumulatedTime; //이 노드에 도착했을 때의 시간 축 정보        
     };
     
     struct CompareNode 

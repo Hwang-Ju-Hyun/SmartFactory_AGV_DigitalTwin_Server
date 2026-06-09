@@ -21,10 +21,9 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     }
     std::priority_queue<std::shared_ptr<AStarNode>,std::vector<std::shared_ptr<AStarNode>>,CompareNode> openList;
     std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> closedList;
-    std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> openRegistryList;
+    std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> openRegistryList;    
 
     std::shared_ptr startAstarNode = std::make_shared<AStarNode>(_startNodeID);
-
     startAstarNode->g=0.f;            
     startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
     startAstarNode->f=startAstarNode->g+startAstarNode->h;
@@ -40,6 +39,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     while(!openList.empty())
     {
         std::shared_ptr currentNode=openList.top();
+        std::shared_ptr<AStarNode> waitNode = std::make_shared<AstarNode>(currentNode);
         openList.pop();
 
         uint32_t currentID=currentNode->id;
@@ -71,8 +71,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float expectedEnterTime=travelTime + currentNode->accumulatedTime;
             float expectedLeaveTime=stayTime + expectedEnterTime;
 
-            if(adjacencyNodeID==3)
-                int a=0;
+            
             if(!TrafficControlManager::GetInstance().IsTimeWindowAvailable(adjacencyNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
             {
                 continue;

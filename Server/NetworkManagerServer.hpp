@@ -41,4 +41,8 @@ public:
     void StartSimulation(){m_IsSimulationActive=true;}
     void StopSimulation(){m_IsSimulationActive=false;}
     void UpdateWorld(float _deltaTime);
+
+    //todo 이거 trafficcontrolmanager로 두는게 더 좋아보임
+public:
+    void ReplanPath(uint32_t _agvID);
 };

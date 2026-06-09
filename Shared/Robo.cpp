@@ -11,7 +11,7 @@ Robo::Robo()
 }
 
 void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes)
-{
+{    
     if (m_FinalPathNodeIDs.empty() || m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 1)
         return;
     
@@ -29,7 +29,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_posX = toNode.m_PosX;
             m_posZ = toNode.m_PosZ;
-            m_Progress = 1.000001f; 
+            m_Progress = 1.00001f; 
             return;
         }
 
@@ -49,6 +49,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         fromNode   = _nodes.find(fromNodeID)->second;
         toNode     = _nodes.find(toNodeID)->second;  
     }
+
     float dist = std::sqrt(std::pow(fromNode.m_PosX-toNode.m_PosX,2)+std::pow(fromNode.m_PosZ-toNode.m_PosZ,2));
     m_Progress+=(m_Speed/dist)*_deltaTime;
 
@@ -100,9 +101,40 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode)
 
         accTime=leaveTime;
     }
+
+    for(auto& pair : TrafficControlManager::GetInstance().m_ReservationTable)
+    {
+        std::cout << "Node " << pair.first << std::endl;
+        for(auto& r : pair.second)
+        {
+            std::cout<< "AGV "<< r.agvID<< " "<< r.startTime<< " "<< r.endTime<< std::endl;
+        }
+    }
 }
 
-void Robo::ResgistGoalNode(uint32_t _nodeID)
+MapNode Robo::GetCurrentNode()
+{    
+    MapNode curNode = FindNearestNode(m_posX,m_posZ);
+    return curNode;
+}
+
+#include <cmath>
+MapNode Robo::FindNearestNode(float _x,float _z)
 {
-    TrafficControlManager::GetInstance().RegisterGoal(_nodeID,GetNetworkID());      
+    std::unordered_map<uint32_t,MapNode> nodes = MapManager::GetInstance().GetNodes();
+
+    float min_len=1e9;
+
+    MapNode currentNode;
+    
+    for(auto mn:nodes)
+    {                        
+        float length = std::sqrt(std::pow(mn.second.m_PosX-_x,2)+std::pow(mn.second.m_PosZ-_z,2));
+        if(min_len>length)
+        {
+            currentNode=mn.second;
+            min_len=length;
+        }
+    }
+    return currentNode;
 }
