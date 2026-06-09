@@ -5,7 +5,11 @@
 #include <memory>
 #include <algorithm>
 #include "TrafficControlManager.hpp"
-#include <string>
+#include <iostream>
+
+const float WaitTime=3.f;
+const float speed=3.8f;
+const float stayTime=1.f;
 
 std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID)
 {
@@ -25,71 +29,109 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     std::unordered_map<std::string,std::shared_ptr<AStarNode>> openRegistryList;    
 
     std::shared_ptr startAstarNode = std::make_shared<AStarNode>(_startNodeID);
+    
     startAstarNode->g=0.f;            
     startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
     startAstarNode->f=startAstarNode->g+startAstarNode->h;
+    startAstarNode->parentID=0;
+    startAstarNode->accumulatedTime=0.f;
 
     openList.push(startAstarNode);
 
-    startAstarNode->accumulatedTime=0.f;
-    openRegistryList[_startNodeID]=startAstarNode;
+    std::string startStateKey=std::to_string(_startNodeID)+"_"+"0";    
 
-    bool IsFound=false;    
+    openRegistryList[startStateKey]=startAstarNode;
+
+    bool IsFound=false;
     std::shared_ptr<AStarNode> endNode = nullptr;
 
     while(!openList.empty())
     {
         std::shared_ptr currentNode=openList.top();
         
-        std::shared_ptr<AStarNode> waitNode = std::make_shared<AstarNode>(currentNode);
-
         openList.pop();
 
-        uint32_t currentID=currentNode->id;
+        uint32_t currentNodeID=currentNode->id;
 
-        closedList[currentID]=currentNode;
+        int currentTimeSlot = currentNode->accumulatedTime;
 
-        if(currentID==_endNodeID)
+        std::string currentStateKey=std::to_string(currentNodeID)+"_"+std::to_string(currentTimeSlot);
+        closedList[currentStateKey]=currentNode;        
+
+        if(currentNodeID==_endNodeID)
         {
             IsFound=true;
             endNode=currentNode;
             break;
-        }    
+        }
 
-        for(int i=0; i<adjacencyList[currentID].size(); i++)
+        //WAIT
+        {
+            float expectedEnterTime = currentNode->accumulatedTime;
+            float expectedLeaveTime = expectedEnterTime + WaitTime;
+            int nextTimeSlot=static_cast<int>(expectedLeaveTime);
+
+            if(TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
+            {
+                std::string waitState = std::to_string(currentNodeID)+"_"+std::to_string(nextTimeSlot);
+
+                if(closedList.find(waitState)==closedList.end())
+                {
+                    float tentativeG= currentNode->g + WaitTime;
+                    bool isAlreadyInOpenList  = openRegistryList.find(waitState) != openRegistryList.end() ? true : false;
+                    std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList? openRegistryList.find(waitState)->second:std::make_shared<AStarNode>(currentNodeID);
+                    if(!isAlreadyInOpenList||tentativeG<waitNode->g)
+                    {
+                        waitNode->parentID=currentNodeID;
+                        waitNode->h=currentNode->h;
+                        waitNode->g=tentativeG;
+                        waitNode->f=waitNode->h+waitNode->g;
+                        waitNode->accumulatedTime=expectedLeaveTime;
+                    }
+                    
+                    if(!isAlreadyInOpenList)
+                    {
+                        openList.push(waitNode);
+                        openRegistryList.insert({waitState,waitNode});
+                    }
+                }
+            }
+        }
+
+        for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
         {            
-            uint32_t adjacencyNodeID=adjacencyList[currentID][i].m_ToNodeID;
-
-            //이미 검증이 끝난 노드는 패스
-            if(closedList.find(adjacencyNodeID)!=closedList.end())
-                continue;
+            uint32_t adjacencyNodeID=adjacencyList[currentNodeID][i].m_ToNodeID;            
 
             // g 계산: 현재까지 온 거리 + 이 링크의 실제 길이        
-            float linkLength=CalculateHeuristic(_nodes.find(currentID)->second,_nodes.find(adjacencyNodeID)->second);
+            float linkLength=CalculateHeuristic(_nodes.find(currentNodeID)->second,_nodes.find(adjacencyNodeID)->second);
 
-            float speed=3.8f;
             float travelTime=linkLength/speed;
-            float stayTime=1.f;
 
             float expectedEnterTime=travelTime + currentNode->accumulatedTime;
             float expectedLeaveTime=stayTime + expectedEnterTime;
+            int nextTimeSlot = static_cast<int>(expectedLeaveTime);
 
-            
+            std::string adjacencyNodeState=std::to_string(adjacencyNodeID)+"_"+std::to_string(nextTimeSlot);
+        
+            //이미 검증이 끝난 노드는 패스
+            if(closedList.find(adjacencyNodeState)!=closedList.end())
+                continue;
+                
             if(!TrafficControlManager::GetInstance().IsTimeWindowAvailable(adjacencyNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
             {
                 continue;
             }
             
-            float tentativeGn=currentNode->g+linkLength;            
-            bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeID)!=openRegistryList.end()? true:false;                        
-            
-            std::shared_ptr<AStarNode> adjacencyNode = isAlreadyInOpenList ? openRegistryList[adjacencyNodeID] : std::make_shared<AStarNode>(adjacencyNodeID);                        
+            float tentativeGn=currentNode->g + linkLength;            
+            bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeState)!=openRegistryList.end()? true:false;                        
+                        
+            std::shared_ptr<AStarNode> adjacencyNode = isAlreadyInOpenList ? openRegistryList[adjacencyNodeState] : std::make_shared<AStarNode>(adjacencyNodeID);                        
 
 
             //첨봤거나 더 다른 괜찮은(더 짧은) 노드가 있다면
             if(isAlreadyInOpenList==false || tentativeGn < adjacencyNode->g)
             {
-                adjacencyNode->parentID=currentID;
+                adjacencyNode->parentID=currentNodeID;
                 adjacencyNode->g = tentativeGn;                
                 adjacencyNode->h = CalculateHeuristic(_nodes.find(adjacencyNodeID)->second,_nodes.find(_endNodeID)->second);
                 adjacencyNode->f = adjacencyNode->g + adjacencyNode->h;
@@ -99,21 +141,46 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
                 if(isAlreadyInOpenList==false)
                 {
                     openList.push(adjacencyNode);
-                    openRegistryList[adjacencyNodeID]=adjacencyNode;
+                    openRegistryList[adjacencyNodeState]=adjacencyNode;
                 }               
             }
         }
     }
+
     if(IsFound&&endNode!=nullptr)
     {
         std::shared_ptr<AStarNode> traceNode=endNode;
+        float currentTime = endNode->accumulatedTime;
+        
         while(traceNode!=nullptr)
         {
             finalPath.push_back(traceNode->id);
             
             if(traceNode->parentID==0)
                 break;
-            traceNode=closedList[traceNode->parentID];
+
+            uint32_t pID=traceNode->parentID;
+            if(traceNode->parentID==traceNode->id)
+            {
+                currentTime-=WaitTime;
+            }
+            else
+            {
+                float linkLen=CalculateHeuristic(_nodes.find(traceNode->id)->second,_nodes.find(traceNode->parentID)->second);
+                currentTime-=(linkLen/speed+stayTime);
+            }            
+            int pTimeSlot=static_cast<int>(currentTime);
+            
+            std::string parentState=std::to_string(pID)+"_"+std::to_string(pTimeSlot);
+
+            if(closedList.find(parentState) != closedList.end()) 
+            {
+                traceNode = closedList[parentState];
+            } 
+            else 
+            {                
+                break; 
+            }
         }    
         std::reverse(finalPath.begin(),finalPath.end());
     }

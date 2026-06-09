@@ -22,7 +22,7 @@ class TrafficControlManager
 {
 private:
     TrafficControlManager();
-    const float timeBuffer = 0.5f;  
+    const float timeBuffer = 1.5f;  
     std::vector<Conflict> m_Conflicts;
 public:
     static TrafficControlManager& GetInstance()
