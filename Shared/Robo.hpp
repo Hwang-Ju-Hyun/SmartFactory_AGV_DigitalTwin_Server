@@ -5,6 +5,15 @@
 #include "PathFinder.hpp"
 #include "TrafficControlManager.hpp"
 
+enum class AGVState
+{
+    IDLE,
+    MOVING,
+    STAYING,
+    WAITING,
+    ARRIVED
+};
+
 class Robo:public Object
 {       
 public:
@@ -18,8 +27,10 @@ private:
     float m_Progress;    
     float m_StayTime=1.f;
     float m_AccStayTime=0.f;
+    float m_AccWaitTime=0.f;
     bool IsStayTime=false;
-    
+
+    AGVState m_State;
 public:
     MapNode m_GoalNode;
     AstarPathFinder pathFinder;
@@ -40,4 +51,6 @@ public:
     MapNode FindNearestNode(float _x,float _z);    
     void SetGoalNode(uint32_t _nodeID){m_GoalNode=MapManager::GetInstance().GetMapNode(_nodeID);}
     MapNode GetGoalNode(){return m_GoalNode;}
+
+    
 };

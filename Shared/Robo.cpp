@@ -1,7 +1,7 @@
 #include "Robo.hpp"
 #include "header.hpp"
 #include <iostream>
-
+const float WaitTime=3.f;
 Robo::Robo()
 {
     SetName("Robo");
@@ -19,10 +19,10 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     uint32_t toNodeID = m_FinalPathNodeIDs[m_CurrentPathIndex+1];
     
     MapNode fromNode=_nodes.find(fromNodeID)->second;
-    MapNode toNode=_nodes.find(toNodeID)->second;                    
-    
+    MapNode toNode=_nodes.find(toNodeID)->second;               
+        
     if(m_Progress>=1.0f)
-    {
+    {        
         m_AccStayTime+=_deltaTime;
         
         if(m_AccStayTime<m_StayTime)
@@ -52,9 +52,23 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
 
     float dist = std::sqrt(std::pow(fromNode.m_PosX-toNode.m_PosX,2)+std::pow(fromNode.m_PosZ-toNode.m_PosZ,2));
     m_Progress+=(m_Speed/dist)*_deltaTime;
-
+    
     m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
     m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;    
+
+
+    if(fromNodeID == toNodeID)
+    {
+        m_AccWaitTime += _deltaTime;
+
+        if(m_AccWaitTime >= WaitTime)
+        {
+            m_AccWaitTime = 0.f;
+            m_CurrentPathIndex++;
+        }
+        return;
+    }
+
 
     float directionX = toNode.m_PosX - fromNode.m_PosX;
     float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
@@ -85,6 +99,16 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode)
         MapNode fromNode = MapManager::GetInstance().GetNodes()[_pathNode[i]];
         MapNode toNode = MapManager::GetInstance().GetNodes()[_pathNode[i+1]];
 
+        if(fromNode.m_Id == toNode.m_Id)
+        {
+            float enterTime = accTime;
+            float leaveTime = accTime + WaitTime;
+
+            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id,enterTime,leaveTime,GetNetworkID());
+            accTime = leaveTime;
+            continue;
+        }
+        
         float dist=std::sqrt(std::pow(fromNode.m_PosX-toNode.m_PosX,2)+std::pow(fromNode.m_PosZ-toNode.m_PosZ,2));
 
         //시간=거리/속도
@@ -100,16 +124,7 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode)
             TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, enterTime, leaveTime, GetNetworkID());
 
         accTime=leaveTime;
-    }
-
-    for(auto& pair : TrafficControlManager::GetInstance().m_ReservationTable)
-    {
-        std::cout << "Node " << pair.first << std::endl;
-        for(auto& r : pair.second)
-        {
-            std::cout<< "AGV "<< r.agvID<< " "<< r.startTime<< " "<< r.endTime<< std::endl;
-        }
-    }
+    }    
 }
 
 MapNode Robo::GetCurrentNode()

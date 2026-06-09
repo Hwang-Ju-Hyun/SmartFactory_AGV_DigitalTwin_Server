@@ -160,11 +160,11 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=3;
+    int spawnCount=5;
     ObjectPtr mainRobo=nullptr;
 
-    uint32_t startNodes[3]  = { 11,5,2 };
-    uint32_t targetNodes[3] = { 7, 1,3 };
+    uint32_t startNodes[5]  = { 11,5,2 ,9, 8};
+    uint32_t targetNodes[5] = { 7, 1,3 ,10, 6};
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -203,6 +203,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         uint32_t loserAGV=TrafficControlManager::GetInstance().GetLoserAGVofConflict(conflicts[i]);
         ReplanPath(loserAGV);
     }
+    
 }
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
@@ -230,7 +231,7 @@ void NetworkManagerServer:: ReplanPath(uint32_t _agvID)
     ObjectPtr obj=m_LinkingContext->GetObject(_agvID);
     Robo* agv=dynamic_cast<Robo*>(obj.get());
 
-    MapNode curNode =agv->GetCurrentNode();
+    MapNode curNode = agv->GetCurrentNode();
     MapNode goalNode =agv->GetGoalNode();
 
     AstarPathFinder apf;
@@ -240,4 +241,10 @@ void NetworkManagerServer:: ReplanPath(uint32_t _agvID)
     agv->SetNewTargetRoute(path);
 
     agv->ReserveTimeLine(path);
+
+
+    std::cout << "AGV "<< _agvID<< " Replan Path : ";
+    for(auto n : path)
+        std::cout << n << " ";
+    std::cout << std::endl;
 }
