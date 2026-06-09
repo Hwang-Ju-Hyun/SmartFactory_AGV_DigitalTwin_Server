@@ -5,6 +5,7 @@
 #include <memory>
 #include <algorithm>
 #include "TrafficControlManager.hpp"
+#include <string>
 
 std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID)
 {
@@ -12,7 +13,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
 
     if(_startNodeID==_endNodeID)
         return finalPath;
-
+    
     std::unordered_map<uint32_t,std::vector<MapLink>> adjacencyList;
     
     for(auto link:_links)
@@ -20,8 +21,8 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
         adjacencyList[link.m_FromNodeID].push_back(link);
     }
     std::priority_queue<std::shared_ptr<AStarNode>,std::vector<std::shared_ptr<AStarNode>>,CompareNode> openList;
-    std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> closedList;
-    std::unordered_map<uint32_t,std::shared_ptr<AStarNode>> openRegistryList;    
+    std::unordered_map<std::string,std::shared_ptr<AStarNode>> closedList;
+    std::unordered_map<std::string,std::shared_ptr<AStarNode>> openRegistryList;    
 
     std::shared_ptr startAstarNode = std::make_shared<AStarNode>(_startNodeID);
     startAstarNode->g=0.f;            
@@ -39,7 +40,9 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     while(!openList.empty())
     {
         std::shared_ptr currentNode=openList.top();
+        
         std::shared_ptr<AStarNode> waitNode = std::make_shared<AstarNode>(currentNode);
+
         openList.pop();
 
         uint32_t currentID=currentNode->id;
