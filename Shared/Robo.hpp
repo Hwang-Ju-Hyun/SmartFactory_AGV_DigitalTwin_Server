@@ -51,6 +51,5 @@ public:
     MapNode FindNearestNode(float _x,float _z);    
     void SetGoalNode(uint32_t _nodeID){m_GoalNode=MapManager::GetInstance().GetMapNode(_nodeID);}
     MapNode GetGoalNode(){return m_GoalNode;}
-
-    
+    void ChangeState(AGVState _state){m_State=_state;}
 };

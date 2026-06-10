@@ -184,7 +184,8 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
             const std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID());
             agv->SetGoalNode(targetNodes[i]);
             agv->SetNewTargetRoute(path);
-            agv->ReserveTimeLine(path);                          
+            agv->ReserveTimeLine(path);        
+            agv->ChangeState(AGVState::MOVING);                  
             if (!path.empty())
             {
                 uint32_t startNodeID = path[0];
@@ -219,7 +220,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());    
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {
-           ClientProxy* proxy = iter->second;
+            ClientProxy* proxy = iter->second;
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
         }
     }

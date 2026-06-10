@@ -13,23 +13,119 @@ Robo::Robo()
 void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes)
 {    
     if (m_FinalPathNodeIDs.empty() || m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 1)
+    {
+        m_State=AGVState::IDLE;
         return;
-    
+    }
+        
     uint32_t fromNodeID = m_FinalPathNodeIDs[m_CurrentPathIndex];
     uint32_t toNodeID = m_FinalPathNodeIDs[m_CurrentPathIndex+1];
     
     MapNode fromNode=_nodes.find(fromNodeID)->second;
     MapNode toNode=_nodes.find(toNodeID)->second;               
+    
+    if(fromNodeID == toNodeID&&m_State==AGVState::MOVING)
+    {
+        m_State=AGVState::WAITING;              
+        return;
+    }
+    
+    switch (m_State)
+    {        
+    case AGVState::IDLE:        
+        break;
+    case AGVState::MOVING:
+    {            
+        float dist = std::sqrt(std::pow(fromNode.m_PosX-toNode.m_PosX,2)+std::pow(fromNode.m_PosZ-toNode.m_PosZ,2));
+        m_Progress+=(m_Speed/dist)*_deltaTime;
+
+        m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
+        m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;
+
+        float directionX = toNode.m_PosX - fromNode.m_PosX;
+        float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
+
+        float radians = std::atan2(directionX,directionZ);
+    
+        this->SetHeadingAngle(radians * (180.f / 3.141592f));
+        this->SetRotation(glm::angleAxis(radians, glm::vec3(0.f, 1.f, 0.f)));
+
+        if(m_Progress>=1.f)
+        {
+            m_Progress=1.f;
+            m_State=AGVState::STAYING;
+            m_AccStayTime = 0.f;
+        }
+    }
+    break;
+    case AGVState::WAITING:
+    {
+        m_posX = fromNode.m_PosX;
+        m_posZ = fromNode.m_PosZ;
+
+        m_AccWaitTime += _deltaTime;
         
+        if(m_AccWaitTime >= WaitTime)
+        {
+            m_AccWaitTime = 0.f;
+            m_Progress=0.f;
+            m_CurrentPathIndex++;
+
+            if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
+            {
+                m_State=AGVState::ARRIVED;
+            }
+            else
+            {
+                m_State=AGVState::MOVING;
+            }
+        }
+    }
+    break;
+    case AGVState::STAYING:
+    {
+        m_AccStayTime+=_deltaTime;        
+        m_posX = toNode.m_PosX;
+        m_posZ = toNode.m_PosZ;
+        m_Progress = 1.00001f; 
+        if(m_AccStayTime>m_StayTime)
+        {
+            m_Progress=0.f;
+            m_AccStayTime=0.f;
+            m_CurrentPathIndex++;
+
+            if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
+            {
+                m_State=AGVState::ARRIVED;
+            }
+            else
+            {
+                m_State=AGVState::MOVING;
+            }
+        }
+    }
+    break;
+    case AGVState::ARRIVED:
+        break;
+    default:
+        break;
+    }
+    
+    if(GetNetworkID()==5)
+    {
+        std::cout<<(int)m_State<<std::endl;
+    }
+    /*
     if(m_Progress>=1.0f)
     {        
         m_AccStayTime+=_deltaTime;
         
         if(m_AccStayTime<m_StayTime)
         {
-            m_posX = toNode.m_PosX;
-            m_posZ = toNode.m_PosZ;
-            m_Progress = 1.00001f; 
+            m_State=AGVState::STAYING;
+            // m_posX = toNode.m_PosX;
+            // m_posZ = toNode.m_PosZ;
+            // m_Progress = 1.00001f; 
             return;
         }
 
@@ -49,34 +145,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         fromNode   = _nodes.find(fromNodeID)->second;
         toNode     = _nodes.find(toNodeID)->second;  
     }
-
-    float dist = std::sqrt(std::pow(fromNode.m_PosX-toNode.m_PosX,2)+std::pow(fromNode.m_PosZ-toNode.m_PosZ,2));
-    m_Progress+=(m_Speed/dist)*_deltaTime;
-    
-    m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
-    m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;    
-
-
-    if(fromNodeID == toNodeID)
-    {
-        m_AccWaitTime += _deltaTime;
-
-        if(m_AccWaitTime >= WaitTime)
-        {
-            m_AccWaitTime = 0.f;
-            m_CurrentPathIndex++;
-        }
-        return;
-    }
-
-
-    float directionX = toNode.m_PosX - fromNode.m_PosX;
-    float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
-
-    float radians = std::atan2(directionX,directionZ);
-    
-    this->SetHeadingAngle(radians * (180.f / 3.141592f));
-    this->SetRotation(glm::angleAxis(radians, glm::vec3(0.f, 1.f, 0.f)));
+    m_State=AGVState::MOVING;        
+    */
 }
 
 
