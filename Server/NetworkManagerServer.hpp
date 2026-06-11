@@ -9,6 +9,7 @@ class NetworkManagerServer
 {
 private:
     NetworkManagerServer();
+    float m_TotalElapsedServerTime;
 public:
     static std::unique_ptr<NetworkManagerServer> sInstance;    
     static void StaticInit();    
@@ -45,4 +46,5 @@ public:
     //todo 이거 trafficcontrolmanager로 두는게 더 좋아보임
 public:
     void ReplanPath(uint32_t _agvID);
+    void RequestReplan(uint32_t _agvID);
 };

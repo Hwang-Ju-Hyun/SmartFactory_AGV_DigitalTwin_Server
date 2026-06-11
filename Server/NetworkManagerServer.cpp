@@ -160,11 +160,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=5;
+    int spawnCount=12;
     ObjectPtr mainRobo=nullptr;
 
-    uint32_t startNodes[5]  = { 11,5,2 ,9, 8};
-    uint32_t targetNodes[5] = { 7, 1,3 ,10, 6};
+    uint32_t startNodes[15]  = { 11,   5,   2,   9,   21,   6,    12,   15,   43, 47, 22, 46,50,13,48};
+    uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};    
+
+    // uint32_t startNodes[2]  = { 11,  6};
+    // uint32_t targetNodes[2] = { 7,   23};
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -172,7 +175,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
         RegisterObject(newRobo); 
         Robo* agv = dynamic_cast<Robo*>(newRobo.get());          
-        Robos.push_back(agv);                        
+        Robos.push_back(agv);             
     }    
     
     for(int i=0;i<Robos.size();i++)
@@ -180,11 +183,15 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         Robo* agv =Robos[i];
         if(agv != nullptr)
         {            
+            TrafficControlManager::GetInstance().ClearAgvReservations(agv->GetNetworkID());
+            TrafficControlManager::GetInstance().ClearLinkReservations(agv->GetNetworkID());
             AstarPathFinder pathFinder;            
-            const std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID());
+
+            const std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID(),m_TotalElapsedServerTime);
+            
             agv->SetGoalNode(targetNodes[i]);
             agv->SetNewTargetRoute(path);
-            agv->ReserveTimeLine(path);        
+            agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
             agv->ChangeState(AGVState::MOVING);                  
             if (!path.empty())
             {
@@ -206,7 +213,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
     }
     
 }
-
+static bool a=false;
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {
     if(!m_IsSimulationActive)
@@ -217,16 +224,33 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     {        
         ObjectPtr robo = obj.second;              
         Robo* agv = dynamic_cast<Robo*>(robo.get());                 
-        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());    
+        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());
+                
+        if(agv->m_NeedReplan&&agv->GetNetworkID()==2)
+        {
+            std::cout<<agv->GetNetworkID()<<"리터닝 가동"<<std::endl;           
+            AstarPathFinder apf;
+            agv->ChangeState(AGVState::RETURNING); 
+            if(agv->isComeBackDone) 
+            {
+                RequestReplan(agv->GetNetworkID());
+                agv->m_NeedReplan=false;
+                agv->isComeBackDone=false;
+                agv->ChangeState(AGVState::MOVING);
+            }                            
+        }
+        
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {
             ClientProxy* proxy = iter->second;
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
-        }
+        }       
     }
+    m_TotalElapsedServerTime+=_deltaTime;
+    std::cout<<m_TotalElapsedServerTime<<std::endl;
 }
 
-void NetworkManagerServer:: ReplanPath(uint32_t _agvID)
+void NetworkManagerServer::ReplanPath(uint32_t _agvID)
 {
     TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
     ObjectPtr obj=m_LinkingContext->GetObject(_agvID);
@@ -237,15 +261,71 @@ void NetworkManagerServer:: ReplanPath(uint32_t _agvID)
 
     AstarPathFinder apf;
     
-    std::vector<uint32_t> path = apf.FindPath(curNode.m_Id,goalNode.m_Id,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks(),_agvID);    
+    std::vector<uint32_t> path = apf.FindPath(curNode.m_Id,goalNode.m_Id,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks(),_agvID,m_TotalElapsedServerTime);    
     
     agv->SetNewTargetRoute(path);
 
-    agv->ReserveTimeLine(path);
+    agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
 
 
     std::cout << "AGV "<< _agvID<< " Replan Path : ";
     for(auto n : path)
         std::cout << n << " ";
     std::cout << std::endl;
+}
+
+void NetworkManagerServer::RequestReplan(uint32_t _agvID)
+{    
+    ObjectPtr obj = m_LinkingContext->GetObject(_agvID);
+
+    Robo* agv = dynamic_cast<Robo*>(obj.get());
+    if (!agv) 
+        return;
+    
+    size_t currentPathIndex= agv->GetCurrentPathIndex();
+    std::vector<uint32_t> oldPath = agv->GetFinalPathNodeIDs();
+
+    uint32_t fromNodeID = oldPath[currentPathIndex];
+    uint32_t nextNodeID   = oldPath[currentPathIndex+1];
+    uint32_t goalNodeID = oldPath[oldPath.size()-1];    
+
+    // 기존 장부 반납
+    TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+    
+    MapLink currentLink = MapManager::GetInstance().FindLink(fromNodeID,nextNodeID);
+    
+    uint32_t newStartNodeID=nextNodeID;
+        
+    bool IsCurrentLinkBlocked=currentLink.m_IsBloacked;
+    
+    //담 노드까지 가는데 걸리는 시간
+    float remainingTime=agv->GetTimeSpendOnCurrentLink_ToNode();
+
+
+    if(IsCurrentLinkBlocked)
+    {
+        newStartNodeID=fromNodeID;
+        //방금 전 노드로 돌아가는 시간
+        remainingTime = agv->GetTimeSpentOnCurrentLink_FromNode();
+    }
+
+    float newStartTime=m_TotalElapsedServerTime+remainingTime;
+
+    AstarPathFinder apf;
+    std::vector<uint32_t> newPath = apf.FindPath(newStartNodeID,goalNodeID,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks(),_agvID,newStartTime);
+
+    if(IsCurrentLinkBlocked)
+    {
+        agv->SetNewTargetRoute(newPath);
+        agv->SetCurrentIndex(0);
+    }
+    else
+    {
+        //먼 전방이 막혔을때 일단 agv가 가던 노드는 마저가야함
+        newPath.insert(newPath.begin(),fromNodeID);
+        agv->SetNewTargetRoute(newPath);
+        agv->SetCurrentIndex(agv->GetCurrentPathIndex());
+    }
+
+    agv->ReserveTimeLine(newPath,newStartTime);
 }

@@ -21,6 +21,7 @@ public:
     uint32_t m_Id;
     uint32_t m_FromNodeID;
     uint32_t m_ToNodeID;
+    bool m_IsBloacked=false;
 };
 
 class MapManager
@@ -43,4 +44,6 @@ public:
     std::vector<MapLink> GetLinks()const{return m_Links;}
 public:
     MapNode GetMapNode(uint32_t _nodeID){return m_Nodes.find(_nodeID)->second;}
+    MapLink FindLink(uint32_t _linkID);
+    MapLink& FindLink(uint32_t _fromNodeID,uint32_t _toNodeID);
 };

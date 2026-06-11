@@ -11,6 +11,15 @@ struct NodeReservation
     float endTime;
 };
 
+struct LinkReservation
+{
+    uint32_t agvID;
+    uint32_t fromNodeID;
+    uint32_t toNodeID;
+    float    startTime;
+    float    endTime;
+};
+
 struct Conflict
 {
     uint32_t NodeID;
@@ -33,6 +42,7 @@ public:
 public:
     //키(NodeID) -> 값(그 노드에 걸려있는 시간대별 예약 리스트)
     std::unordered_map<uint32_t,std::vector<NodeReservation>> m_ReservationTable;
+    std::vector<LinkReservation> m_LinkReservations;
     std::vector<Conflict> GetConflicts()const{return m_Conflicts;}   
 public:    
     //특정 노드의 특정 시간대가 사용 가능한지 검사
@@ -48,7 +58,12 @@ public:
     void ValidateReservation();     
     
     uint32_t GetLoserAGVofConflict(const Conflict& _conflict);
+
+    void ReleaseNodeReservation(uint32_t _prevNodeID,uint32_t _agvID);
 private:
     bool Overlap(const NodeReservation& a,const NodeReservation& b){return a.startTime < b.endTime &&a.endTime   > b.startTime;}
-
+public:
+    void ReserveLink(uint32_t _from, uint32_t _to, float _start, float _end, uint32_t _agvID);
+    bool IsLinkAvailable(uint32_t _from, uint32_t _to, float _start, float _end, uint32_t _agvID);
+    void ClearLinkReservations(uint32_t _agvID); 
 };

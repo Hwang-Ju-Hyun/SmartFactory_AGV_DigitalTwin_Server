@@ -30,5 +30,5 @@ public:
     {
         return std::sqrt(std::pow(_a.m_PosX-_b.m_PosX,2)+std::pow(_a.m_PosZ-_b.m_PosZ,2));
     }
-    std::vector<uint32_t> FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID);
+    std::vector<uint32_t> FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID,float _startTime);
 };

@@ -11,7 +11,7 @@ const float WaitTime=3.f;
 const float speed=3.8f;
 const float stayTime=1.f;
 
-std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID)
+std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID,float _startTime)
 {
     std::vector<uint32_t> finalPath;
 
@@ -34,17 +34,18 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
     startAstarNode->f=startAstarNode->g+startAstarNode->h;
     startAstarNode->parentID=0;
-    startAstarNode->accumulatedTime=0.f;
+    startAstarNode->accumulatedTime=_startTime;
 
     openList.push(startAstarNode);
+    
+    int startSlot = static_cast<int>(_startTime);
 
-    std::string startStateKey=std::to_string(_startNodeID)+"_"+"0";    
+    std::string startStateKey=std::to_string(_startNodeID)+"_"+std::to_string(startSlot);    
 
     openRegistryList[startStateKey]=startAstarNode;
 
     bool IsFound=false;
-    std::shared_ptr<AStarNode> endNode = nullptr;
-
+    std::shared_ptr<AStarNode> endNode = nullptr;    
     while(!openList.empty())
     {
         std::shared_ptr currentNode=openList.top();
@@ -71,31 +72,35 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float expectedLeaveTime = expectedEnterTime + WaitTime;
             int nextTimeSlot=static_cast<int>(expectedLeaveTime);
 
-            if(TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
+            if(currentNodeID!=_startNodeID)
             {
-                std::string waitState = std::to_string(currentNodeID)+"_"+std::to_string(nextTimeSlot);
-
-                if(closedList.find(waitState)==closedList.end())
+                if(TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
                 {
-                    float tentativeG= currentNode->g + WaitTime;
-                    bool isAlreadyInOpenList  = openRegistryList.find(waitState) != openRegistryList.end() ? true : false;
-                    std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList? openRegistryList.find(waitState)->second:std::make_shared<AStarNode>(currentNodeID);
-                    if(!isAlreadyInOpenList||tentativeG<waitNode->g)
+                    std::string waitState = std::to_string(currentNodeID)+"_"+std::to_string(nextTimeSlot);
+
+                    if(closedList.find(waitState)==closedList.end())
                     {
-                        waitNode->parentID=currentNodeID;
-                        waitNode->h=currentNode->h;
-                        waitNode->g=tentativeG;
-                        waitNode->f=waitNode->h+waitNode->g;
-                        waitNode->accumulatedTime=expectedLeaveTime;
-                    }
+                        float tentativeG= currentNode->g + WaitTime;
+                        bool isAlreadyInOpenList  = openRegistryList.find(waitState) != openRegistryList.end() ? true : false;
+                        std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList? openRegistryList.find(waitState)->second:std::make_shared<AStarNode>(currentNodeID);
+                        if(!isAlreadyInOpenList||tentativeG<waitNode->g)
+                        {
+                            waitNode->parentID=currentNodeID;
+                            waitNode->h=currentNode->h;
+                            waitNode->g=tentativeG;
+                            waitNode->f=waitNode->h+waitNode->g;
+                            waitNode->accumulatedTime=expectedLeaveTime;
+                        }
                     
                     if(!isAlreadyInOpenList)
                     {
                         openList.push(waitNode);
                         openRegistryList.insert({waitState,waitNode});
                     }
+                    }
                 }
             }
+            
         }
 
         for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
@@ -106,22 +111,40 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float linkLength=CalculateHeuristic(_nodes.find(currentNodeID)->second,_nodes.find(adjacencyNodeID)->second);
 
             float travelTime=linkLength/speed;
+              
+            float actualLinkStartTime = currentNode->accumulatedTime;        // 현재 노드 출발 시간
+            float actualLinkEndTime   = currentNode->accumulatedTime + travelTime; // 다음 노드 도착 시간
 
-            float expectedEnterTime=travelTime + currentNode->accumulatedTime;
-            float expectedLeaveTime=stayTime + expectedEnterTime;
+
+            float expectedEnterTime = actualLinkEndTime; 
+            float expectedLeaveTime = expectedEnterTime + stayTime;
+            
             int nextTimeSlot = static_cast<int>(expectedLeaveTime);
 
             std::string adjacencyNodeState=std::to_string(adjacencyNodeID)+"_"+std::to_string(nextTimeSlot);
-        
+                        
+
             //이미 검증이 끝난 노드는 패스
             if(closedList.find(adjacencyNodeState)!=closedList.end())
                 continue;
+
+            //링크위의 장애물 건너띄기
+            if(adjacencyList[currentNodeID][i].m_IsBloacked)
+            {
+                continue;                
+            }
                 
+            //노드 검사
             if(!TrafficControlManager::GetInstance().IsTimeWindowAvailable(adjacencyNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
             {
                 continue;
+            }                        
+            //링크(엣지)검사
+            if(!TrafficControlManager::GetInstance().IsLinkAvailable(currentNodeID,adjacencyNodeID,actualLinkStartTime,actualLinkEndTime,_avgID))
+            {
+                continue;
             }
-            
+
             float tentativeGn=currentNode->g + linkLength;            
             bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeState)!=openRegistryList.end()? true:false;                        
                         
