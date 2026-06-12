@@ -4,6 +4,7 @@
 #include "Map.hpp"
 #include "PathFinder.hpp"
 #include "TrafficControlManager.hpp"
+#include "TaskScheduler.hpp"
 
 enum class AGVState
 {
@@ -13,6 +14,23 @@ enum class AGVState
     STAYING,
     WAITING,
     ARRIVED
+};
+
+enum class TaskState
+{
+    WAITING,
+    ASSIGNED,
+    IN_PROGRESS,
+    COMPLETED
+};
+
+enum class TaskProgressState
+{
+    NONE,           // 할 일 없음 (IDLE)
+    GOTO_LOAD,      // 자재 투입소로 이동 중
+    LOADING,        // 자재 상차 중 (STAYING 연동)
+    GOTO_UNLOAD,    // 최종 하역장으로 이동 중
+    UNLOADING       // 자재 하차 중 (STAYING 연동)
 };
 
 class Robo:public Object
@@ -33,6 +51,8 @@ private:
     bool IsStayTime=false;
     
     AGVState m_State;
+    TaskProgressState m_TaskState=TaskProgressState::NONE;
+    Task m_CurrentTask;
 public:
     MapNode m_GoalNode;
     AstarPathFinder pathFinder;
@@ -63,4 +83,10 @@ public:
 
     bool ComeBack2FromNodeInLink(float _deltaTime);
     bool isComeBackDone=false;
+
+public:
+    void AssignTask(Task _task){m_CurrentTask=_task;}
+    void SetTaskProgressState(TaskProgressState _tps){m_TaskState=_tps;}
+    Task GetCurrentTask()const {return m_CurrentTask;}
+    TaskProgressState GetTaskProgressState()const{ return m_TaskState;}
 };

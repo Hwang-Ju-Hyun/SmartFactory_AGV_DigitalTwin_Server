@@ -11,6 +11,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include "PathFinder.hpp"
 #include <cassert>
+#include "AGVManager.hpp"
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -124,6 +125,11 @@ void NetworkManagerServer::RegisterObject(ObjectPtr _obj)
     _obj->SetNetworkID(networkID);
     m_LinkingContext->AddObject(_obj,networkID);    
     
+    if(_obj->GetClassID()==ClassID::OBJ_AGV)
+    {
+        AGVManager::GetInstance().m_AGVs.push_back(_obj);
+    }
+
     for(auto iter=m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
     {    
         ClientProxy* session=iter->second;        
