@@ -120,8 +120,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             m_State = AGVState::WAITING; 
             m_AccWaitTime = 0.f; 
             isComeBackDone=true;
-        }
-        std::cout<<m_posX<<" , "<<m_posZ<<std::endl;
+        }        
     }
     break;
     case AGVState::WAITING:

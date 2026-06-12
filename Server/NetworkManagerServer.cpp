@@ -64,7 +64,7 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
     _proxy->SetSessionID(newClientSessionID);
     nextSessionID++;
 
-    std::cout<<"[서버] 새 클라이언트 접속 승인! 부여된 ID : "<<newClientSessionID<<std::endl;         
+    std::cout<<"[서버] 새 클라이언트 접속 승인 부여된 ID : "<<newClientSessionID<<std::endl;         
 
 
     for(auto& obj : m_LinkingContext->GetAllObjects())
@@ -77,7 +77,7 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
 
     SendMap_Packet(_proxy);    
 
-    std::cout << "[서버] 맵 전송 완료. 클라이언트의 PT_READY_MAP을 기다립니다.\n";
+    std::cout << "[서버] 맵 전송 완료. PT_READY_MAP 대기 중 \n";
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
@@ -160,14 +160,11 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=12;
+    int spawnCount=15;
     ObjectPtr mainRobo=nullptr;
 
     uint32_t startNodes[15]  = { 11,   5,   2,   9,   21,   6,    12,   15,   43, 47, 22, 46,50,13,48};
-    uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};    
-
-    // uint32_t startNodes[2]  = { 11,  6};
-    // uint32_t targetNodes[2] = { 7,   23};
+    uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};        
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -227,8 +224,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());
                 
         if(agv->m_NeedReplan&&agv->GetNetworkID()==2)
-        {
-            std::cout<<agv->GetNetworkID()<<"리터닝 가동"<<std::endl;           
+        {                   
             AstarPathFinder apf;
             agv->ChangeState(AGVState::RETURNING); 
             if(agv->isComeBackDone) 
@@ -266,12 +262,6 @@ void NetworkManagerServer::ReplanPath(uint32_t _agvID)
     agv->SetNewTargetRoute(path);
 
     agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
-
-
-    std::cout << "AGV "<< _agvID<< " Replan Path : ";
-    for(auto n : path)
-        std::cout << n << " ";
-    std::cout << std::endl;
 }
 
 void NetworkManagerServer::RequestReplan(uint32_t _agvID)
@@ -305,6 +295,7 @@ void NetworkManagerServer::RequestReplan(uint32_t _agvID)
     if(IsCurrentLinkBlocked)
     {
         newStartNodeID=fromNodeID;
+
         //방금 전 노드로 돌아가는 시간
         remainingTime = agv->GetTimeSpentOnCurrentLink_FromNode();
     }
