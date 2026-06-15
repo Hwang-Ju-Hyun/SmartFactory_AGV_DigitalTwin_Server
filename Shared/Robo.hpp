@@ -13,24 +13,21 @@ enum class AGVState
     RETURNING,
     STAYING,
     WAITING,
-    ARRIVED
+    ARRIVED,
+
+    MOVE_TO_PICKUP,
+    MOVE_TO_DROP,
+    LOADING,
+    UNLOADING,
+    MOVE_TO_HOME
 };
 
 enum class TaskState
 {
-    WAITING,
+    IDLE,
     ASSIGNED,
     IN_PROGRESS,
     COMPLETED
-};
-
-enum class TaskProgressState
-{
-    NONE,           // 할 일 없음 (IDLE)
-    GOTO_LOAD,      // 자재 투입소로 이동 중
-    LOADING,        // 자재 상차 중 (STAYING 연동)
-    GOTO_UNLOAD,    // 최종 하역장으로 이동 중
-    UNLOADING       // 자재 하차 중 (STAYING 연동)
 };
 
 class Robo:public Object
@@ -51,7 +48,7 @@ private:
     bool IsStayTime=false;
     
     AGVState m_State;
-    TaskProgressState m_TaskState=TaskProgressState::NONE;
+    TaskState m_TaskState=TaskState::IDLE;
     Task m_CurrentTask;
 public:
     MapNode m_GoalNode;
@@ -67,7 +64,7 @@ public:
         m_CurrentPathIndex = 0;
         m_Progress = 0.0f;             
     }
-    void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes);    
+    void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes,float _serverTime);    
 
     MapNode GetCurrentNode();
     void SetCurrentIndex(uint32_t _idx){m_CurrentPathIndex=_idx;}
@@ -78,6 +75,7 @@ public:
     void ChangeState(AGVState _state){m_State=_state;}
     float GetTimeSpentOnCurrentLink_FromNode();
     float GetTimeSpendOnCurrentLink_ToNode();
+    AGVState GetState()const{return m_State;}
 
     bool m_NeedReplan=false;    
 
@@ -86,7 +84,7 @@ public:
 
 public:
     void AssignTask(Task _task){m_CurrentTask=_task;}
-    void SetTaskProgressState(TaskProgressState _tps){m_TaskState=_tps;}
+    void SetTaskState(TaskState _state){m_TaskState=_state;}
     Task GetCurrentTask()const {return m_CurrentTask;}
-    TaskProgressState GetTaskProgressState()const{ return m_TaskState;}
+    TaskState GetTaskState()const{ return m_TaskState;}
 };

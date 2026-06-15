@@ -14,6 +14,9 @@ add_library(Shared STATIC
     Map.cpp
     PathFinder.cpp
     TrafficControlManager.cpp
+    TaskScheduler.cpp
+    AGVManager.cpp
+    WarehouseManager.cpp
 )
 
 target_include_directories(Shared PUBLIC

@@ -42,7 +42,7 @@ public:
 public:
     std::unordered_map<uint32_t,MapNode>  GetNodes()const{return m_Nodes;}
     std::vector<MapLink> GetLinks()const{return m_Links;}
-public:
+public:    
     MapNode GetMapNode(uint32_t _nodeID){return m_Nodes.find(_nodeID)->second;}
     MapLink FindLink(uint32_t _linkID);
     MapLink& FindLink(uint32_t _fromNodeID,uint32_t _toNodeID);

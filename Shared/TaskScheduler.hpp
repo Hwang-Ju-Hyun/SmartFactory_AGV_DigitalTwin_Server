@@ -3,17 +3,13 @@
 #include <queue>
 
 class Robo;
-enum class TaskType
-{
-    DELIVERY,  // 자재 이송 
-    GO_DEPOT,  // 대기소 복귀 (일 없으면 쉬러 가기)
-};
+enum class AGVState;
 
 struct Task
 {
-    uint32_t   m_TaskID;       // 미션 고유 번호
-    TaskType   m_Type;         // 미션 타입
+    uint32_t   m_TaskID;       // 미션 고유 번호    
     uint32_t   m_LoadNodeID;   // 자재를 싣는 노드 (출발지)
+    uint32_t   m_backHomeNodeID;//자제를 내리고 할일없어 init으로 가는 노드
     uint32_t   m_UnloadNodeID; // 자재를 내리는 노드 (목적지)
 };
 
@@ -28,10 +24,18 @@ public:
         return instance;
     }
 private:
-    std::queue<Task> m_TaskQueue;
-    void UpdateSchedule(float _serverTime);
-    void AssignTask();
-    Robo FindBestAGVforTask();
+    std::queue<Task> m_TaskQueue;    
+    Robo* FindBestAGVforTask(Task _currentTask,AGVState _agvState);
 public:
+    void AssignTask(Robo* _robo);
+    void UpdateSchedule(float _serverTime);
+    void UpdateLoadSchedule(float _serverTime);
+    void UpdateUnLoadSchedule(float _serverTime);
     void PushTaks(Task _task){m_TaskQueue.push(_task);}      
+    uint32_t FindBestNode(Task _task,AGVState _agvCurState,float _serverTime,uint32_t _agvID);
+
+
+public:
+    void AssignUnLoadRoute(float _serverTime,Robo* _agv);
+    uint32_t FindBestDispatchNode(float _serverTime,uint32_t _agvID);
 };

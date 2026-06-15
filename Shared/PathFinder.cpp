@@ -33,7 +33,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     startAstarNode->g=0.f;            
     startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
     startAstarNode->f=startAstarNode->g+startAstarNode->h;
-    startAstarNode->parentID=0;
+    startAstarNode->parentNode=0;
     startAstarNode->accumulatedTime=_startTime;
 
     openList.push(startAstarNode);
@@ -54,7 +54,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
 
         uint32_t currentNodeID=currentNode->id;
 
-        int currentTimeSlot = currentNode->accumulatedTime;
+       int currentTimeSlot = static_cast<int>(currentNode->accumulatedTime * 10.f);
 
         std::string currentStateKey=std::to_string(currentNodeID)+"_"+std::to_string(currentTimeSlot);
         closedList[currentStateKey]=currentNode;        
@@ -85,7 +85,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
                         std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList? openRegistryList.find(waitState)->second:std::make_shared<AStarNode>(currentNodeID);
                         if(!isAlreadyInOpenList||tentativeG<waitNode->g)
                         {
-                            waitNode->parentID=currentNodeID;
+                            waitNode->parentNode=currentNode;
                             waitNode->h=currentNode->h;
                             waitNode->g=tentativeG;
                             waitNode->f=waitNode->h+waitNode->g;
@@ -154,7 +154,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             //첨봤거나 더 다른 괜찮은(더 짧은) 노드가 있다면
             if(isAlreadyInOpenList==false || tentativeGn < adjacencyNode->g)
             {
-                adjacencyNode->parentID=currentNodeID;
+                adjacencyNode->parentNode=currentNode;
                 adjacencyNode->g = tentativeGn;                
                 adjacencyNode->h = CalculateHeuristic(_nodes.find(adjacencyNodeID)->second,_nodes.find(_endNodeID)->second);
                 adjacencyNode->f = adjacencyNode->g + adjacencyNode->h;
@@ -177,33 +177,9 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
         
         while(traceNode!=nullptr)
         {
-            finalPath.push_back(traceNode->id);
-            
-            if(traceNode->parentID==0)
-                break;
+            finalPath.push_back(traceNode->id);                        
 
-            uint32_t pID=traceNode->parentID;
-            if(traceNode->parentID==traceNode->id)
-            {
-                currentTime-=WaitTime;
-            }
-            else
-            {
-                float linkLen=CalculateHeuristic(_nodes.find(traceNode->id)->second,_nodes.find(traceNode->parentID)->second);
-                currentTime-=(linkLen/speed+stayTime);
-            }            
-            int pTimeSlot=static_cast<int>(currentTime);
-            
-            std::string parentState=std::to_string(pID)+"_"+std::to_string(pTimeSlot);
-
-            if(closedList.find(parentState) != closedList.end()) 
-            {
-                traceNode = closedList[parentState];
-            } 
-            else 
-            {                
-                break; 
-            }
+            traceNode=traceNode->parentNode;           
         }    
         std::reverse(finalPath.begin(),finalPath.end());
     }

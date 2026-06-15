@@ -12,6 +12,8 @@
 #include "PathFinder.hpp"
 #include <cassert>
 #include "AGVManager.hpp"
+#include "TaskScheduler.hpp"
+#include "WarehouseManager.hpp"
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -108,7 +110,6 @@ void NetworkManagerServer::SendMap_Packet(ClientProxy* _proxy)
     _proxy->SendPacket(outStream);
 }
 
-
 void NetworkManagerServer::OnClientAccepted(TCPSocketPtr _tcpSocket)
 {
     TCPSessionPtr newClientSession = std::make_shared<TCPSession>();
@@ -117,7 +118,6 @@ void NetworkManagerServer::OnClientAccepted(TCPSocketPtr _tcpSocket)
 
     m_PendingProxies.push_back(newClientProxy); 
 }
-
 
 void NetworkManagerServer::RegisterObject(ObjectPtr _obj)
 {
@@ -162,15 +162,23 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 { 
     StartSimulation();
 }
-
-
+//uint32_t targetNodes2[8] = { 15,    23,   46,   43, 41,17,39,47};
+//uint32_t targetNodes2[5] = { 15,    23,   46,   43, 41};
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=15;
+    int spawnCount=5;
     ObjectPtr mainRobo=nullptr;
 
-    uint32_t startNodes[15]  = { 11,   5,   2,   9,   21,   6,    12,   15,   43, 47, 22, 46,50,13,48};
-    uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};        
+    // uint32_t startNodes[15]  = { 11,   5,   2,   9,   21,   6,    12,   15,   43, 47, 22, 46,50,13,48};
+    // uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};        
+
+    //uint32_t startNodes[8]  = { 11,   5,   2,   9 ,21,   6,     13,   15};
+    //uint32_t targetNodes[8] = { 7,    1,   49,   10, 4,   23,   32,   16};
+     
+    uint32_t initNodes[5]      = { 1,   3,   6,   7,    9};
+    uint32_t storeNodes[5]     = { 21,  42,  13,  29,  16};
+    uint32_t dispatchNodes[5]  = { 46,  47,  48,  49,  50};
+
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -178,8 +186,8 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
         RegisterObject(newRobo); 
         Robo* agv = dynamic_cast<Robo*>(newRobo.get());          
-        Robos.push_back(agv);             
-    }    
+        Robos.push_back(agv);
+    }
     
     for(int i=0;i<Robos.size();i++)
     {      
@@ -188,47 +196,56 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         {            
             TrafficControlManager::GetInstance().ClearAgvReservations(agv->GetNetworkID());
             TrafficControlManager::GetInstance().ClearLinkReservations(agv->GetNetworkID());
-            AstarPathFinder pathFinder;            
+            AstarPathFinder pathFinder;
 
-            const std::vector<uint32_t> path = pathFinder.FindPath(startNodes[i], targetNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID(),m_TotalElapsedServerTime);
+            Task t;
+            t.m_LoadNodeID=storeNodes[i];
+            t.m_UnloadNodeID=dispatchNodes[i];
+            t.m_backHomeNodeID=initNodes[i];
+
+            //TaskScheduler::GetInstance().PushTaks(t);
+
+            const std::vector<uint32_t> path = pathFinder.FindPath(initNodes[i], storeNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID(),m_TotalElapsedServerTime);
             
-            agv->SetGoalNode(targetNodes[i]);
+            agv->SetGoalNode(storeNodes[i]);
             agv->SetNewTargetRoute(path);
             agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
-            agv->ChangeState(AGVState::MOVING);                  
+            agv->ChangeState(AGVState::MOVE_TO_PICKUP);                  
+            //auto path = agv->GetFinalPathNodeIDs();
             if (!path.empty())
             {
                 uint32_t startNodeID = path[0];
                 MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
                 agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
             }
-        }         
+        }
     }
 
     TrafficControlManager::GetInstance().ValidateReservation();
     
-    std::vector<Conflict> conflicts = TrafficControlManager::GetInstance().GetConflicts();     
+    std::vector<Conflict> conflicts = TrafficControlManager::GetInstance().GetConflicts();
 
     for(int i=0;i<conflicts.size();i++)
     {
         uint32_t loserAGV=TrafficControlManager::GetInstance().GetLoserAGVofConflict(conflicts[i]);
         ReplanPath(loserAGV);
     }
-    
 }
 static bool a=false;
+int i=0;
+
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {
     if(!m_IsSimulationActive)
-    {                              
+    {
         return;
-    }           
+    }
     for(auto obj:m_LinkingContext->GetAllObjects())
     {        
-        ObjectPtr robo = obj.second;              
-        Robo* agv = dynamic_cast<Robo*>(robo.get());                 
-        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes());
-                
+        ObjectPtr robo = obj.second;
+        Robo* agv = dynamic_cast<Robo*>(robo.get());
+        agv->UpdateNavigation(_deltaTime,MapManager::GetInstance().GetNodes(),m_TotalElapsedServerTime);
+
         if(agv->m_NeedReplan&&agv->GetNetworkID()==2)
         {                   
             AstarPathFinder apf;
@@ -240,16 +257,30 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
                 agv->isComeBackDone=false;
                 agv->ChangeState(AGVState::MOVING);
             }                            
-        }
-        
+        }             
+
         for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
         {
             ClientProxy* proxy = iter->second;
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
-        }       
+        }        
+    }   
+
+    WarehouseManager::GetInstance().Update();
+
+    TaskScheduler::GetInstance().UpdateSchedule(m_TotalElapsedServerTime);
+
+    TrafficControlManager::GetInstance().ValidateReservation();
+    
+    std::vector<Conflict> conflicts = TrafficControlManager::GetInstance().GetConflicts();
+
+    for(int i=0;i<conflicts.size();i++)
+    {
+        uint32_t loserAGV=TrafficControlManager::GetInstance().GetLoserAGVofConflict(conflicts[i]);
+        ReplanPath(loserAGV);
     }
+
     m_TotalElapsedServerTime+=_deltaTime;
-    std::cout<<m_TotalElapsedServerTime<<std::endl;
 }
 
 void NetworkManagerServer::ReplanPath(uint32_t _agvID)
