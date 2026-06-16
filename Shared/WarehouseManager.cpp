@@ -23,8 +23,8 @@ static bool ac=false;
 void WarehouseManager::Update()
 {       
             
-    if(wh==nullptr)
-        return;    
+    
+    return;    
 
     
 }

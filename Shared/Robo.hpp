@@ -37,6 +37,7 @@ public:
     virtual ~Robo()override{}    
     virtual uint32_t GetClassID()override{return m_ClassID;}
 private:
+    MapNode m_HomeNode;
     MapNode m_FromNode;
     MapNode m_ToNode;    
     float m_Speed;
@@ -51,6 +52,8 @@ private:
     TaskState m_TaskState=TaskState::IDLE;
     Task m_CurrentTask;
 public:
+    void SetHomeNode(uint32_t _node){m_HomeNode=MapManager::GetInstance().GetMapNode(_node);}
+    uint32_t GetHomeNode()const{return m_HomeNode.m_Id;}
     MapNode m_GoalNode;
     AstarPathFinder pathFinder;
     std::vector<uint32_t> m_FinalPathNodeIDs;     

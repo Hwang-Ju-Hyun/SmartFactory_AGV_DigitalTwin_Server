@@ -10,176 +10,88 @@ TaskScheduler::TaskScheduler()
 
 }
 
-void TaskScheduler::UpdateSchedule(float _serverTime)
+void TaskScheduler::AssignRoute(uint32_t _agvID,uint32_t _targetNodeID,uint32_t _serverTime,AGVState _nextState)
 {    
-    //UpdateLoadSchedule(_serverTime);
-    UpdateUnLoadSchedule(_serverTime);
-}
+    std::vector<ObjectPtr> objs = AGVManager::GetInstance().m_AGVs;
+    Robo* agv=nullptr;    
 
-void TaskScheduler::UpdateUnLoadSchedule(float _serverTime)
-{
-    return;
-    while(!m_TaskQueue.empty())
+    for(int i=0;i<objs.size();i++)
     {
-        Task currentTask = m_TaskQueue.front();        
-        Robo* agv = FindBestAGVforTask(currentTask,AGVState::LOADING);                
-
-        if(agv==nullptr)
-            break;
-        
-        AstarPathFinder apf;    
-        
-        uint32_t curNodeIDAgv= agv->GetCurrentNode().m_Id;
-        
-        std::vector<uint32_t> path=apf.FindPath(
-                                        curNodeIDAgv,
-                                        currentTask.m_UnloadNodeID,
-                                        MapManager::GetInstance().GetNodes(),
-                                        MapManager::GetInstance().GetLinks(),
-                                        agv->GetNetworkID(),
-                                        _serverTime);
-        if(agv->GetNetworkID()!=4)
-            int a=0;
-        agv->AssignTask(currentTask);
-        agv->SetTaskState(TaskState::ASSIGNED);
-        agv->SetNewTargetRoute(path);
-        agv->SetGoalNode(currentTask.m_UnloadNodeID);
-        agv->ReserveTimeLine(path,_serverTime);        
-
-        m_TaskQueue.pop();
-    }        
-}
-
-void TaskScheduler::UpdateLoadSchedule(float _serverTime)
-{
-    while(!m_TaskQueue.empty())
-    {
-        Task currentTask = m_TaskQueue.front();        
-        Robo* agv = FindBestAGVforTask(currentTask,AGVState::MOVE_TO_PICKUP);
-        
-        if(agv==nullptr)
-            break;
-        
-        AstarPathFinder apf;    
-        
-        uint32_t curNodeIDAgv= agv->GetCurrentNode().m_Id;
-        
-        std::vector<uint32_t> path=apf.FindPath(
-                                        curNodeIDAgv,
-                                        currentTask.m_LoadNodeID,
-                                        MapManager::GetInstance().GetNodes(),
-                                        MapManager::GetInstance().GetLinks(),
-                                        agv->GetNetworkID(),
-                                        _serverTime);
-        
-        agv->AssignTask(currentTask);
-        agv->SetTaskState(TaskState::ASSIGNED);
-        agv->SetNewTargetRoute(path);
-        agv->SetGoalNode(currentTask.m_LoadNodeID);
-        agv->ReserveTimeLine(path,_serverTime);
-        agv->ChangeState(AGVState::MOVE_TO_PICKUP);
-
-        m_TaskQueue.pop();
-    }      
-}
-
-uint32_t TaskScheduler::FindBestNode(Task _task,AGVState _agvCurState,float _serverTime,uint32_t _agvID)
-{
-    if(_agvCurState==AGVState::MOVE_TO_DROP)
-    {
-        uint32_t dispatchNodes[5]  = { 46,  47,  48,  49,  50};        
-        uint32_t bestNodeID=dispatchNodes[0];
-
-        for(int i=0;i<5;i++)
+        if(objs[i]->GetNetworkID()==_agvID)
         {
-            uint32_t candidateNodeID=dispatchNodes[i];
-            bool avaliable=TrafficControlManager::GetInstance().IsTimeWindowAvailable(candidateNodeID,_serverTime,_serverTime+3.f,_agvID);
-            
-            if(avaliable)
-            {
-                bestNodeID=candidateNodeID;
-            }
-            return bestNodeID;
-        }        
+            agv=dynamic_cast<Robo*>(objs[i].get());            
+            break;
+        }           
     }
-    return -1;
+    
+    if(agv==nullptr)
+        return;
+
+    TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+
+    AstarPathFinder apf;
+    std::vector<uint32_t> path = apf.FindPath(
+                                        agv->GetCurrentNode().m_Id,
+                                        _targetNodeID,
+                                        MapManager::GetInstance().GetNodes(),
+                                        MapManager::GetInstance().GetLinks(),
+                                        _agvID,_serverTime);
+    
+    if(!path.empty())
+    {
+        agv->SetNewTargetRoute(path);
+        agv->SetGoalNode(_targetNodeID);
+        agv->ReserveTimeLine(path, _serverTime);
+        agv->ChangeState(_nextState); // (MOVE_TO_PICKUP or MOVE_TO_DROP or MOVE_TO_HOME)
+    }
+    else
+    {
+        std::cout << "[스케줄러] 경로 탐색 실패 AGV: " << _agvID << " ➔ Target: " << _targetNodeID << std::endl;
+    }
 }
 
-Robo* TaskScheduler::FindBestAGVforTask(Task _currentTask,AGVState _agvState)
-{   
-    std::vector<ObjectPtr> agvs = AGVManager::GetInstance().m_AGVs;    
-    
-    MapNode loadNode = MapManager::GetInstance().GetMapNode(_currentTask.m_UnloadNodeID);
-    
-    Robo* result=nullptr;
-    float mini_cost=1e9;
-    
-    for(int i=0;i<agvs.size();i++)
+void TaskScheduler::Update(float _deltaTime, float _serverTime)
+{
+    for(auto iter=m_PendingReplans.begin(); iter< m_PendingReplans.end();)
     {
-        Robo* agv =dynamic_cast<Robo*>(agvs[i].get());
-        if(agv->GetState()==_agvState && agv->GetTaskState()==TaskState::COMPLETED)
-        {            
-            float dist = std::sqrt(std::pow(agv->GetPosX()- loadNode.m_PosX,2)+std::pow(agv->GetPosZ()-loadNode.m_PosZ,2));        
-            if(dist<mini_cost)
-            {
-                mini_cost=dist;
-                result=agv;
-            }
+        iter->retryTimer-=_deltaTime;
+
+        if(iter->retryTimer<=0.f)
+        {
+            uint32_t retryAgvID = iter->agvID;
+            iter = m_PendingReplans.erase(iter);
+            Robo* agv =AGVManager::GetInstance().FindAGV(retryAgvID);
+            ReplanPath(retryAgvID,_serverTime,iter->state);
+        }
+        else
+        {
+            iter++;
         }
     }
+}
 
-    if(result!=nullptr)
+void TaskScheduler::ReplanPath(uint32_t _agvID, float _serverTime,AGVState _nextState)
+{
+    TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+    Robo* agv = AGVManager::GetInstance().FindAGV(_agvID);    
+
+    MapNode curNode = agv->GetCurrentNode();
+    MapNode goalNode = agv->GetGoalNode();
+
+    AstarPathFinder apf;
+    std::vector<uint32_t> path = apf.FindPath(curNode.m_Id, goalNode.m_Id, MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(), _agvID, _serverTime);
+    
+    if(!path.empty())
     {
-        result->SetTaskState(TaskState::ASSIGNED);
-        result->ChangeState(AGVState::MOVE_TO_DROP);
-    }        
-
-    return result;
-}
-
-void TaskScheduler::AssignUnLoadRoute(float _serverTime,Robo* _agv)
-{
-    TrafficControlManager::GetInstance().ClearAgvReservations(_agv->GetNetworkID());
-    TrafficControlManager::GetInstance().ClearLinkReservations(_agv->GetNetworkID());
-    uint32_t dispatchNodeID = FindBestDispatchNode(_serverTime,_agv->GetNetworkID());
-
-    AstarPathFinder apf;    
-       
-    std::vector<uint32_t> path=apf.FindPath(
-                                        _agv->GetCurrentNode().m_Id,
-                                        dispatchNodeID,
-                                        MapManager::GetInstance().GetNodes(),
-                                        MapManager::GetInstance().GetLinks(),
-                                        _agv->GetNetworkID(),
-                                        _serverTime);       
-        if (path.empty())
-        {
-            std::cout << "[FMS]  경고: AGV " << _agv->GetNetworkID() 
-                  << "번이 " << _agv->GetCurrentNode().m_Id << "번 노드에서 최종 하역장 " << dispatchNodeID 
-                  << "번으로 가는 후반전 시공간 경로 개척에 실패했습니다!" << std::endl;
-            return;
-        }
-        _agv->SetTaskState(TaskState::ASSIGNED);
-        _agv->SetNewTargetRoute(path);
-        _agv->SetGoalNode(dispatchNodeID);
-        _agv->ReserveTimeLine(path,_serverTime);        
-}
-static int as=0;
-uint32_t TaskScheduler::FindBestDispatchNode(float _serverTime,uint32_t _agvID)
-{
-    uint32_t dispatchNodes[5]  = {  46,  47,  48,  49,  50};
-    uint32_t candidateNodeID=dispatchNodes[as];
-    as++;
-    return  candidateNodeID;
-
-    bool avaliable=false;
-    for(int i=0;i<5;i++)
-    { 
-        candidateNodeID=dispatchNodes[i];
-        if(TrafficControlManager::GetInstance().IsTimeWindowAvailable(candidateNodeID,_serverTime,_serverTime+3.f,_agvID))
-        {
-            return candidateNodeID;
-        }
-    }      
-    return -1;
+        agv->SetNewTargetRoute(path);
+        agv->ReserveTimeLine(path, _serverTime);
+        agv->ChangeState(_nextState); 
+    }
+    else
+    {                
+        TrafficControlManager::GetInstance().ReserveNode(curNode.m_Id, _serverTime, _serverTime + 5.0f, _agvID);        
+        agv->ChangeState(AGVState::WAITING);
+        
+        m_PendingReplans.push_back({_agvID, 1.5f,_nextState});
+    }
 }

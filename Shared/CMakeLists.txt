@@ -17,6 +17,9 @@ add_library(Shared STATIC
     TaskScheduler.cpp
     AGVManager.cpp
     WarehouseManager.cpp
+    Event.cpp
+    DispatchManager.cpp
+    TaskManager.cpp
 )
 
 target_include_directories(Shared PUBLIC

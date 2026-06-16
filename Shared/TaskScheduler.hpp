@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <queue>
+#include <vector>
 
 class Robo;
 enum class AGVState;
@@ -13,10 +14,18 @@ struct Task
     uint32_t   m_UnloadNodeID; // 자재를 내리는 노드 (목적지)
 };
 
+struct PendingReplan 
+{
+    uint32_t agvID;
+    float retryTimer;
+    AGVState state;
+};
+
 class TaskScheduler
 {
 private:
     TaskScheduler();
+    std::vector<PendingReplan> m_PendingReplans;
 public:
     static TaskScheduler& GetInstance()
     {
@@ -24,18 +33,9 @@ public:
         return instance;
     }
 private:
-    std::queue<Task> m_TaskQueue;    
-    Robo* FindBestAGVforTask(Task _currentTask,AGVState _agvState);
+    std::queue<Task> m_TaskQueue;            
 public:
-    void AssignTask(Robo* _robo);
-    void UpdateSchedule(float _serverTime);
-    void UpdateLoadSchedule(float _serverTime);
-    void UpdateUnLoadSchedule(float _serverTime);
-    void PushTaks(Task _task){m_TaskQueue.push(_task);}      
-    uint32_t FindBestNode(Task _task,AGVState _agvCurState,float _serverTime,uint32_t _agvID);
-
-
-public:
-    void AssignUnLoadRoute(float _serverTime,Robo* _agv);
-    uint32_t FindBestDispatchNode(float _serverTime,uint32_t _agvID);
+    void Update(float _deltaTime, float _serverTime);
+    void AssignRoute(uint32_t _agvID,uint32_t _targetNodeID,uint32_t _serverTime,AGVState _nextState);
+    void ReplanPath(uint32_t _agvID, float _serverTime,AGVState _nextState);
 };

@@ -65,8 +65,9 @@ void TrafficControlManager::ClearAgvReservations(uint32_t _agvID)
 void TrafficControlManager::ValidateReservation()
 {    
     m_Conflicts.clear();
-    for(auto r:m_ReservationTable)
+    for(auto& r:m_ReservationTable)
     {        
+        //auto a = m_ReservationTable;
         uint32_t nodeID=r.first;
         std::vector<NodeReservation>& reservation_node=r.second;
         //시간 순 오름차순
@@ -125,11 +126,7 @@ void TrafficControlManager::ReserveLink(uint32_t _from, uint32_t _to, float _sta
 }
 
 bool TrafficControlManager::IsLinkAvailable(uint32_t _from, uint32_t _to, float _start, float _end, uint32_t _agvID)
-{
-    if(_from==6&&_to==17&&_agvID==6)
-    {
-        int a=0;
-    }
+{    
     for(const auto& edge:m_LinkReservations)
     {
         // [정면충돌 저격]        

@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "Object.hpp"
+#include "Robo.hpp"
 
 class AGVManager
 {
@@ -14,4 +15,5 @@ public:
     }
 public:
     std::vector<ObjectPtr> m_AGVs;    
+    Robo* FindAGV(uint32_t _agvID);
 };

@@ -14,6 +14,8 @@
 #include "AGVManager.hpp"
 #include "TaskScheduler.hpp"
 #include "WarehouseManager.hpp"
+#include "TaskManager.hpp"
+
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -162,19 +164,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 { 
     StartSimulation();
 }
-//uint32_t targetNodes2[8] = { 15,    23,   46,   43, 41,17,39,47};
-//uint32_t targetNodes2[5] = { 15,    23,   46,   43, 41};
+
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
     int spawnCount=5;
     ObjectPtr mainRobo=nullptr;
 
-    // uint32_t startNodes[15]  = { 11,   5,   2,   9,   21,   6,    12,   15,   43, 47, 22, 46,50,13,48};
-    // uint32_t targetNodes[15] = { 7,    1,   49,   10,   4,   23,   24,   16,   17, 45, 42, 43,41,39,44};        
+    TaskManager::GetInsance();
 
-    //uint32_t startNodes[8]  = { 11,   5,   2,   9 ,21,   6,     13,   15};
-    //uint32_t targetNodes[8] = { 7,    1,   49,   10, 4,   23,   32,   16};
-     
     uint32_t initNodes[5]      = { 1,   3,   5,   7,    9};
     uint32_t storeNodes[5]     = { 41,  42,  43,  44,   45};
     uint32_t dispatchNodes[5]  = { 1,  3,  5,  6,  8};
@@ -203,7 +200,9 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
             agv->SetGoalNode(storeNodes[i]);
             agv->SetNewTargetRoute(path);
             agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
-            agv->ChangeState(AGVState::MOVE_TO_PICKUP);                  
+            agv->ChangeState(AGVState::MOVE_TO_PICKUP);      
+            agv->SetHomeNode(initNodes[i]);
+
             //auto path = agv->GetFinalPathNodeIDs();
             if (!path.empty())
             {
@@ -259,7 +258,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         }        
     }   
 
-    WarehouseManager::GetInstance().Update();
+    //WarehouseManager::GetInstance().Update();
 
     //TaskScheduler::GetInstance().UpdateSchedule(m_TotalElapsedServerTime);
 
@@ -269,10 +268,14 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
 
     for(int i=0;i<conflicts.size();i++)
     {
+        std::cout<<"충돌 발생"<<std::endl;
         uint32_t loserAGV=TrafficControlManager::GetInstance().GetLoserAGVofConflict(conflicts[i]);
-        ReplanPath(loserAGV);
+        Robo* agv = AGVManager::GetInstance().FindAGV(loserAGV);
+        TaskScheduler::GetInstance().ReplanPath(loserAGV,m_TotalElapsedServerTime,agv->GetState());
     }
 
+
+    TaskScheduler::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
     m_TotalElapsedServerTime+=_deltaTime;
 }
 
@@ -289,9 +292,24 @@ void NetworkManagerServer::ReplanPath(uint32_t _agvID)
     
     std::vector<uint32_t> path = apf.FindPath(curNode.m_Id,goalNode.m_Id,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks(),_agvID,m_TotalElapsedServerTime);    
     
-    agv->SetNewTargetRoute(path);
+    if(!path.empty())
+    {
+        agv->SetNewTargetRoute(path);
 
-    agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
+        agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
+    }
+    else
+    {
+        std::cout << "[스케줄러] 트래픽 체증 감지! AGV " << _agvID 
+                  << "번 경로 탐색 실패. 1.5초 뒤 재시도 큐에 등록합니다." << std::endl;
+                
+        // (현재 시간부터 넉넉하게 5초 동안 점유)
+        TrafficControlManager::GetInstance().ReserveNode(curNode.m_Id, m_TotalElapsedServerTime, m_TotalElapsedServerTime+ 5.0f, _agvID);                       
+
+        // 로봇 상태는 WAITING(대기)으로 묶어둠
+        agv->ChangeState(AGVState::WAITING);
+    }
+    
 }
 
 void NetworkManagerServer::RequestReplan(uint32_t _agvID)

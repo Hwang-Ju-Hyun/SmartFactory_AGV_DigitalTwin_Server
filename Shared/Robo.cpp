@@ -1,6 +1,7 @@
 #include "Robo.hpp"
 #include "header.hpp"
 #include <iostream>
+#include "Event.hpp"
 const float WaitTime=3.f;
 Robo::Robo()
 {
@@ -64,8 +65,14 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     switch (m_State)
     {        
     case AGVState::IDLE:        
-        break;
-    case AGVState::MOVING:    
+    {
+        RobotEvent event;
+        event.agvID=GetNetworkID();
+        event.timestamp=_serverTime;
+        event.type=RobotEventType::IDLE_READY;
+        EventManager::GetInstance().Publish(event);
+    }
+    break;    
     case AGVState::MOVE_TO_PICKUP:    
     {   
         m_TaskState =TaskState::IN_PROGRESS;
@@ -87,14 +94,16 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_TaskState=TaskState::COMPLETED;
             m_Progress = 1.f;
-            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
             
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
-            {
-                m_State=AGVState::LOADING;
+            {                                
                 m_CurrentPathIndex=0;
                 m_AccStayTime = 0.f;
+
+                m_State=AGVState::LOADING;
+                
             }
             else
             {
@@ -128,17 +137,16 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_Progress = 1.f;
             // 내가 지나온 옛날 노드 장부 반납
-            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
-            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());            
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
 
             // 현재 도달한 노드가 최종 경로의 맨 마지막 노드(즉, 하역장 정중앙)인지 체크합니다.
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
-            {                
-                // 하차(물건 내리기) 작업을 위해 STAYING 상태로 전환하고 타이머 리셋
-                m_State = AGVState::UNLOADING;
+            {                                                
                 m_CurrentPathIndex=0;
                 m_AccStayTime = 0.f;
+
+                m_State=AGVState::UNLOADING;
             }
             else
             {
@@ -151,6 +159,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     break;
     case AGVState::MOVE_TO_HOME:
     {
+        m_TaskState =TaskState::IN_PROGRESS;
+
         // 주행 물리 연산은 완벽하게 동일합니다.
         float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
         m_Progress += (m_Speed / dist) * _deltaTime;
@@ -169,14 +179,13 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_Progress = 1.f;
             // 내가 지나온 옛날 노드 장부 반납
-            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
-            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());            
             // 현재 도달한 노드가 최종 경로의 맨 마지막 노드(즉, 하역장 정중앙)인지 체크합니다.
-            if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 1)
+            if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
             {                
                 // 하차(물건 내리기) 작업을 위해 STAYING 상태로 전환하고 타이머 리셋
-                m_State = AGVState::STAYING;
+                m_State = AGVState::ARRIVED;
                 m_AccStayTime = 0.f;
             }
             else
@@ -243,8 +252,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
             {
                 TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-                //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
-                TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
+                TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());                
                 m_State=AGVState::ARRIVED;
             }
             else
@@ -258,8 +266,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     {
         m_TaskState=TaskState::IN_PROGRESS;
         m_AccStayTime += _deltaTime;        
-        auto a= m_posX;
-        auto b = m_posZ;
+
         m_Progress = 1.00001f; 
 
         if(m_AccStayTime > m_StayTime)
@@ -269,23 +276,28 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             
             std::cout << "[AGV " << GetNetworkID() << "] 물건 가져옴 이제 갔다 버리러 가자." << std::endl;
 
-            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
-            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
+            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());            
+            TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
          
             //m_State = AGVState::MOVE_TO_DROP;
             m_TaskState=TaskState::COMPLETED;
 
-            TaskScheduler::GetInstance().AssignUnLoadRoute(_serverTime,this);
+            
+        
+                RobotEvent re;
+                re.agvID=GetNetworkID();
+                re.type=RobotEventType::PICKUP_COMPLETED;
+                re.timestamp=_serverTime;
+                EventManager::GetInstance().Publish(re);
+             
+            
             m_CurrentPathIndex = 0;
         }
     }
     break;
     case AGVState::UNLOADING:
     {
-        m_AccStayTime += _deltaTime;        
-        m_posX = toNode.m_PosX;
-        m_posZ = toNode.m_PosZ;
+        m_AccStayTime += _deltaTime;                
         m_Progress = 1.00001f; 
 
         if(m_AccStayTime > m_StayTime)
@@ -297,16 +309,21 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
                 
             m_CurrentPathIndex = 0;
 
-            m_State = AGVState::MOVE_TO_HOME;
+             RobotEvent re;
+                re.agvID=GetNetworkID();
+                re.type=RobotEventType::DROP_COMPLETED;
+                re.timestamp=_serverTime;
+                EventManager::GetInstance().Publish(re);
+
+            
         }
     }
     break;
     case AGVState::ARRIVED:
     {
-        m_State=AGVState::MOVING;                
-        m_TaskState=TaskState::COMPLETED;
+        return;
     }        
-        break;
+    break;
     default:
         break;
     }
@@ -319,14 +336,11 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode,float _serverT
     TrafficControlManager::GetInstance().ClearAgvReservations(this-> GetNetworkID());
 
     float accTime=_serverTime;
-    float speed=m_Speed;
-    float stayTime=m_StayTime; 
+    float speed=m_Speed;    
 
     // 출발 노드 예약
     uint32_t startNodeID = _pathNode[0];
-    TrafficControlManager::GetInstance().ReserveNode(startNodeID, accTime, stayTime, this->GetNetworkID());
-    
-    accTime += stayTime;
+    TrafficControlManager::GetInstance().ReserveNode(startNodeID, accTime, accTime + 0.001f, this->GetNetworkID());        
 
     for(int i=0;i<_pathNode.size()-1;i++)
     {
@@ -355,14 +369,18 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode,float _serverT
         TrafficControlManager::GetInstance().ReserveLink(fromNode.m_Id,toNode.m_Id,linkEnterTime,linkLeaveTime,GetNetworkID());
         
         float nodeEnterTime = linkLeaveTime;
-        float nodeLeaveTime = nodeEnterTime+stayTime;
- 
-        if(i+1==_pathNode.size()-1)        
-            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, 99999.f, GetNetworkID());            
-        else
-            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, nodeLeaveTime, GetNetworkID());
+        float nodeLeaveTime = nodeEnterTime;
 
-        accTime=nodeLeaveTime;
+        if(i + 1 == _pathNode.size() - 1) 
+        {         
+            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, nodeEnterTime + 3.f, GetNetworkID());            
+        }
+        else 
+        {         
+            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, nodeEnterTime + 0.1f, GetNetworkID());
+        }        
+
+        accTime=nodeEnterTime;
     }    
 }
 
