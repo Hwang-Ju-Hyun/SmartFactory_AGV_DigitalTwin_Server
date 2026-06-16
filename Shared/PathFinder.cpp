@@ -33,12 +33,12 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
     startAstarNode->g=0.f;            
     startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
     startAstarNode->f=startAstarNode->g+startAstarNode->h;
-    startAstarNode->parentNode=0;
+    startAstarNode->parentNode=nullptr;
     startAstarNode->accumulatedTime=_startTime;
 
     openList.push(startAstarNode);
     
-    int startSlot = static_cast<int>(_startTime);
+    int startSlot = static_cast<int>(_startTime*10.f);
 
     std::string startStateKey=std::to_string(_startNodeID)+"_"+std::to_string(startSlot);    
 
@@ -59,7 +59,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
         std::string currentStateKey=std::to_string(currentNodeID)+"_"+std::to_string(currentTimeSlot);
         closedList[currentStateKey]=currentNode;        
 
-        if(currentNodeID==_endNodeID)
+        if(currentNodeID == _endNodeID)
         {
             IsFound=true;
             endNode=currentNode;
@@ -70,7 +70,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
         {
             float expectedEnterTime = currentNode->accumulatedTime;
             float expectedLeaveTime = expectedEnterTime + WaitTime;
-            int nextTimeSlot=static_cast<int>(expectedLeaveTime);
+            int nextTimeSlot=static_cast<int>(expectedLeaveTime*10.f);
 
             if(currentNodeID!=_startNodeID)
             {
@@ -99,8 +99,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
                     }
                     }
                 }
-            }
-            
+            }            
         }
 
         for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
@@ -119,7 +118,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float expectedEnterTime = actualLinkEndTime; 
             float expectedLeaveTime = expectedEnterTime + stayTime;
             
-            int nextTimeSlot = static_cast<int>(expectedLeaveTime);
+            int nextTimeSlot = static_cast<int>(expectedLeaveTime*10.f);
 
             std::string adjacencyNodeState=std::to_string(adjacencyNodeID)+"_"+std::to_string(nextTimeSlot);
                         
@@ -138,7 +137,8 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             if(!TrafficControlManager::GetInstance().IsTimeWindowAvailable(adjacencyNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
             {
                 continue;
-            }                        
+            }
+
             //링크(엣지)검사
             if(!TrafficControlManager::GetInstance().IsLinkAvailable(currentNodeID,adjacencyNodeID,actualLinkStartTime,actualLinkEndTime,_avgID))
             {
@@ -148,7 +148,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float tentativeGn=currentNode->g + linkLength;            
             bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeState)!=openRegistryList.end()? true:false;                        
                         
-            std::shared_ptr<AStarNode> adjacencyNode = isAlreadyInOpenList ? openRegistryList[adjacencyNodeState] : std::make_shared<AStarNode>(adjacencyNodeID);                        
+            std::shared_ptr<AStarNode> adjacencyNode = isAlreadyInOpenList ? openRegistryList[adjacencyNodeState] : std::make_shared<AStarNode>(adjacencyNodeID);
 
 
             //첨봤거나 더 다른 괜찮은(더 짧은) 노드가 있다면

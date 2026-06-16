@@ -87,7 +87,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_TaskState=TaskState::COMPLETED;
             m_Progress = 1.f;
-            TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
+            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
             
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
             {
@@ -127,10 +128,12 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_Progress = 1.f;
             // 내가 지나온 옛날 노드 장부 반납
-            TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
+            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
+            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
 
             // 현재 도달한 노드가 최종 경로의 맨 마지막 노드(즉, 하역장 정중앙)인지 체크합니다.
-            if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 1)
+            if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
             {                
                 // 하차(물건 내리기) 작업을 위해 STAYING 상태로 전환하고 타이머 리셋
                 m_State = AGVState::UNLOADING;
@@ -166,8 +169,9 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         {
             m_Progress = 1.f;
             // 내가 지나온 옛날 노드 장부 반납
-            TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
-
+            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
+            TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
             // 현재 도달한 노드가 최종 경로의 맨 마지막 노드(즉, 하역장 정중앙)인지 체크합니다.
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 1)
             {                
@@ -238,7 +242,9 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
 
             if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
             {
-                TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
+                TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+                //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
+                TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
                 m_State=AGVState::ARRIVED;
             }
             else
@@ -263,6 +269,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             
             std::cout << "[AGV " << GetNetworkID() << "] 물건 가져옴 이제 갔다 버리러 가자." << std::endl;
 
+            TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
+            //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
             TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
          
             m_State = AGVState::MOVE_TO_DROP;
@@ -284,11 +292,11 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             m_Progress = 0.f;
             m_AccStayTime = 0.f;
 
-            std::cout << "[AGV " << GetNetworkID() << "] 부품 상차 완료 ➔ 하역장(DROP)으로 후반전 출발!" << std::endl;                                    
+            std::cout << "[AGV " << GetNetworkID() << "] 부품 상차 완료 이제 집에가자" << std::endl;                                    
                 
             m_CurrentPathIndex = 0;
 
-            m_State = AGVState::ARRIVED;
+            m_State = AGVState::MOVE_TO_HOME;
         }
     }
     break;

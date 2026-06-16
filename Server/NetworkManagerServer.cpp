@@ -175,9 +175,9 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
     //uint32_t startNodes[8]  = { 11,   5,   2,   9 ,21,   6,     13,   15};
     //uint32_t targetNodes[8] = { 7,    1,   49,   10, 4,   23,   32,   16};
      
-    uint32_t initNodes[5]      = { 1,   3,   6,   7,    9};
-    uint32_t storeNodes[5]     = { 21,  42,  13,  29,  16};
-    uint32_t dispatchNodes[5]  = { 46,  47,  48,  49,  50};
+    uint32_t initNodes[5]      = { 1,   3,   5,   7,    9};
+    uint32_t storeNodes[5]     = { 41,  42,  43,  44,   45};
+    uint32_t dispatchNodes[5]  = { 1,  3,  5,  6,  8};
 
 
     std::vector<Robo*> Robos;
@@ -196,14 +196,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         {            
             TrafficControlManager::GetInstance().ClearAgvReservations(agv->GetNetworkID());
             TrafficControlManager::GetInstance().ClearLinkReservations(agv->GetNetworkID());
-            AstarPathFinder pathFinder;
-
-            Task t;
-            t.m_LoadNodeID=storeNodes[i];
-            t.m_UnloadNodeID=dispatchNodes[i];
-            t.m_backHomeNodeID=initNodes[i];
-
-            //TaskScheduler::GetInstance().PushTaks(t);
+            AstarPathFinder pathFinder;        
 
             const std::vector<uint32_t> path = pathFinder.FindPath(initNodes[i], storeNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID(),m_TotalElapsedServerTime);
             
@@ -268,7 +261,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
 
     WarehouseManager::GetInstance().Update();
 
-    TaskScheduler::GetInstance().UpdateSchedule(m_TotalElapsedServerTime);
+    //TaskScheduler::GetInstance().UpdateSchedule(m_TotalElapsedServerTime);
 
     TrafficControlManager::GetInstance().ValidateReservation();
     

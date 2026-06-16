@@ -87,7 +87,7 @@ uint32_t TaskScheduler::FindBestNode(Task _task,AGVState _agvCurState,float _ser
 {
     if(_agvCurState==AGVState::MOVE_TO_DROP)
     {
-        uint32_t dispatchNodes[5]  = { 46,  47,  48,  35,  36};        
+        uint32_t dispatchNodes[5]  = { 46,  47,  48,  49,  50};        
         uint32_t bestNodeID=dispatchNodes[0];
 
         for(int i=0;i<5;i++)
@@ -134,8 +134,10 @@ Robo* TaskScheduler::FindBestAGVforTask(Task _currentTask,AGVState _agvState)
 
 void TaskScheduler::AssignUnLoadRoute(float _serverTime,Robo* _agv)
 {
+    TrafficControlManager::GetInstance().ClearAgvReservations(_agv->GetNetworkID());
+    TrafficControlManager::GetInstance().ClearLinkReservations(_agv->GetNetworkID());
     uint32_t dispatchNodeID = FindBestDispatchNode(_serverTime,_agv->GetNetworkID());
-    
+
     AstarPathFinder apf;    
        
     std::vector<uint32_t> path=apf.FindPath(
@@ -145,17 +147,25 @@ void TaskScheduler::AssignUnLoadRoute(float _serverTime,Robo* _agv)
                                         MapManager::GetInstance().GetLinks(),
                                         _agv->GetNetworkID(),
                                         _serverTime);       
-
+        if (path.empty())
+        {
+            std::cout << "[FMS]  경고: AGV " << _agv->GetNetworkID() 
+                  << "번이 " << _agv->GetCurrentNode().m_Id << "번 노드에서 최종 하역장 " << dispatchNodeID 
+                  << "번으로 가는 후반전 시공간 경로 개척에 실패했습니다!" << std::endl;
+            return;
+        }
         _agv->SetTaskState(TaskState::ASSIGNED);
         _agv->SetNewTargetRoute(path);
         _agv->SetGoalNode(dispatchNodeID);
         _agv->ReserveTimeLine(path,_serverTime);        
 }
-
+static int as=0;
 uint32_t TaskScheduler::FindBestDispatchNode(float _serverTime,uint32_t _agvID)
 {
-    uint32_t dispatchNodes[5]  = {  46,  47,  48,  35,  36};
-    uint32_t candidateNodeID=dispatchNodes[0];
+    uint32_t dispatchNodes[5]  = {  46,  47,  48,  49,  50};
+    uint32_t candidateNodeID=dispatchNodes[as];
+    as++;
+    return  candidateNodeID;
     bool avaliable=false;
     for(int i=0;i<5;i++)
     { 
