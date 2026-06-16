@@ -22,7 +22,7 @@ void TaskScheduler::UpdateUnLoadSchedule(float _serverTime)
     while(!m_TaskQueue.empty())
     {
         Task currentTask = m_TaskQueue.front();        
-        Robo* agv = FindBestAGVforTask(currentTask,AGVState::MOVE_TO_DROP);                
+        Robo* agv = FindBestAGVforTask(currentTask,AGVState::LOADING);                
 
         if(agv==nullptr)
             break;
@@ -106,7 +106,7 @@ uint32_t TaskScheduler::FindBestNode(Task _task,AGVState _agvCurState,float _ser
 }
 
 Robo* TaskScheduler::FindBestAGVforTask(Task _currentTask,AGVState _agvState)
-{            
+{   
     std::vector<ObjectPtr> agvs = AGVManager::GetInstance().m_AGVs;    
     
     MapNode loadNode = MapManager::GetInstance().GetMapNode(_currentTask.m_UnloadNodeID);
@@ -117,18 +117,23 @@ Robo* TaskScheduler::FindBestAGVforTask(Task _currentTask,AGVState _agvState)
     for(int i=0;i<agvs.size();i++)
     {
         Robo* agv =dynamic_cast<Robo*>(agvs[i].get());
-        if(agv->GetState()!=_agvState)
-        {
-            continue;
-        }        
-
-        float dist = std::sqrt(std::pow(agv->GetPosX()- loadNode.m_PosX,2)+std::pow(agv->GetPosZ()-loadNode.m_PosZ,2));        
-        if(dist<mini_cost)
-        {
-            mini_cost=dist;
-            result=agv;
+        if(agv->GetState()==_agvState && agv->GetTaskState()==TaskState::COMPLETED)
+        {            
+            float dist = std::sqrt(std::pow(agv->GetPosX()- loadNode.m_PosX,2)+std::pow(agv->GetPosZ()-loadNode.m_PosZ,2));        
+            if(dist<mini_cost)
+            {
+                mini_cost=dist;
+                result=agv;
+            }
         }
     }
+
+    if(result!=nullptr)
+    {
+        result->SetTaskState(TaskState::ASSIGNED);
+        result->ChangeState(AGVState::MOVE_TO_DROP);
+    }        
+
     return result;
 }
 
@@ -166,6 +171,7 @@ uint32_t TaskScheduler::FindBestDispatchNode(float _serverTime,uint32_t _agvID)
     uint32_t candidateNodeID=dispatchNodes[as];
     as++;
     return  candidateNodeID;
+
     bool avaliable=false;
     for(int i=0;i<5;i++)
     { 

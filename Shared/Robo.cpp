@@ -273,7 +273,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID, GetNetworkID());
             TrafficControlManager::GetInstance().ClearAgvReservations(GetNetworkID());
          
-            m_State = AGVState::MOVE_TO_DROP;
+            //m_State = AGVState::MOVE_TO_DROP;
+            m_TaskState=TaskState::COMPLETED;
 
             TaskScheduler::GetInstance().AssignUnLoadRoute(_serverTime,this);
             m_CurrentPathIndex = 0;
