@@ -9,7 +9,8 @@ enum class RobotEventType
 {
     IDLE_READY,         // 대기소 도착 후 완전히 쉬고 있음 (새 임무 받을 준비 완료)
     PICKUP_COMPLETED,   // 상차(Load) 완료
-    DROP_COMPLETED      // 하차(Unload) 완료
+    DROP_COMPLETED,      // 하차(Unload) 완료
+    MOVING_WAITING_COMPLETED
 };
 
 struct RobotEvent 

@@ -7,7 +7,7 @@
 #include "TrafficControlManager.hpp"
 #include <iostream>
 
-const float WaitTime=3.f;
+const float WaitTime=1.f;
 const float speed=3.8f;
 const float stayTime=1.f;
 
@@ -71,35 +71,34 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             float expectedEnterTime = currentNode->accumulatedTime;
             float expectedLeaveTime = expectedEnterTime + WaitTime;
             int nextTimeSlot=static_cast<int>(expectedLeaveTime*10.f);
+            std::string waitState = std::to_string(currentNodeID) + "_" + std::to_string(nextTimeSlot);
 
-            if(currentNodeID!=_startNodeID)
+            if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID, expectedEnterTime, expectedLeaveTime, _avgID))
             {
-                if(TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
+                if (closedList.find(waitState) == closedList.end())
                 {
-                    std::string waitState = std::to_string(currentNodeID)+"_"+std::to_string(nextTimeSlot);
-
-                    if(closedList.find(waitState)==closedList.end())
-                    {
-                        float tentativeG= currentNode->g + WaitTime;
-                        bool isAlreadyInOpenList  = openRegistryList.find(waitState) != openRegistryList.end() ? true : false;
-                        std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList? openRegistryList.find(waitState)->second:std::make_shared<AStarNode>(currentNodeID);
-                        if(!isAlreadyInOpenList||tentativeG<waitNode->g)
-                        {
-                            waitNode->parentNode=currentNode;
-                            waitNode->h=currentNode->h;
-                            waitNode->g=tentativeG;
-                            waitNode->f=waitNode->h+waitNode->g;
-                            waitNode->accumulatedTime=expectedLeaveTime;
-                        }
+                    //대기 비용(g)은 1초 기다린 만큼 정직하게 1.0만 증가
+                    float tentativeG = currentNode->g + WaitTime; 
                     
-                    if(!isAlreadyInOpenList)
+                    bool isAlreadyInOpenList  = (openRegistryList.find(waitState) != openRegistryList.end());
+                    std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList ? openRegistryList[waitState] : std::make_shared<AStarNode>(currentNodeID);
+                    
+                    if (!isAlreadyInOpenList || tentativeG < waitNode->g)
                     {
-                        openList.push(waitNode);
-                        openRegistryList.insert({waitState,waitNode});
-                    }
+                        waitNode->parentNode = currentNode;
+                        waitNode->h = currentNode->h; // 제자리니까 목표까지 거리는 그대로
+                        waitNode->g = tentativeG;
+                        waitNode->f = waitNode->h + waitNode->g;
+                        waitNode->accumulatedTime = expectedLeaveTime;
+                        
+                        if (!isAlreadyInOpenList)
+                        {
+                            openList.push(waitNode);
+                            openRegistryList[waitState] = waitNode;
+                        }
                     }
                 }
-            }            
+            }       
         }
 
         for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
@@ -116,7 +115,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
 
 
             float expectedEnterTime = actualLinkEndTime; 
-            float expectedLeaveTime = expectedEnterTime ;
+            float expectedLeaveTime = expectedEnterTime+0.1f;
             
             int nextTimeSlot = static_cast<int>(expectedLeaveTime*10.f);
 

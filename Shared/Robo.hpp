@@ -6,29 +6,10 @@
 #include "TrafficControlManager.hpp"
 #include "TaskScheduler.hpp"
 
-enum class AGVState
-{
-    IDLE,
-    MOVING,
-    RETURNING,
-    STAYING,
-    WAITING,
-    ARRIVED,
+enum class AGVState { IDLE, MOVING, WAITING, LOADING, UNLOADING, ARRIVED };
+enum class MissionPurpose { NONE, PICKUP, DROP, HOME };
 
-    MOVE_TO_PICKUP,
-    MOVE_TO_DROP,
-    LOADING,
-    UNLOADING,
-    MOVE_TO_HOME
-};
-
-enum class TaskState
-{
-    IDLE,
-    ASSIGNED,
-    IN_PROGRESS,
-    COMPLETED
-};
+const float WaitTime=1.f;
 
 class Robo:public Object
 {       
@@ -41,17 +22,18 @@ private:
     MapNode m_FromNode;
     MapNode m_ToNode;    
     float m_Speed;
-    float m_Progress;    
-    float m_BackProgress;
+    float m_Progress;        
     float m_StayTime=1.f;
     float m_AccStayTime=0.f;
     float m_AccWaitTime=0.f;
     bool IsStayTime=false;
     
     AGVState m_State;
-    TaskState m_TaskState=TaskState::IDLE;
-    Task m_CurrentTask;
+    MissionPurpose m_Purpose; // 왜 달리고 있는지 (상차? 하차? 퇴근?)            
 public:
+    float GetSpeed()const{return m_Speed;}
+    float GetWaitTime()const{return WaitTime;}
+
     void SetHomeNode(uint32_t _node){m_HomeNode=MapManager::GetInstance().GetMapNode(_node);}
     uint32_t GetHomeNode()const{return m_HomeNode.m_Id;}
     MapNode m_GoalNode;
@@ -59,15 +41,13 @@ public:
     std::vector<uint32_t> m_FinalPathNodeIDs;     
     size_t m_CurrentPathIndex = 0;       // 현재 티켓의 몇 번째 정거장에 와있는지 (인덱스)       
     std::vector<uint32_t> GetFinalPathNodeIDs(){return m_FinalPathNodeIDs;}
-public:
-    void ReserveTimeLine(const std::vector<uint32_t>& _pathNode,float _serverTime=0.f);
+public:    
     void SetNewTargetRoute(const std::vector<uint32_t>& _newPath) 
     {
         m_FinalPathNodeIDs = _newPath;
         m_CurrentPathIndex = 0;
         m_Progress = 0.0f;             
-    }
-    void UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,MapNode>& _nodes,float _serverTime);    
+    }    
 
     MapNode GetCurrentNode();
     void SetCurrentIndex(uint32_t _idx){m_CurrentPathIndex=_idx;}
@@ -77,17 +57,24 @@ public:
     MapNode GetGoalNode(){return m_GoalNode;}
     void ChangeState(AGVState _state){m_State=_state;}
     float GetTimeSpentOnCurrentLink_FromNode();
-    float GetTimeSpendOnCurrentLink_ToNode();
-    AGVState GetState()const{return m_State;}
+    float GetTimeSpendOnCurrentLink_ToNode();    
 
     bool m_NeedReplan=false;    
 
     bool ComeBack2FromNodeInLink(float _deltaTime);
     bool isComeBackDone=false;
-
 public:
-    void AssignTask(Task _task){m_CurrentTask=_task;}
-    void SetTaskState(TaskState _state){m_TaskState=_state;}
-    Task GetCurrentTask()const {return m_CurrentTask;}
-    TaskState GetTaskState()const{ return m_TaskState;}
+    // 관제탑(스케줄러)이 "다음 한 칸만 가!" 라고 명령을 내릴 때 쓰는 함수
+    void AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState);
+    
+    // 미션의 목적을 설정
+    void SetMissionPurpose(MissionPurpose _purpose) { m_Purpose = _purpose; }
+
+    void UpdateNavigation(float _deltaTime, float _serverTime);
+
+    // Getters
+    uint32_t GetFromNodeID() const { return m_FromNode.m_Id; }
+    uint32_t GetToNodeID() const { return m_ToNode.m_Id; }
+    AGVState GetState() const { return m_State; }        
+    MissionPurpose GetMissionPurpose()const{return m_Purpose;}
 };

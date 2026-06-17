@@ -2,6 +2,7 @@
 #include "DispatchManager.hpp"
 #include "TaskScheduler.hpp"
 #include "Robo.hpp"
+#include "RoutePlanner.hpp"
 
 void TaskManager::Init()
 {    
@@ -13,17 +14,17 @@ void TaskManager::Init()
 void TaskManager::OnRobotIdle(const RobotEvent& _e)
 {
     uint32_t loadNodeID = DispatchManager::GetInstance().FindBestLoadNode(_e.timestamp,_e.agvID);
-    TaskScheduler::GetInstance().AssignRoute(_e.agvID,loadNodeID,_e.timestamp,AGVState::MOVE_TO_PICKUP);
+    RoutePlanner::GetInstance().CreateRoute(_e.agvID, loadNodeID, _e.timestamp, MissionPurpose::PICKUP);
 }
 
 void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
 {
     uint32_t unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(_e.timestamp,_e.agvID);
-    TaskScheduler::GetInstance().AssignRoute(_e.agvID,unloadNodeID,_e.timestamp,AGVState::MOVE_TO_DROP);
+    RoutePlanner::GetInstance().CreateRoute(_e.agvID, unloadNodeID, _e.timestamp, MissionPurpose::DROP);
 }
 
 void TaskManager::OnRobotUnloadCompleted(const RobotEvent& _e)
 {    
     uint32_t homeNodeID = DispatchManager::GetInstance().FindHomeNode(_e.timestamp,_e.agvID);
-    TaskScheduler::GetInstance().AssignRoute(_e.agvID,homeNodeID,_e.timestamp,AGVState::MOVE_TO_HOME);
+    RoutePlanner::GetInstance().CreateRoute(_e.agvID,homeNodeID, _e.timestamp, MissionPurpose::HOME);
 }
