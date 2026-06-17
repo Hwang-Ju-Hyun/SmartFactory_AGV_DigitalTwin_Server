@@ -114,7 +114,20 @@ void MapManager::Init()
     AddLink(43, 44); AddLink(44, 43); AddLink(44, 45); AddLink(45, 44);
 
     // --- Zone E (최하단 독립 충전 스테이션 루프 선로) ---
-    AddLink(21, 47); AddLink(47, 21); // 중앙에서 충전소 진입
+    //AddLink(21, 47); AddLink(47, 21); // 중앙에서 충전소 진입
+    
+    AddLink(24,47); AddLink(47,24);
+    AddLink(24,48); AddLink(48,24);
+    AddLink(25,49); AddLink(49,25);
+    AddLink(23,47); AddLink(47,23);
+    AddLink(25,48); AddLink(48,25);
+    AddLink(10,46); AddLink(46,10);
+    AddLink(29,33); AddLink(33,29);
+    AddLink(29,34); AddLink(34,29);
+    AddLink(50,35); AddLink(35,50);
+    AddLink(14,4); AddLink(4,14);
+    AddLink(20,8); AddLink(8,20);
+
     AddLink(23, 46); AddLink(46, 23);
     AddLink(25, 50); AddLink(50, 25);
 

@@ -172,9 +172,8 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
 
     TaskManager::GetInsance();
 
-    uint32_t initNodes[5]      = { 1,   3,   5,   7,    9};
-    uint32_t storeNodes[5]     = { 41,  42,  43,  44,   45};
-    uint32_t dispatchNodes[5]  = { 1,  3,  5,  6,  8};
+    uint32_t initNodes[5]      = { 1,   3,   5,   7,9};    
+    uint32_t dispatchNodes[10]  = { 1,   3,   5,   7,9};
 
 
     std::vector<Robo*> Robos;
@@ -184,44 +183,14 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         RegisterObject(newRobo); 
         Robo* agv = dynamic_cast<Robo*>(newRobo.get());          
         Robos.push_back(agv);
-    }
-    
-    for(int i=0;i<Robos.size();i++)
-    {      
-        Robo* agv =Robos[i];
-        if(agv != nullptr)
-        {            
-            TrafficControlManager::GetInstance().ClearAgvReservations(agv->GetNetworkID());
-            TrafficControlManager::GetInstance().ClearLinkReservations(agv->GetNetworkID());
-            AstarPathFinder pathFinder;        
 
-            const std::vector<uint32_t> path = pathFinder.FindPath(initNodes[i], storeNodes[i], MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(),agv->GetNetworkID(),m_TotalElapsedServerTime);
-            
-            agv->SetGoalNode(storeNodes[i]);
-            agv->SetNewTargetRoute(path);
-            agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
-            agv->ChangeState(AGVState::MOVE_TO_PICKUP);      
-            agv->SetHomeNode(initNodes[i]);
+        agv->ChangeState(AGVState::IDLE);
+        agv->SetHomeNode(initNodes[i]);
 
-            //auto path = agv->GetFinalPathNodeIDs();
-            if (!path.empty())
-            {
-                uint32_t startNodeID = path[0];
-                MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
-                agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
-            }
-        }
-    }
-
-    TrafficControlManager::GetInstance().ValidateReservation();
-    
-    std::vector<Conflict> conflicts = TrafficControlManager::GetInstance().GetConflicts();
-
-    for(int i=0;i<conflicts.size();i++)
-    {
-        uint32_t loserAGV=TrafficControlManager::GetInstance().GetLoserAGVofConflict(conflicts[i]);
-        ReplanPath(loserAGV);
-    }
+        int32_t startNodeID =initNodes[i];
+        MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
+        agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
+    }        
 }
 static bool a=false;
 int i=0;
@@ -258,10 +227,6 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         }        
     }   
 
-    //WarehouseManager::GetInstance().Update();
-
-    //TaskScheduler::GetInstance().UpdateSchedule(m_TotalElapsedServerTime);
-
     TrafficControlManager::GetInstance().ValidateReservation();
     
     std::vector<Conflict> conflicts = TrafficControlManager::GetInstance().GetConflicts();
@@ -279,38 +244,6 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     m_TotalElapsedServerTime+=_deltaTime;
 }
 
-void NetworkManagerServer::ReplanPath(uint32_t _agvID)
-{
-    TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
-    ObjectPtr obj=m_LinkingContext->GetObject(_agvID);
-    Robo* agv=dynamic_cast<Robo*>(obj.get());
-
-    MapNode curNode = agv->GetCurrentNode();
-    MapNode goalNode =agv->GetGoalNode();
-
-    AstarPathFinder apf;
-    
-    std::vector<uint32_t> path = apf.FindPath(curNode.m_Id,goalNode.m_Id,MapManager::GetInstance().GetNodes(),MapManager::GetInstance().GetLinks(),_agvID,m_TotalElapsedServerTime);    
-    
-    if(!path.empty())
-    {
-        agv->SetNewTargetRoute(path);
-
-        agv->ReserveTimeLine(path,m_TotalElapsedServerTime);
-    }
-    else
-    {
-        std::cout << "[스케줄러] 트래픽 체증 감지! AGV " << _agvID 
-                  << "번 경로 탐색 실패. 1.5초 뒤 재시도 큐에 등록합니다." << std::endl;
-                
-        // (현재 시간부터 넉넉하게 5초 동안 점유)
-        TrafficControlManager::GetInstance().ReserveNode(curNode.m_Id, m_TotalElapsedServerTime, m_TotalElapsedServerTime+ 5.0f, _agvID);                       
-
-        // 로봇 상태는 WAITING(대기)으로 묶어둠
-        agv->ChangeState(AGVState::WAITING);
-    }
-    
-}
 
 void NetworkManagerServer::RequestReplan(uint32_t _agvID)
 {    

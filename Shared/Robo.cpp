@@ -36,36 +36,42 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     //     return;
     // }
 
-    if (m_FinalPathNodeIDs.empty())
-    {
-        m_State=AGVState::IDLE;
-        return;
+    if (!m_FinalPathNodeIDs.empty())
+    {        
+        uint32_t fromNodeID = m_FinalPathNodeIDs[m_CurrentPathIndex];
+        uint32_t toNodeID   = m_FinalPathNodeIDs[m_CurrentPathIndex+1];
+    
+        MapNode fromNode=_nodes.find(fromNodeID)->second;
+        MapNode toNode=_nodes.find(toNodeID)->second;               
+        
+        m_FromNode=fromNode;
+        m_ToNode=toNode;
+        m_FromNode.m_PosX=fromNode.m_PosX;
+        m_FromNode.m_PosZ=fromNode.m_PosZ;    
+        m_ToNode.m_PosX=toNode.m_PosX;
+        m_ToNode.m_PosZ=toNode.m_PosZ;   
     }
     
-    uint32_t fromNodeID = m_FinalPathNodeIDs[m_CurrentPathIndex];
-    uint32_t toNodeID   = m_FinalPathNodeIDs[m_CurrentPathIndex+1];
-    
-    MapNode fromNode=_nodes.find(fromNodeID)->second;
-    MapNode toNode=_nodes.find(toNodeID)->second;               
-        
-    m_FromNode=fromNode;
-    m_ToNode=toNode;
-    m_FromNode.m_PosX=fromNode.m_PosX;
-    m_FromNode.m_PosZ=fromNode.m_PosZ;    
-    m_ToNode.m_PosX=toNode.m_PosX;
-    m_ToNode.m_PosZ=toNode.m_PosZ;
+   
     
 
-    if(fromNodeID == toNodeID&&m_State==AGVState::MOVING)
-    {
-        m_State=AGVState::WAITING;              
-        return;
-    }
+    // if(fromNodeID == toNodeID&&m_State==AGVState::MOVING)
+    // {
+    //     m_State=AGVState::WAITING;              
+    //     return;
+    // }
     
     switch (m_State)
     {        
     case AGVState::IDLE:        
     {
+        m_FromNode=_nodes.find(GetHomeNode())->second;
+        m_ToNode=_nodes.find(GetHomeNode())->second;
+        
+        m_CurrentPathIndex=0;
+
+        m_FinalPathNodeIDs.push_back(m_FromNode.m_Id);
+
         RobotEvent event;
         event.agvID=GetNetworkID();
         event.timestamp=_serverTime;
@@ -77,14 +83,14 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     {   
         m_TaskState =TaskState::IN_PROGRESS;
 
-        float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
+        float dist = std::sqrt(std::pow(m_FromNode.m_PosX - m_ToNode.m_PosX, 2) + std::pow(m_FromNode.m_PosZ - m_ToNode.m_PosZ, 2));
         m_Progress += (m_Speed / dist) * _deltaTime;
 
-        m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
-        m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;
+        m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+        m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;
 
-        float directionX = toNode.m_PosX - fromNode.m_PosX;
-        float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
+        float directionX = m_ToNode.m_PosX - m_FromNode.m_PosX;
+        float directionZ = m_ToNode.m_PosZ - m_FromNode.m_PosZ;
         float radians = std::atan2(directionX, directionZ);
     
         this->SetHeadingAngle(radians * (180.f / 3.141592f));
@@ -98,10 +104,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             //TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
             
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
-            {                                
-                m_CurrentPathIndex=0;
+            {
                 m_AccStayTime = 0.f;
-
                 m_State=AGVState::LOADING;
                 
             }
@@ -120,14 +124,14 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         if(GetNetworkID()==4)
             int a=0;
         // 주행 물리 연산은 완벽하게 동일합니다.
-        float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
+        float dist = std::sqrt(std::pow(m_FromNode.m_PosX - m_ToNode.m_PosX, 2) + std::pow(m_FromNode.m_PosZ - m_ToNode.m_PosZ, 2));
         m_Progress += (m_Speed / dist) * _deltaTime;
             
-        m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
-        m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;
+        m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+        m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;
 
-        float directionX = toNode.m_PosX - fromNode.m_PosX;
-        float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
+        float directionX = m_ToNode.m_PosX - m_FromNode.m_PosX;
+        float directionZ = m_ToNode.m_PosZ - m_FromNode.m_PosZ;
         float radians = std::atan2(directionX, directionZ);
     
         this->SetHeadingAngle(radians * (180.f / 3.141592f));
@@ -142,8 +146,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
 
             // 현재 도달한 노드가 최종 경로의 맨 마지막 노드(즉, 하역장 정중앙)인지 체크합니다.
             if (m_CurrentPathIndex >= m_FinalPathNodeIDs.size() - 2)
-            {                                                
-                m_CurrentPathIndex=0;
+            {                                               
                 m_AccStayTime = 0.f;
 
                 m_State=AGVState::UNLOADING;
@@ -162,14 +165,14 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
         m_TaskState =TaskState::IN_PROGRESS;
 
         // 주행 물리 연산은 완벽하게 동일합니다.
-        float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
+        float dist = std::sqrt(std::pow(m_FromNode.m_PosX - m_ToNode.m_PosX, 2) + std::pow(m_FromNode.m_PosZ - m_ToNode.m_PosZ, 2));
         m_Progress += (m_Speed / dist) * _deltaTime;
             
-        m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
-        m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;
+        m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+        m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;
 
-        float directionX = toNode.m_PosX - fromNode.m_PosX;
-        float directionZ = toNode.m_PosZ - fromNode.m_PosZ;
+        float directionX = m_ToNode.m_PosX - m_FromNode.m_PosX;
+        float directionZ = m_ToNode.m_PosZ - m_FromNode.m_PosZ;
         float radians = std::atan2(directionX, directionZ);
     
         this->SetHeadingAngle(radians * (180.f / 3.141592f));
@@ -200,8 +203,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     case AGVState::RETURNING:
     {        
         m_TaskState=TaskState::IN_PROGRESS;
-        float totalLinkDist = std::sqrt(std::pow(toNode.m_PosX - fromNode.m_PosX, 2) + 
-                                        std::pow(toNode.m_PosZ - fromNode.m_PosZ, 2));
+        float totalLinkDist = std::sqrt(std::pow(m_ToNode.m_PosX - m_FromNode.m_PosX, 2) + 
+                                        std::pow(m_ToNode.m_PosZ - m_FromNode.m_PosZ, 2));
         std::cout<<"리터닝 중중 중 "<<std::endl;
         if (totalLinkDist < 0.001f) 
         {
@@ -212,11 +215,11 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             m_Progress -= (m_Speed / totalLinkDist) * _deltaTime;
         }
         
-        m_posX = fromNode.m_PosX + (toNode.m_PosX - fromNode.m_PosX) * m_Progress;
-        m_posZ = fromNode.m_PosZ + (toNode.m_PosZ - fromNode.m_PosZ) * m_Progress;
+        m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+        m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;
                 
-        float directionX = fromNode.m_PosX - m_posX;
-        float directionZ = fromNode.m_PosZ - m_posZ;
+        float directionX = m_FromNode.m_PosX - m_posX;
+        float directionZ = m_FromNode.m_PosZ - m_posZ;
         if (std::abs(directionX) > 0.001f || std::abs(directionZ) > 0.001f)
         {
             float radians = std::atan2(directionX, directionZ);
@@ -238,8 +241,8 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     case AGVState::WAITING:
     {
         m_TaskState=TaskState::IN_PROGRESS;        
-        m_posX = fromNode.m_PosX;
-        m_posZ = fromNode.m_PosZ;
+        m_posX = m_FromNode.m_PosX;
+        m_posZ = m_FromNode.m_PosZ;
 
         m_AccWaitTime += _deltaTime;
         
@@ -252,7 +255,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             if(m_CurrentPathIndex>=m_FinalPathNodeIDs.size()-1)
             {
                 TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());
-                TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());                
+                TrafficControlManager::GetInstance().ReleaseNodeReservation(m_FromNode.m_Id,GetNetworkID());                
                 m_State=AGVState::ARRIVED;
             }
             else
@@ -263,7 +266,7 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
     }
     break;    
     case AGVState::LOADING:
-    {
+    {        
         m_TaskState=TaskState::IN_PROGRESS;
         m_AccStayTime += _deltaTime;        
 
@@ -277,12 +280,11 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             std::cout << "[AGV " << GetNetworkID() << "] 물건 가져옴 이제 갔다 버리러 가자." << std::endl;
 
             TrafficControlManager::GetInstance().ClearLinkReservations(GetNetworkID());            
-            TrafficControlManager::GetInstance().ReleaseNodeReservation(fromNodeID,GetNetworkID());
+            TrafficControlManager::GetInstance().ReleaseNodeReservation(m_FromNode.m_Id,GetNetworkID());
          
             //m_State = AGVState::MOVE_TO_DROP;
             m_TaskState=TaskState::COMPLETED;
-
-            
+           
         
                 RobotEvent re;
                 re.agvID=GetNetworkID();
@@ -306,16 +308,14 @@ void Robo::UpdateNavigation(float _deltaTime,const std::unordered_map<uint32_t,M
             m_AccStayTime = 0.f;
 
             std::cout << "[AGV " << GetNetworkID() << "] 부품 상차 완료 이제 집에가자" << std::endl;                                    
-                
+                            
+            RobotEvent re;
+            re.agvID=GetNetworkID();
+            re.type=RobotEventType::DROP_COMPLETED;
+            re.timestamp=_serverTime;
+            EventManager::GetInstance().Publish(re);
+
             m_CurrentPathIndex = 0;
-
-             RobotEvent re;
-                re.agvID=GetNetworkID();
-                re.type=RobotEventType::DROP_COMPLETED;
-                re.timestamp=_serverTime;
-                EventManager::GetInstance().Publish(re);
-
-            
         }
     }
     break;
@@ -373,7 +373,7 @@ void Robo::ReserveTimeLine(const std::vector<uint32_t>& _pathNode,float _serverT
 
         if(i + 1 == _pathNode.size() - 1) 
         {         
-            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, nodeEnterTime + 3.f, GetNetworkID());            
+            TrafficControlManager::GetInstance().ReserveNode(toNode.m_Id, nodeEnterTime, nodeEnterTime + 50.f, GetNetworkID());            
         }
         else 
         {         

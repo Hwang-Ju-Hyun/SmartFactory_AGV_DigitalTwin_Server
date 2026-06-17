@@ -28,10 +28,19 @@ void TaskScheduler::AssignRoute(uint32_t _agvID,uint32_t _targetNodeID,uint32_t 
         return;
 
     TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+    
+    uint32_t curNodeID = agv->GetCurrentNode().m_Id; 
 
+    if (!agv->GetFinalPathNodeIDs().empty()) 
+    {
+        if(agv->GetState()==AGVState::IDLE)
+            curNodeID = agv->GetFinalPathNodeIDs()[agv->GetCurrentPathIndex()];
+        else            
+            curNodeID = agv->GetFinalPathNodeIDs()[agv->GetCurrentPathIndex()+1];
+    }
     AstarPathFinder apf;
     std::vector<uint32_t> path = apf.FindPath(
-                                        agv->GetCurrentNode().m_Id,
+                                        curNodeID,
                                         _targetNodeID,
                                         MapManager::GetInstance().GetNodes(),
                                         MapManager::GetInstance().GetLinks(),
@@ -40,13 +49,25 @@ void TaskScheduler::AssignRoute(uint32_t _agvID,uint32_t _targetNodeID,uint32_t 
     if(!path.empty())
     {
         agv->SetNewTargetRoute(path);
+        agv->SetCurrentIndex(0);
         agv->SetGoalNode(_targetNodeID);
         agv->ReserveTimeLine(path, _serverTime);
         agv->ChangeState(_nextState); // (MOVE_TO_PICKUP or MOVE_TO_DROP or MOVE_TO_HOME)
     }
     else
-    {
+    {        
         std::cout << "[스케줄러] 경로 탐색 실패 AGV: " << _agvID << " ➔ Target: " << _targetNodeID << std::endl;
+        MapNode curNode = agv->GetCurrentNode(); 
+        uint32_t curNodeID=agv->GetFinalPathNodeIDs()[agv->GetCurrentPathIndex()];
+        
+        // 1. 내 발밑에 5초짜리 안전 보호막 전개
+        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + 5.0f, _agvID);
+        
+        // 2. 물리 이동 강제 정지
+        agv->ChangeState(AGVState::WAITING);
+        
+        // 3. 3초 뒤에 원래 가려던 상태(_nextState)로 재시도 큐에 쏙!
+        m_PendingReplans.push_back({_agvID, 3.f, _nextState});
     }
 }
 
@@ -75,11 +96,12 @@ void TaskScheduler::ReplanPath(uint32_t _agvID, float _serverTime,AGVState _next
     TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
     Robo* agv = AGVManager::GetInstance().FindAGV(_agvID);    
 
-    MapNode curNode = agv->GetCurrentNode();
+    
+    uint32_t curNodeID=agv->GetFinalPathNodeIDs()[agv->GetCurrentPathIndex()];
     MapNode goalNode = agv->GetGoalNode();
 
     AstarPathFinder apf;
-    std::vector<uint32_t> path = apf.FindPath(curNode.m_Id, goalNode.m_Id, MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(), _agvID, _serverTime);
+    std::vector<uint32_t> path = apf.FindPath(curNodeID, goalNode.m_Id, MapManager::GetInstance().GetNodes(), MapManager::GetInstance().GetLinks(), _agvID, _serverTime);
     
     if(!path.empty())
     {
@@ -89,9 +111,9 @@ void TaskScheduler::ReplanPath(uint32_t _agvID, float _serverTime,AGVState _next
     }
     else
     {                
-        TrafficControlManager::GetInstance().ReserveNode(curNode.m_Id, _serverTime, _serverTime + 5.0f, _agvID);        
+        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + 5.0f, _agvID);        
         agv->ChangeState(AGVState::WAITING);
         
-        m_PendingReplans.push_back({_agvID, 1.5f,_nextState});
+        m_PendingReplans.push_back({_agvID, 3.f,_nextState});
     }
 }
