@@ -115,7 +115,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
 
 
             float expectedEnterTime = actualLinkEndTime; 
-            float expectedLeaveTime = (adjacencyNodeID == _endNodeID) ? expectedEnterTime + 500.0f : expectedEnterTime + 0.1f;
+            float expectedLeaveTime = (adjacencyNodeID == _endNodeID) ? expectedEnterTime + 5.f : expectedEnterTime + 0.1f;
 
             int nextTimeSlot = static_cast<int>(expectedLeaveTime*10.f);
 

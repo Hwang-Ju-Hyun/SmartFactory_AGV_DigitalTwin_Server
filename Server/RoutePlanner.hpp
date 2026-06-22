@@ -51,5 +51,6 @@ private:
     void OnLinkBlocked(uint32_t _fromNodeID,uint32_t _toNodeID,float _serverTime);
 
     std::unordered_map<uint32_t, RoutePlan> m_MasterPlans; // 중앙 계획표 장부
+public:
     std::vector<PendingRoute> m_PendingRoutes; // 비상 대기열
 };

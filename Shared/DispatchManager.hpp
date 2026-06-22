@@ -23,19 +23,19 @@ struct NodeDistance
 class DispatchManager 
 {
 public:
-    static DispatchManager& GetInstance() { static DispatchManager instance; srand((unsigned int)time(NULL));return instance; }
+    static DispatchManager& GetInstance() { static DispatchManager instance;return instance; }
     
-    uint32_t FindBestLoadNode(float _serverTime, uint32_t _agvID)
+    int FindBestLoadNode(float _serverTime, uint32_t _agvID)
     {        
         std::vector<uint32_t> loadNodes = {41, 42, 43, 44, 45}; 
         std::vector<uint32_t> validNodes;
         //todo :random 테스트 이거 지우셈
         //int n = loadNodes[rand()%200];
-        int n=(rand()%5)+1;
+        int n=rand()%454+5;
         if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(n, _serverTime, _serverTime + 5.0f, _agvID))
         {
             return n;
-        }
+        }        
         return -1;
 
 
@@ -81,16 +81,16 @@ public:
     }
 
     // 2. "어디다 물건 내려놓을까?" (하역지 결정)
-    uint32_t FindBestDispatchNode(float _serverTime, uint32_t _agvID)
+    int FindBestDispatchNode(float _serverTime, uint32_t _agvID)
     {                
         std::vector<uint32_t> dispatchNodes = {46, 47, 48, 49, 50}; 
-        int n=(rand()%400)+1;
+        int n=(rand()%5)+1;
 
         if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(n, _serverTime, _serverTime + 5.0f, _agvID))
         {
             return n;
         }
-        return 1;
+        return -1;
 
 
         Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));

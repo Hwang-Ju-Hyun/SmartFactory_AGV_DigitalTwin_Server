@@ -4,6 +4,7 @@
 #include <vector>
 #include <queue>
 
+
 struct NodeReservation
 {
     uint32_t agvID;
@@ -65,5 +66,5 @@ private:
 public:
     void ReserveLink(uint32_t _from, uint32_t _to, float _start, float _end, uint32_t _agvID);
     bool IsLinkAvailable(uint32_t _from, uint32_t _to, float _start, float _end, uint32_t _agvID);
-    void ClearLinkReservations(uint32_t _agvID); 
+    void ClearLinkReservations(uint32_t _agvID);     
 };

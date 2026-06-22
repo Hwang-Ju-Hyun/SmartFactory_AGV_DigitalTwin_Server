@@ -6,7 +6,7 @@
 #include "TrafficControlManager.hpp"
 #include "TaskScheduler.hpp"
 
-enum class AGVState { IDLE, MOVING, WAITING, LOADING, UNLOADING, ARRIVED };
+enum class AGVState { IDLE, MOVING, WAITING, LOADING, UNLOADING,BLOCKED, ARRIVED };
 enum class MissionPurpose { NONE, PICKUP, DROP, HOME };
 
 const float WaitTime=1.f;

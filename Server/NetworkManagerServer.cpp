@@ -32,6 +32,7 @@ void NetworkManagerServer::StaticInit()
 {
     sInstance.reset(new NetworkManagerServer());    
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
+    srand((unsigned int)time(NULL));
 }
 
 void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream& _inStream) 
@@ -176,7 +177,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();
 
-    uint32_t initNodes[10]      = { 149,150,151,110,111,112,113,114,115,116};        
+    uint32_t initNodes[10]      = {240, 241, 242, 243, 244, 245, 246, 247, 248, 249};   
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)

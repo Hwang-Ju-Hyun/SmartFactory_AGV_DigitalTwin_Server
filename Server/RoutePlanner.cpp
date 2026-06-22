@@ -28,6 +28,21 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
                                     MapManager::GetInstance().GetLinks(), 
                                     _agvID, 
                                     _serverTime);
+    
+    if (curNodeID == _targetNodeID)
+    {
+        TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+        TrafficControlManager::GetInstance().ClearLinkReservations(_agvID);
+        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime,_serverTime+5.f, _agvID);        
+
+        agv->SetMissionPurpose(_purpose);
+        if (_purpose == MissionPurpose::HOME) 
+            agv->AssignNextStep(MapManager::GetInstance().GetMapNode(curNodeID), MapManager::GetInstance().GetMapNode(curNodeID), AGVState::IDLE);
+        else 
+            agv->AssignNextStep(MapManager::GetInstance().GetMapNode(curNodeID), MapManager::GetInstance().GetMapNode(curNodeID), AGVState::WAITING);
+        
+        return; // 여기서 함수 완전 종료 (밑으로 안 내려감)
+    }
 
     if (!path.empty())
     {
@@ -50,7 +65,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
         auto fromNode=MapManager::GetInstance().GetMapNode(plan.steps[0].fromNodeID);
         auto toNode=MapManager::GetInstance().GetMapNode(plan.steps[0].toNodeID);
         
-        // 4. 로봇에게 첫 번째 지시 하달! "출발해!"
+        // 4. 로봇에게 첫 번째 지시 하달
         agv->SetMissionPurpose(_purpose);
         agv->AssignNextStep(fromNode,toNode,AGVState::MOVING);
         
@@ -58,13 +73,19 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     }
     else
     {
-        float retryInterval = 5000000.0f;
-        // 길 찾기 실패 시 비상 대기 (5초 보호)
-        std::cout << "AGV " << _agvID << "번 경로 없음. 임시 대기 보호 전개." << std::endl;
-        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + retryInterval, _agvID);
+        //2. 가는 길이 꽉 막혔을 때 (A* 실패)
+        float retryInterval = 2.0f;
+        std::cout << "[관제탑] AGV " << _agvID << "번 체증으로 인한 경로 없음. 2초 대기 후 재탐색." << std::endl;
         
-        //  재시도 큐 등은 나중에 여기에 다시 붙이면 됨!
-        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, retryInterval});
+        agv->ChangeState(AGVState::BLOCKED); // 로봇 상태를 BLOCKED로 잠금
+        
+        m_MasterPlans.erase(_agvID); // 옛날 계획표 찢어버림
+        TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+        TrafficControlManager::GetInstance().ClearLinkReservations(_agvID);
+        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + 5.f, _agvID); // 발밑 안전 확보
+        
+        // RoutePlanner의 큐에 넣어서 Update()에서 재시도하게 만듦
+        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, retryInterval });
     }
 }
 
@@ -103,7 +124,7 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
         else if (purpose == MissionPurpose::DROP) 
             agv->AssignNextStep(toNode,toNode, AGVState::UNLOADING);
         else if (purpose == MissionPurpose::HOME) 
-            agv->AssignNextStep(toNode, toNode, AGVState::ARRIVED);
+            agv->AssignNextStep(toNode, toNode, AGVState::IDLE);
         
         m_MasterPlans.erase(agvID); // 미션 끝! 장부에서 파기
     }
@@ -167,7 +188,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         {         
             // 상차/하차를 하거나 새 명령을 받을 때까지 무한대로 알박기
             // (나중에 스케줄러가 새 길 줄 때 알아서 지워주니까 ㄱㅊ)            
-            TrafficControlManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime+5.f, _agvID);            
+            TrafficControlManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime+5.0f, _agvID);            
         }
         else 
         {         
@@ -219,7 +240,7 @@ void RoutePlanner::Update(float _deltaTime, float _serverTime)
 
         if (iter->retryTimer <= 0.0f)
         {
-            uint32_t retryAgvID = iter->agvID;
+            uint32_t retryAgvID = iter->agvID;            
             uint32_t targetID = iter->targetNodeID;
             MissionPurpose purpose = iter->purpose;
             

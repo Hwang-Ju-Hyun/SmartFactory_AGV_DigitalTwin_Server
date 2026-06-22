@@ -44,8 +44,26 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {
-    if (m_State == AGVState::ARRIVED || m_State == AGVState::IDLE) 
+    int a= this->GetNetworkID();
+    int b=0;
+    auto c = TrafficControlManager::GetInstance().m_ReservationTable;
+    
+    if(m_State==AGVState::BLOCKED)
+    {
         return;
+    }
+
+    if (m_State == AGVState::IDLE) 
+    {
+        m_AccStayTime += _deltaTime;
+        if (m_AccStayTime > 2.0f) 
+        {
+            m_AccStayTime = 0.f; // 타이머 초기화
+            RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };
+            EventManager::GetInstance().Publish(re);
+        }
+        return;
+    }
 
     // 1. 작업(상/하차) 상태 처리
     if (m_State == AGVState::LOADING || m_State == AGVState::UNLOADING)
@@ -56,7 +74,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             m_AccStayTime = 0.f;       
             
             RobotEventType eType = (m_State == AGVState::LOADING) ? RobotEventType::PICKUP_COMPLETED : RobotEventType::DROP_COMPLETED;
-            RobotEvent re = { eType, GetNetworkID(), _serverTime };
+            RobotEvent re = { eType, GetNetworkID(),_serverTime };
             EventManager::GetInstance().Publish(re);
             
             // 작업 끝나면 스케줄러가 새 길 줄 때까지 안전하게 쉼
