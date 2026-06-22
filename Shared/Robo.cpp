@@ -2,6 +2,7 @@
 #include "header.hpp"
 #include <iostream>
 #include "Event.hpp"
+#include "WarehouseManager.hpp"
 
 Robo::Robo()
 {
@@ -52,7 +53,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
         m_AccStayTime += _deltaTime;
         if (m_AccStayTime > m_StayTime)
         {
-            m_AccStayTime = 0.f;
+            m_AccStayTime = 0.f;       
             
             RobotEventType eType = (m_State == AGVState::LOADING) ? RobotEventType::PICKUP_COMPLETED : RobotEventType::DROP_COMPLETED;
             RobotEvent re = { eType, GetNetworkID(), _serverTime };
@@ -79,9 +80,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             m_Progress += (m_Speed / dist) * _deltaTime;
 
             m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
-            m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;
-            
-        
+            m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
         }
 
         // 3. 한 칸(링크) 주행 완료 시 관제탑에 보고

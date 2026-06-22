@@ -48,6 +48,7 @@ private:
 
     void ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint32_t>& _path, float _serverTime);
 
+    void OnLinkBlocked(uint32_t _fromNodeID,uint32_t _toNodeID,float _serverTime);
 
     std::unordered_map<uint32_t, RoutePlan> m_MasterPlans; // 중앙 계획표 장부
     std::vector<PendingRoute> m_PendingRoutes; // 비상 대기열

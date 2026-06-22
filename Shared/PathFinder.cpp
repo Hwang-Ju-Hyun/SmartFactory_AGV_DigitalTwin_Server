@@ -103,20 +103,20 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
 
         for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
         {            
-            uint32_t adjacencyNodeID=adjacencyList[currentNodeID][i].m_ToNodeID;            
+            uint32_t adjacencyNodeID=adjacencyList[currentNodeID][i].m_ToNodeID;
 
             // g 계산: 현재까지 온 거리 + 이 링크의 실제 길이        
             float linkLength=CalculateHeuristic(_nodes.find(currentNodeID)->second,_nodes.find(adjacencyNodeID)->second);
 
             float travelTime=linkLength/speed;
-              
+
             float actualLinkStartTime = currentNode->accumulatedTime;        // 현재 노드 출발 시간
             float actualLinkEndTime   = currentNode->accumulatedTime + travelTime; // 다음 노드 도착 시간
 
 
             float expectedEnterTime = actualLinkEndTime; 
-            float expectedLeaveTime = expectedEnterTime+0.1f;
-            
+            float expectedLeaveTime = (adjacencyNodeID == _endNodeID) ? expectedEnterTime + 500.0f : expectedEnterTime + 0.1f;
+
             int nextTimeSlot = static_cast<int>(expectedLeaveTime*10.f);
 
             std::string adjacencyNodeState=std::to_string(adjacencyNodeID)+"_"+std::to_string(nextTimeSlot);
@@ -127,9 +127,15 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
                 continue;
 
             //링크위의 장애물 건너띄기
-            if(adjacencyList[currentNodeID][i].m_IsBloacked)
+            if(adjacencyList[currentNodeID][i].m_IsBlocked)
             {
                 continue;                
+            }
+
+            //블록이 된 링크
+            if(adjacencyList[currentNodeID][i].m_IsBlocked)
+            {
+                continue;
             }
                 
             //노드 검사
@@ -143,6 +149,7 @@ std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t 
             {
                 continue;
             }
+            
 
             float tentativeGn=currentNode->g + linkLength;            
             bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeState)!=openRegistryList.end()? true:false;                        

@@ -2,6 +2,7 @@
 #include "AGVManager.hpp"
 #include "PathFinder.hpp"
 #include "TrafficControlManager.hpp"
+#include "TaskManager.hpp"
 #include <iostream>
 
 void RoutePlanner::Init()
@@ -15,7 +16,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
     if (!agv) return;
     
-    TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+    //TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
 
     uint32_t curNodeID = agv->GetToNodeID(); // 로봇이 마지막으로 도달한(혹은 도달할) 노드
 
@@ -30,6 +31,8 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
 
     if (!path.empty())
     {
+        TrafficControlManager::GetInstance().ClearAgvReservations(_agvID);
+        TrafficControlManager::GetInstance().ClearLinkReservations(_agvID);
         ReserveRouteTimeline(_agvID, path, _serverTime);
 
         // 3. A* 경로 배열을 'Step' 단위의 계획표로 변환해서 마스터 장부에 저장
@@ -55,11 +58,13 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     }
     else
     {
+        float retryInterval = 5000000.0f;
         // 길 찾기 실패 시 비상 대기 (5초 보호)
         std::cout << "AGV " << _agvID << "번 경로 없음. 임시 대기 보호 전개." << std::endl;
-        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + 5.0f, _agvID);
+        TrafficControlManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + retryInterval, _agvID);
         
         //  재시도 큐 등은 나중에 여기에 다시 붙이면 됨!
+        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, retryInterval});
     }
 }
 
@@ -174,7 +179,37 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
     }
 }
 
+void RoutePlanner::OnLinkBlocked(uint32_t _fromNodeID,uint32_t _toNodeID,float _serverTime)
+{
+    std::vector<uint32_t> affectedAGVs;
+    for(auto iter=m_MasterPlans.begin();iter!=m_MasterPlans.end();iter++)
+    {
+        RoutePlan& plan=iter->second;
+        for(int i=plan.currentStepIndex;i<plan.steps.size();i++)
+        {
+            if(plan.steps[i].fromNodeID==_fromNodeID && plan.steps[i].toNodeID==_toNodeID)
+            {
+                affectedAGVs.push_back(plan.agvID);
+                break;
+            }
+        }
+    }
 
+    for(int i=0;i<affectedAGVs.size();i++)
+    {
+        uint32_t agvID = affectedAGVs[i];
+        auto iter = m_MasterPlans.find(agvID);
+        if (iter == m_MasterPlans.end()) continue;
+
+        // 버그 수정: steps.size() - 1이 아니라 진짜 최종 목적지 노드의 ID를 추출해야 함!
+        uint32_t realTargetNodeID = iter->second.steps.back().toNodeID;
+        MissionPurpose purpose = iter->second.purpose;
+        
+        std::cout << "[관제탑] AGV " << agvID << "번 경로 차단 감지. 우회로 재탐색 지시." << std::endl;
+        CreateRoute(agvID, realTargetNodeID, _serverTime, purpose);
+    }
+
+}
 
 void RoutePlanner::Update(float _deltaTime, float _serverTime)
 {

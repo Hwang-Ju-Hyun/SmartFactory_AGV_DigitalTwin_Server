@@ -3,7 +3,11 @@
 #include "TrafficControlManager.hpp"
 #include "AGVManager.hpp"
 #include "Robo.hpp"
+#include "WarehouseManager.hpp"
 #include <algorithm>
+
+#include <cstdlib>
+#include <cmath>
 
 struct NodeDistance 
 {
@@ -19,54 +23,76 @@ struct NodeDistance
 class DispatchManager 
 {
 public:
-    static DispatchManager& GetInstance() { static DispatchManager instance; return instance; }
+    static DispatchManager& GetInstance() { static DispatchManager instance; srand((unsigned int)time(NULL));return instance; }
     
     uint32_t FindBestLoadNode(float _serverTime, uint32_t _agvID)
     {        
         std::vector<uint32_t> loadNodes = {41, 42, 43, 44, 45}; 
-        
-        Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+        std::vector<uint32_t> validNodes;
+        //todo :random 테스트 이거 지우셈
+        //int n = loadNodes[rand()%200];
+        int n=(rand()%5)+1;
+        if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(n, _serverTime, _serverTime + 5.0f, _agvID))
+        {
+            return n;
+        }
+        return -1;
 
-        if (!agv) 
-            return loadNodes[0]; 
 
-        MapNode currentAgvNode = MapManager::GetInstance().GetNodes().at(agv->GetToNodeID());
-        
-        std::vector<NodeDistance> distances;
-        
+        // 1.재고가 남아있는(예약 가능한) 창고만 후보에 넣음
         for (uint32_t nodeID : loadNodes)
         {
+            if (WarehouseManager::GetInstance().CanReserveStock(nodeID))
+            {
+                validNodes.push_back(nodeID);
+            }
+        }
+        
+        if (validNodes.empty()) 
+            return 0; 
+
+        Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+        if (!agv) 
+            return validNodes[0];
+
+        MapNode currentAgvNode = MapManager::GetInstance().GetNodes().at(agv->GetToNodeID());
+        std::vector<NodeDistance> distances;
+       
+        for (uint32_t nodeID : validNodes)
+        {
             MapNode targetNode = MapManager::GetInstance().GetNodes().at(nodeID);
-            
             float dist = std::sqrt(std::pow(currentAgvNode.m_PosX - targetNode.m_PosX, 2) + 
                                 std::pow(currentAgvNode.m_PosZ - targetNode.m_PosZ, 2));
-
             distances.push_back({nodeID, dist});
         }
 
-        // 2. 거리순으로 오름차순 정렬 (가까운 순)
         std::sort(distances.begin(), distances.end());
 
-        // 3. 가장 가까운 곳부터 '예약 가능한지(비어있는지)' 확인
+        
         for (const auto& nd : distances)
         {
-         
-            if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(nd.nodeID, _serverTime, _serverTime + 10.0f, _agvID))
+            if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(nd.nodeID, _serverTime, _serverTime + 5.0f, _agvID))
             {
                 return nd.nodeID;
             }
         }
 
-        // 모든 곳이 다 예약되어 있다면? 어쩔 수 없이 제일 가까운 곳 반환 (스케줄러가 알아서 대기시킬 것임)
         return distances[0].nodeID;
     }
 
     // 2. "어디다 물건 내려놓을까?" (하역지 결정)
     uint32_t FindBestDispatchNode(float _serverTime, uint32_t _agvID)
-    {        
-        
+    {                
         std::vector<uint32_t> dispatchNodes = {46, 47, 48, 49, 50}; 
-                
+        int n=(rand()%400)+1;
+
+        if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(n, _serverTime, _serverTime + 5.0f, _agvID))
+        {
+            return n;
+        }
+        return 1;
+
+
         Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
         if (!agv) 
             return dispatchNodes[0];

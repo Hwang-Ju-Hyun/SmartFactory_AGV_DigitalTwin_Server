@@ -16,6 +16,7 @@
 #include "WarehouseManager.hpp"
 #include "TaskManager.hpp"
 #include "RoutePlanner.hpp"
+#include "Map.hpp"
 
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
@@ -168,13 +169,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=5;
+    int spawnCount=10;
     ObjectPtr mainRobo=nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
+    WarehouseManager::GetInstance().Init();
 
-    uint32_t initNodes[7]      = { 1,   3,   5,   7,9};        
+    uint32_t initNodes[10]      = { 149,150,151,110,111,112,113,114,115,116};        
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -202,7 +204,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         EventManager::GetInstance().Publish(startEvent); 
     }
 }
-static bool a=false;
+static bool a=true;
 int i=0;
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
@@ -211,6 +213,37 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     {
         return;
     }
+
+
+    {
+        if (m_TotalElapsedServerTime > 15.0f&&a==false)
+        {
+            a=true;
+            
+            uint32_t blockFrom = 39; // 맵에 맞게 수정
+            uint32_t blockTo = 44;   // 맵에 맞게 수정
+
+            std::cout << "\n=================================================" << std::endl;
+            std::cout << blockFrom << "번 -> " << blockTo << "번 도로 동적 차단 발생 " << std::endl;
+            std::cout << "=================================================\n" << std::endl;
+
+            // 1. 맵 매니저에서 실제 링크를 막아버림 (A*가 이제 이 길을 피해서 탐색함)
+            std::vector<MapLink>& links = MapManager::GetInstance().GetLinks();
+            for (auto& link : links) 
+            {
+                if (link.m_FromNodeID == blockFrom && link.m_ToNodeID == blockTo) 
+                {
+                    link.m_IsBlocked = true; // 네 코드의 변수명 그대로 사용
+                }
+                if (link.m_ToNodeID == blockFrom && link.m_FromNodeID == blockTo) 
+                {
+                    link.m_IsBlocked = true; // 네 코드의 변수명 그대로 사용
+                }
+            }
+        }   
+    }
+    
+
     for(auto obj:m_LinkingContext->GetAllObjects())
     {        
         ObjectPtr robo = obj.second;

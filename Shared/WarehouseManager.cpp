@@ -1,30 +1,41 @@
 #include "WarehouseManager.hpp"
-#include "TaskScheduler.hpp"
-
-static int a=0;
-uint32_t storeNodes[5]     = { 41,  42,  43,  29,  45};
-uint32_t dispatchNodes[5]  = { 46,  47,  48,  49,  50};
+#include <iostream>
+#include <vector>
 
 void WarehouseManager::Init()
 {    
-    m_houses.push_back(std::make_shared<Warehouse>(41,1,false));
-    m_houses.push_back(std::make_shared<Warehouse>(42,1,false));
-    m_houses.push_back(std::make_shared<Warehouse>(43,1,false));
-    m_houses.push_back(std::make_shared<Warehouse>(29,1,false));
-    m_houses.push_back(std::make_shared<Warehouse>(45,1,false));
-
-    m_houses.push_back(std::make_shared<Warehouse>(46,0,false));
-    m_houses.push_back(std::make_shared<Warehouse>(47,0,false));
-    m_houses.push_back(std::make_shared<Warehouse>(48,0,false));
-    m_houses.push_back(std::make_shared<Warehouse>(49,0,false));
-    m_houses.push_back(std::make_shared<Warehouse>(50,0,false));
+    std::vector<uint32_t> loadNodes = {41, 42, 43, 44, 45};
+    
+    for (uint32_t nodeID : loadNodes)
+    {
+        m_ActualStock[nodeID] = 5; 
+        m_ReservedStock[nodeID] = 0;
+    }
 }
-static bool ac=false;
-void WarehouseManager::Update()
-{       
-            
-    
-    return;    
 
+bool WarehouseManager::CanReserveStock(uint32_t _nodeID)
+{ 
+    int availableStock = m_ActualStock[_nodeID] - m_ReservedStock[_nodeID];
+    if(availableStock>0)
+        return true;
+    return false;
     
+}
+
+void WarehouseManager::ReserveStock(uint32_t _nodeID)
+{
+    if (CanReserveStock(_nodeID))
+    {
+        m_ReservedStock[_nodeID]++;
+    }
+}
+
+void WarehouseManager::ConsumeStock(uint32_t _nodeID)
+{
+    if (m_ActualStock[_nodeID] > 0 && m_ReservedStock[_nodeID] > 0)
+    {
+        m_ActualStock[_nodeID]--;   
+        m_ReservedStock[_nodeID]--; 
+        std::cout << "[창고] " << _nodeID << "번 창고 재고 감소. 남은 수량: " << m_ActualStock[_nodeID] << std::endl;
+    }
 }
