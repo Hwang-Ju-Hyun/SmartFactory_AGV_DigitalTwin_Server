@@ -171,14 +171,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=4;
+    int spawnCount=10;
     ObjectPtr mainRobo=nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();
 
-    uint32_t initNodes[4]      = {1,2,3,4}; 
+    uint32_t initNodes[10]      = {240,241,242,243,244,245,246,247,248,249};
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -195,6 +195,8 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
         agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f); 
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
+
+        TrafficManager::GetInstance().ParkNode(startNodeID, agv->GetNetworkID(), 0.0f);
     }        
     for (Robo* agv : Robos)
     {

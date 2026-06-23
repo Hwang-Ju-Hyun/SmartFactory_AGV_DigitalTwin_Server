@@ -21,8 +21,14 @@ void TaskManager::ProcessNextDispatch()
         RobotEvent e = m_PendingEvents.front();
         m_PendingEvents.pop();
 
-        if (e.type == RobotEventType::PICKUP_COMPLETED) OnRobotLoadCompleted(e); 
-        else if (e.type == RobotEventType::IDLE_READY) OnRobotIdle(e);
+        if (e.type == RobotEventType::PICKUP_COMPLETED)
+        {
+            OnRobotLoadCompleted(e); 
+        }            
+        else if (e.type == RobotEventType::IDLE_READY) 
+        {
+            OnRobotIdle(e);
+        }
     }    
 }
 
@@ -30,7 +36,10 @@ void TaskManager::OnRobotIdle(const RobotEvent& _e)
 {
     int loadNodeID = DispatchManager::GetInstance().FindBestLoadNode(_e.timestamp, _e.agvID); 
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_e.agvID));
-    if(!agv) return;
+    if(!agv) 
+    {
+        return;
+    }
 
     if (loadNodeID == -1)
     {
@@ -51,7 +60,10 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
 {
     int unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(_e.timestamp, _e.agvID);
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_e.agvID));
-    if(!agv) return;
+    if(!agv) 
+    {
+        return;
+    }
 
     if (unloadNodeID == -1)
     {

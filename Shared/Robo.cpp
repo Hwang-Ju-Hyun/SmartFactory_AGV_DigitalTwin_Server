@@ -99,7 +99,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             m_State = AGVState::IDLE; 
             
             RobotEvent re = { eType, GetNetworkID(), _serverTime };
-            EventManager::GetInstance().Publish(re);
+            //EventManager::GetInstance().Publish(re);
         }
         return;
     }

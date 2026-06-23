@@ -107,7 +107,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
     float accTime = _serverTime;
     
     // 출발 발밑 예약
-    TrafficManager::GetInstance().ReserveNode(_path[0], accTime, accTime + 0.01f, _agvID);
+    TrafficManager::GetInstance().ReserveNode(_path[0], accTime, accTime + 0.04f, _agvID);
 
     for (size_t i = 0; i < _path.size() - 1; i++)
     {
@@ -129,10 +129,10 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         float travelTime = dist / AGV_SPEED;
        
         float linkEnterTime = accTime;               
-        float linkLeaveTime = accTime + travelTime+0.15f;  
+        float linkLeaveTime = accTime + travelTime;  
         
         TrafficManager::GetInstance().ReserveLink(fromID, toID, linkEnterTime, linkLeaveTime, _agvID);
-        TrafficManager::GetInstance().ReserveNode(_path[0], accTime, accTime + WAIT_TIME, _agvID);
+        TrafficManager::GetInstance().ReserveNode(fromID, accTime, accTime + 0.04f, _agvID);
 
         float nodeEnterTime = linkLeaveTime;
 
@@ -152,7 +152,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         }
         else 
         {         
-            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + WAIT_TIME, _agvID);
+            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + 0.04f, _agvID);
         }        
 
         accTime = nodeEnterTime;

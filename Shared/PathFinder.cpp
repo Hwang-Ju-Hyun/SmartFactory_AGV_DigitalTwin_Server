@@ -152,7 +152,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             {
                 continue;
             }
-            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + WAIT_TIME, _agvID)) 
+            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + 0.04f, _agvID)) 
             {
                 continue;
             }
