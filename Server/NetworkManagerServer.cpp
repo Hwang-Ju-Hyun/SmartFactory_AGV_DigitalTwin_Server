@@ -17,6 +17,7 @@
 #include "TaskManager.hpp"
 #include "RoutePlanner.hpp"
 #include "Map.hpp"
+#include "Event.hpp"
 
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
@@ -170,14 +171,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=10;
+    int spawnCount=4;
     ObjectPtr mainRobo=nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();
 
-    uint32_t initNodes[10]      = {240, 241, 242, 243, 244, 245, 246, 247, 248, 249};   
+    uint32_t initNodes[4]      = {1,2,3,4}; 
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
@@ -192,7 +193,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
 
         int32_t startNodeID =initNodes[i];
         MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
-        agv->AssignNextStep(startNode, startNode, AGVState::IDLE);
+        agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f); 
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
     }        
     for (Robo* agv : Robos)
@@ -209,13 +210,12 @@ static bool a=true;
 int i=0;
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
-{
+{    
     if(!m_IsSimulationActive)
     {
         return;
-    }
-
-
+    }    
+    m_TotalElapsedServerTime+=_deltaTime;
     {
         if (m_TotalElapsedServerTime > 15.0f&&a==false)
         {
@@ -245,9 +245,9 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     }
     
 
-    for(auto obj:m_LinkingContext->GetAllObjects())
+    for(auto obj:AGVManager::GetInstance().m_AGVs)
     {        
-        ObjectPtr robo = obj.second;
+        ObjectPtr robo = obj;
         Robo* agv = dynamic_cast<Robo*>(robo.get());
         agv->UpdateNavigation(_deltaTime,m_TotalElapsedServerTime);             
 
@@ -256,9 +256,9 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
             ClientProxy* proxy = iter->second;
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
         }        
-    }   
-    
-    RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
+    }          
 
-    m_TotalElapsedServerTime+=_deltaTime;
+    EventManager::GetInstance().ProcessEvents();
+
+   
 }

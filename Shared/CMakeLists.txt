@@ -19,6 +19,7 @@ add_library(Shared STATIC
     WarehouseManager.cpp
     Event.cpp
     DispatchManager.cpp    
+    RRAstar.cpp
 )
 
 target_include_directories(Shared PUBLIC

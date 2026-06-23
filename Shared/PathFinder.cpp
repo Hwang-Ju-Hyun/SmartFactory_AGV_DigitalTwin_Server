@@ -1,193 +1,190 @@
 #include "PathFinder.hpp"
-#include <vector>
-#include <unordered_map>
-#include <queue>
-#include <memory>
-#include <algorithm>
+#include "Map.hpp"
 #include "TrafficControlManager.hpp"
+#include <queue>
+#include <unordered_map>
+#include <cmath>
+#include <algorithm>
 #include <iostream>
 
-const float WaitTime=1.f;
-const float speed=3.8f;
-const float stayTime=1.f;
+const float AGV_SPEED = 3.8f;
+const float WAIT_TIME = 1.0f; // 제자리 대기 시간
 
-std::vector<uint32_t> AstarPathFinder::FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID,float _startTime)
+std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, 
+                                           uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine)
 {
     std::vector<uint32_t> finalPath;
 
-    if(_startNodeID==_endNodeID)
+    if (_startNodeID == _targetNodeID)
+    {
+        finalPath.push_back(_startNodeID);
         return finalPath;
-    
-    std::unordered_map<uint32_t,std::vector<MapLink>> adjacencyList;
-    
-    for(auto link:_links)
-    {
-        adjacencyList[link.m_FromNodeID].push_back(link);
     }
-    std::priority_queue<std::shared_ptr<AStarNode>,std::vector<std::shared_ptr<AStarNode>>,CompareNode> openList;
-    std::unordered_map<std::string,std::shared_ptr<AStarNode>> closedList;
-    std::unordered_map<std::string,std::shared_ptr<AStarNode>> openRegistryList;    
 
-    std::shared_ptr startAstarNode = std::make_shared<AStarNode>(_startNodeID);
+    std::priority_queue<std::shared_ptr<AStarNode>, std::vector<std::shared_ptr<AStarNode>>, 
+        auto(*)(const std::shared_ptr<AStarNode>&, const std::shared_ptr<AStarNode>&)->bool> 
+        openList([](const std::shared_ptr<AStarNode>& a, const std::shared_ptr<AStarNode>& b) { return *a > *b; });
     
-    startAstarNode->g=0.f;            
-    startAstarNode->h=CalculateHeuristic(_nodes.find(_startNodeID)->second,_nodes.find(_endNodeID)->second);    
-    startAstarNode->f=startAstarNode->g+startAstarNode->h;
-    startAstarNode->parentNode=nullptr;
-    startAstarNode->accumulatedTime=_startTime;
+    std::unordered_map<std::string, std::shared_ptr<AStarNode>> closedList;
+    std::unordered_map<std::string, std::shared_ptr<AStarNode>> openRegistryList;
 
-    openList.push(startAstarNode);
-    
-    int startSlot = static_cast<int>(_startTime*10.f);
+    std::shared_ptr<AStarNode> startNode = std::make_shared<AStarNode>(_startNodeID);
+    startNode->accumulatedTime = _startTime;
+    startNode->g = 0.f;
+    startNode->h = _rraEngine.GetAbstractDistance(_startNodeID) / AGV_SPEED; 
+    startNode->f = startNode->g + startNode->h;
 
-    std::string startStateKey=std::to_string(_startNodeID)+"_"+std::to_string(startSlot);    
+    openList.push(startNode);
+    std::string startKey = std::to_string(_startNodeID) + "_" + std::to_string(TrafficManager::TimeToSlot(_startTime));
+    openRegistryList[startKey] = startNode;
 
-    openRegistryList[startStateKey]=startAstarNode;
+    std::shared_ptr<AStarNode> endNode = nullptr;
 
-    bool IsFound=false;
-    std::shared_ptr<AStarNode> endNode = nullptr;    
-    while(!openList.empty())
+    while (!openList.empty())
     {
-        std::shared_ptr currentNode=openList.top();
-        
+        auto current = openList.top();
         openList.pop();
 
-        uint32_t currentNodeID=currentNode->id;
-
-       int currentTimeSlot = static_cast<int>(currentNode->accumulatedTime * 10.f);
-
-        std::string currentStateKey=std::to_string(currentNodeID)+"_"+std::to_string(currentTimeSlot);
-        closedList[currentStateKey]=currentNode;        
-
-        if(currentNodeID == _endNodeID)
+        int currentSlot = TrafficManager::TimeToSlot(current->accumulatedTime);
+        std::string currentKey = std::to_string(current->id) + "_" + std::to_string(currentSlot);
+        
+        // 이미 ClosedList에 있으면(더 짧은 거리로 방문했었다면) 무시! (Lazy Deletion 핵심)
+        if (closedList.find(currentKey) != closedList.end()) 
         {
-            IsFound=true;
-            endNode=currentNode;
+            continue;
+        }
+        
+        closedList[currentKey] = current;
+
+        // 목적지 도달
+        if (current->id == _targetNodeID)
+        {
+            endNode = current;
             break;
         }
 
-        //WAIT
+        // WHCA* 핵심 1: 윈도우(Window) 컷오프
+        int stepsTaken = 0;
+        auto temp = current;
+        while(temp->parentNode != nullptr) 
+        { 
+            stepsTaken++; 
+            temp = temp->parentNode; 
+        }
+        
+        if (current->accumulatedTime - _startTime >= _windowTimeLimit)
         {
-            float expectedEnterTime = currentNode->accumulatedTime;
-            float expectedLeaveTime = expectedEnterTime + WaitTime;
-            int nextTimeSlot=static_cast<int>(expectedLeaveTime*10.f);
-            std::string waitState = std::to_string(currentNodeID) + "_" + std::to_string(nextTimeSlot);
-
-            if (TrafficControlManager::GetInstance().IsTimeWindowAvailable(currentNodeID, expectedEnterTime, expectedLeaveTime, _avgID))
-            {
-                if (closedList.find(waitState) == closedList.end())
-                {
-                    //대기 비용(g)은 1초 기다린 만큼 정직하게 1.0만 증가
-                    float tentativeG = currentNode->g + WaitTime; 
-                    
-                    bool isAlreadyInOpenList  = (openRegistryList.find(waitState) != openRegistryList.end());
-                    std::shared_ptr<AStarNode> waitNode = isAlreadyInOpenList ? openRegistryList[waitState] : std::make_shared<AStarNode>(currentNodeID);
-                    
-                    if (!isAlreadyInOpenList || tentativeG < waitNode->g)
-                    {
-                        waitNode->parentNode = currentNode;
-                        waitNode->h = currentNode->h; // 제자리니까 목표까지 거리는 그대로
-                        waitNode->g = tentativeG;
-                        waitNode->f = waitNode->h + waitNode->g;
-                        waitNode->accumulatedTime = expectedLeaveTime;
-                        
-                        if (!isAlreadyInOpenList)
-                        {
-                            openList.push(waitNode);
-                            openRegistryList[waitState] = waitNode;
-                        }
-                    }
-                }
-            }       
+            // 현재 노드까지 오는 데 걸린 시간이 윈도우 시간(예: 15초)을 넘겼으면 탐색 중지!
+            endNode = current;
+            break;
         }
 
-        for(int i=0; i<adjacencyList[currentNodeID].size(); i++)
-        {            
-            uint32_t adjacencyNodeID=adjacencyList[currentNodeID][i].m_ToNodeID;
+        // ==========================================
+        // 탐색 1: 제자리 대기(WAIT) 액션 
+        // ==========================================
+        float waitLeaveTime = current->accumulatedTime + WAIT_TIME;
+        std::string waitKey = std::to_string(current->id) + "_" + std::to_string(TrafficManager::TimeToSlot(waitLeaveTime));
 
-            // g 계산: 현재까지 온 거리 + 이 링크의 실제 길이        
-            float linkLength=CalculateHeuristic(_nodes.find(currentNodeID)->second,_nodes.find(adjacencyNodeID)->second);
-
-            float travelTime=linkLength/speed;
-
-            float actualLinkStartTime = currentNode->accumulatedTime;        // 현재 노드 출발 시간
-            float actualLinkEndTime   = currentNode->accumulatedTime + travelTime; // 다음 노드 도착 시간
-
-
-            float expectedEnterTime = actualLinkEndTime; 
-            float expectedLeaveTime = (adjacencyNodeID == _endNodeID) ? expectedEnterTime + 5.f : expectedEnterTime + 0.1f;
-
-            int nextTimeSlot = static_cast<int>(expectedLeaveTime*10.f);
-
-            std::string adjacencyNodeState=std::to_string(adjacencyNodeID)+"_"+std::to_string(nextTimeSlot);
-                        
-
-            //이미 검증이 끝난 노드는 패스
-            if(closedList.find(adjacencyNodeState)!=closedList.end())
-                continue;
-
-            //링크위의 장애물 건너띄기
-            if(adjacencyList[currentNodeID][i].m_IsBlocked)
+        if (TrafficManager::GetInstance().IsNodeAvailable(current->id, current->accumulatedTime, waitLeaveTime, _agvID))
+        {
+            if (closedList.find(waitKey) == closedList.end())
             {
-                continue;                
+                float nextG = current->g + WAIT_TIME;
+                bool isAlreadyOpen = (openRegistryList.find(waitKey) != openRegistryList.end());
+                
+                if (!isAlreadyOpen || nextG < openRegistryList[waitKey]->g)
+                {
+                    auto waitNode = std::make_shared<AStarNode>(current->id); // 새 노드 무조건 생성
+                    waitNode->parentNode = current;
+                    waitNode->accumulatedTime = waitLeaveTime;
+                    waitNode->g = nextG;
+                    waitNode->h = _rraEngine.GetAbstractDistance(current->id) / AGV_SPEED; 
+                    waitNode->f = waitNode->g + waitNode->h;
+
+                    openList.push(waitNode); // 🌟 무조건 다시 push!
+                    openRegistryList[waitKey] = waitNode; // 레지스트리 갱신
+                }
+            }
+        }
+
+        // ==========================================
+        //  탐색 2: 주변 노드로 이동 액션 (수정된 코드 적용)
+        // ==========================================
+        const auto& links = MapManager::GetInstance().GetLinks();
+        for (const auto& link : links)
+        {
+            uint32_t neighborID = 0;
+            if (link.m_FromNodeID == current->id) 
+            {
+                neighborID = link.m_ToNodeID;
+            }                
+            // 무방향 맵이라면 아래 줄 주석 해제
+            else if (link.m_ToNodeID == current->id) 
+            {
+                neighborID = link.m_FromNodeID;
+            }
+            else 
+            {
+                continue;
             }
 
-            //블록이 된 링크
-            if(adjacencyList[currentNodeID][i].m_IsBlocked)
+            if (link.m_IsBlocked) 
+                continue;
+
+            auto from = MapManager::GetInstance().GetNodes().at(current->id);
+            auto to = MapManager::GetInstance().GetNodes().at(neighborID);            
+            float dist = std::sqrt(std::pow(from.m_PosX - to.m_PosX, 2) + std::pow(from.m_PosZ - to.m_PosZ, 2));
+            float travelTime = dist / AGV_SPEED;
+
+            float enterTime = current->accumulatedTime;
+            float leaveTime = enterTime + travelTime;
+            std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::TimeToSlot(leaveTime));
+
+            if (closedList.find(neighborKey) != closedList.end()) 
+                continue;
+
+            if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, leaveTime, _agvID)) 
             {
                 continue;
             }
                 
-            //노드 검사
-            if(!TrafficControlManager::GetInstance().IsTimeWindowAvailable(adjacencyNodeID,expectedEnterTime,expectedLeaveTime,_avgID))
+            if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime, _agvID)) 
+            {
+                continue;
+            }
+            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + WAIT_TIME, _agvID)) 
             {
                 continue;
             }
 
-            //링크(엣지)검사
-            if(!TrafficControlManager::GetInstance().IsLinkAvailable(currentNodeID,adjacencyNodeID,actualLinkStartTime,actualLinkEndTime,_avgID))
+            float nextG = current->g + travelTime;
+            bool isAlreadyOpen = (openRegistryList.find(neighborKey) != openRegistryList.end());
+
+            if (!isAlreadyOpen || nextG < openRegistryList[neighborKey]->g)
             {
-                continue;
-            }
-            
+                auto neighborNode = std::make_shared<AStarNode>(neighborID); // 새 노드 무조건 생성
+                neighborNode->parentNode = current;
+                neighborNode->accumulatedTime = leaveTime;
+                neighborNode->g = nextG;                
+                neighborNode->h = _rraEngine.GetAbstractDistance(neighborID) / AGV_SPEED;; 
+                neighborNode->f = neighborNode->g + neighborNode->h;
 
-            float tentativeGn=currentNode->g + linkLength;            
-            bool isAlreadyInOpenList = openRegistryList.find(adjacencyNodeState)!=openRegistryList.end()? true:false;                        
-                        
-            std::shared_ptr<AStarNode> adjacencyNode = isAlreadyInOpenList ? openRegistryList[adjacencyNodeState] : std::make_shared<AStarNode>(adjacencyNodeID);
-
-
-            //첨봤거나 더 다른 괜찮은(더 짧은) 노드가 있다면
-            if(isAlreadyInOpenList==false || tentativeGn < adjacencyNode->g)
-            {
-                adjacencyNode->parentNode=currentNode;
-                adjacencyNode->g = tentativeGn;                
-                adjacencyNode->h = CalculateHeuristic(_nodes.find(adjacencyNodeID)->second,_nodes.find(_endNodeID)->second);
-                adjacencyNode->f = adjacencyNode->g + adjacencyNode->h;
-
-                adjacencyNode->accumulatedTime=expectedLeaveTime;
-
-                if(isAlreadyInOpenList==false)
-                {
-                    openList.push(adjacencyNode);
-                    openRegistryList[adjacencyNodeState]=adjacencyNode;
-                }               
+                openList.push(neighborNode); // 무조건 다시 push!
+                openRegistryList[neighborKey] = neighborNode; // 레지스트리 갱신
             }
         }
     }
 
-    if(IsFound&&endNode!=nullptr)
+    if (endNode != nullptr)
     {
-        std::shared_ptr<AStarNode> traceNode=endNode;
-        float currentTime = endNode->accumulatedTime;
-        
-        while(traceNode!=nullptr)
+        auto trace = endNode;
+        while (trace != nullptr)
         {
-            finalPath.push_back(traceNode->id);                        
-
-            traceNode=traceNode->parentNode;           
-        }    
-        std::reverse(finalPath.begin(),finalPath.end());
+            finalPath.push_back(trace->id);
+            trace = trace->parentNode;
+        }
+        std::reverse(finalPath.begin(), finalPath.end());
     }
+
     return finalPath;
 }

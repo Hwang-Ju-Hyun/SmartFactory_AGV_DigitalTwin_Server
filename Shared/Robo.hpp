@@ -6,8 +6,21 @@
 #include "TrafficControlManager.hpp"
 #include "TaskScheduler.hpp"
 
-enum class AGVState { IDLE, MOVING, WAITING, LOADING, UNLOADING,BLOCKED, ARRIVED };
-enum class MissionPurpose { NONE, PICKUP, DROP, HOME };
+enum class AGVState
+{
+    IDLE,       
+    MOVING,     
+    LOADING,    
+    UNLOADING   
+};
+
+enum class MissionPurpose
+{
+    NONE,
+    HOME,
+    PICKUP,
+    DROP
+};
 
 const float WaitTime=1.f;
 
@@ -17,6 +30,9 @@ public:
     Robo();
     virtual ~Robo()override{}    
     virtual uint32_t GetClassID()override{return m_ClassID;}
+
+    float m_MoveStartTime = -1.0f;
+    float m_PlannedTravelTime = 0.0f;
 private:
     MapNode m_HomeNode;
     MapNode m_FromNode;
@@ -36,8 +52,7 @@ public:
 
     void SetHomeNode(uint32_t _node){m_HomeNode=MapManager::GetInstance().GetMapNode(_node);}
     uint32_t GetHomeNode()const{return m_HomeNode.m_Id;}
-    MapNode m_GoalNode;
-    AstarPathFinder pathFinder;
+    MapNode m_GoalNode;    
     std::vector<uint32_t> m_FinalPathNodeIDs;     
     size_t m_CurrentPathIndex = 0;       // 현재 티켓의 몇 번째 정거장에 와있는지 (인덱스)       
     std::vector<uint32_t> GetFinalPathNodeIDs(){return m_FinalPathNodeIDs;}
@@ -47,11 +62,9 @@ public:
         m_FinalPathNodeIDs = _newPath;
         m_CurrentPathIndex = 0;
         m_Progress = 0.0f;             
-    }    
-
-    MapNode GetCurrentNode();
+    }        
     void SetCurrentIndex(uint32_t _idx){m_CurrentPathIndex=_idx;}
-    MapNode FindNearestNode(float _x,float _z);    
+    
     size_t GetCurrentPathIndex(){return m_CurrentPathIndex;}
     void SetGoalNode(uint32_t _nodeID){m_GoalNode=MapManager::GetInstance().GetMapNode(_nodeID);}    
     MapNode GetGoalNode(){return m_GoalNode;}
@@ -59,13 +72,11 @@ public:
     float GetTimeSpentOnCurrentLink_FromNode();
     float GetTimeSpendOnCurrentLink_ToNode();    
 
-    bool m_NeedReplan=false;    
-
-    bool ComeBack2FromNodeInLink(float _deltaTime);
+    bool m_NeedReplan=false;        
     bool isComeBackDone=false;
 public:
     // 관제탑(스케줄러)이 "다음 한 칸만 가!" 라고 명령을 내릴 때 쓰는 함수
-    void AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState);
+    void AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState,float _serverTime);
     
     // 미션의 목적을 설정
     void SetMissionPurpose(MissionPurpose _purpose) { m_Purpose = _purpose; }

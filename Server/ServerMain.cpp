@@ -99,6 +99,11 @@ int main(void)
         float deltaTime = std::chrono::duration<float>(now - lastUpdateTime).count();
         lastUpdateTime = now;
 
+        if (deltaTime > 0.1f) 
+        {
+            deltaTime = 0.1f; 
+        }
+
         NetworkManagerServer::sInstance->UpdateWorld(deltaTime);
 
         NetworkManagerServer::sInstance->SendOutgoingReplicationPackets();

@@ -1,34 +1,38 @@
 #pragma once
+#include <vector>
+#include <memory>
+#include <string>
 #include <cstdint>
-#include "Map.hpp"
-#include <cmath>
+#include "RRAstar.hpp"
 
-class AstarPathFinder
+// 시공간 A*에서 사용할 노드 구조체
+struct AStarNode
+{
+    uint32_t id;
+    float accumulatedTime; // 이 노드에 도착할 예상 시간 (T)
+    float g; // 시작점부터 여기까지 온 실제 비용 (시간)
+    float h; // 목적지까지의 RRA* 휴리스틱 비용 (시간)
+    float f;
+    
+    std::shared_ptr<AStarNode> parentNode;
+
+    AStarNode(uint32_t _id) 
+        : id(_id), accumulatedTime(0.f), g(0.f), h(0.f), f(0.f), parentNode(nullptr) 
+    {
+
+    }
+
+    // f값이 작은 게 우선순위 큐의 Top이 되도록 설정
+    bool operator>(const AStarNode& other) const {return f > other.f;}
+};
+
+class PathFinder 
 {
 public:
-    struct AStarNode 
-    {
-        AStarNode(uint32_t _id) : id(_id) {}
-        uint32_t id;
-        float g = 0.0f; // 출발지부터 여기까지 온 실제 거리
-        float h = 0.0f; // 목적지까지 남은 유클리드 예상 거리
-        float f = 0.0f; // 총점 (g + h)
-        std::shared_ptr<AStarNode> parentNode=nullptr; // 경로 역추적을 위한 부모 
-        float accumulatedTime; //이 노드에 도착했을 때의 시간 축 정보        
-    };
-    
-    struct CompareNode 
-    {
-        bool operator()(const std::shared_ptr<AStarNode>& _a, const std::shared_ptr<AStarNode>& _b) 
-        {
-            return _a->f > _b->f; // 오름차순 정렬 (F가 작을수록 우선순위가 높음)
-        }
-    };
+    PathFinder() = default;
+    ~PathFinder() = default;
 
-public:
-    float CalculateHeuristic(const MapNode& _a,const MapNode& _b)
-    {
-        return std::sqrt(std::pow(_a.m_PosX-_b.m_PosX,2)+std::pow(_a.m_PosZ-_b.m_PosZ,2));
-    }
-    std::vector<uint32_t> FindPath(uint32_t _startNodeID, uint32_t _endNodeID, const std::unordered_map<uint32_t,MapNode>& _nodes, const std::vector<MapLink>& _links,uint32_t _avgID,float _startTime);
+    // WHCA* 메인 경로 탐색 함수
+    // _windowSize: 예약 장부를 보며 정밀 탐색할 최대 스텝 수 (논문 권장 16)
+    std::vector<uint32_t> FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine);
 };
