@@ -171,14 +171,14 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=10;
+    int spawnCount=8;
     ObjectPtr mainRobo=nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();
 
-    uint32_t initNodes[10]      = {240,241,242,243,244,245,246,247,248,249}; 
+    uint32_t initNodes[8]      = {65, 66, 67, 68, 69, 70, 71, 72}; 
 
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)

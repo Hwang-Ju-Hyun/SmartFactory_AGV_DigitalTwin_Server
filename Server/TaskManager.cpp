@@ -60,7 +60,7 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
     int unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(_e.timestamp, _e.agvID);
     if (unloadNodeID == -1)
     {
-        returnl
+        return;
     }
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_e.agvID));
     if(!agv) 

@@ -61,7 +61,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
     if (m_State == AGVState::IDLE) 
     {
         m_AccStayTime += _deltaTime;
-        if (m_AccStayTime > 2.0f) 
+        if (m_AccStayTime > 0.1f) 
         {
             m_AccStayTime = 0.f; // 타이머 초기화
             RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };

@@ -9,6 +9,7 @@
 
 const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f; // 제자리 대기 시간
+constexpr float CLEARANCE_TIME=0.6;
 
 std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, 
                                            uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine)
@@ -143,21 +144,33 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             if (closedList.find(neighborKey) != closedList.end()) 
                 continue;
             
-            if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, leaveTime, _agvID)) 
+            // if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, leaveTime, _agvID)) 
+            // {
+            //     continue;
+            // }
+            // if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + SLOT_DURATION, _agvID)) 
+            // {
+            //     continue;
+            // }
+            if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, enterTime + CLEARANCE_TIME, _agvID)) 
             {
                 continue;
             }
-                
             if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime, _agvID)) 
             {
                 continue;
             }
-            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + SLOT_DURATION, _agvID)) 
+            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime - CLEARANCE_TIME, leaveTime + SLOT_DURATION, _agvID)) 
             {
                 continue;
             }
 
             float nextG = current->g + travelTime;
+            
+            if (current->parentNode != nullptr && neighborID == current->parentNode->id)
+            {
+                nextG += 999.0f; // 999초의 가짜 비용을 줘서 절대 선택하지 않게 만듦
+            }
             bool isAlreadyOpen = (openRegistryList.find(neighborKey) != openRegistryList.end());
 
             if (!isAlreadyOpen || nextG < openRegistryList[neighborKey]->g)

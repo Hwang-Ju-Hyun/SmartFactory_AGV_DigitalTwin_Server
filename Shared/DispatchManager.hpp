@@ -20,21 +20,31 @@ struct NodeDistance
 };
 
 std::vector<uint32_t> loadNodes;
-     std::vector<uint32_t> dispatchNodes;
+std::vector<uint32_t> dispatchNodes;
 
 class DispatchManager 
 {
 public:
     DispatchManager() 
     {
-        for(int i=6;i<460;i++)
+        for(int i=56;i<=61;i++)
         {
             loadNodes.push_back(i);
         }
-        for(int i=1;i<6;i++)
+        for(int i=4;i<=9;i++)
         {
-            dispatchNodes.push_back(i);
-        }    
+            loadNodes.push_back(i);
+        }
+        loadNodes.push_back(13);loadNodes.push_back(30);loadNodes.push_back(47);
+        
+        dispatchNodes.push_back(64);
+        dispatchNodes.push_back(63);
+        dispatchNodes.push_back(55);
+        dispatchNodes.push_back(46);
+        dispatchNodes.push_back(29);
+        dispatchNodes.push_back(12);
+        dispatchNodes.push_back(3);
+        dispatchNodes.push_back(2);
     }
     static DispatchManager& GetInstance() 
     { 
@@ -44,14 +54,10 @@ public:
     int FindBestLoadNode(float _serverTime, uint32_t _agvID)
     {                
         std::vector<uint32_t> availableNodes;
-
-        // 1. 재고가 있고 + 15초 동안 아무도 예약 안 한 '안전한' 방만 골라냅니다.
+        
         for (uint32_t nodeID : loadNodes)
         {
-            // 재고 검사가 필요하다면 활성화 (WarehouseManager 로직에 맞게)
-            // if (!WarehouseManager::GetInstance().CanReserveStock(nodeID)) continue;
-
-            if (TrafficManager::GetInstance().IsNodeAvailable(nodeID, _serverTime, _serverTime + 15.0f, _agvID))
+            if (TrafficManager::GetInstance().IsNodeAvailable(nodeID, _serverTime, _serverTime + 1.0f, _agvID))
             {
                 availableNodes.push_back(nodeID);
             }
@@ -69,11 +75,10 @@ public:
     int FindBestDispatchNode(float _serverTime, uint32_t _agvID)
     {           
         std::vector<uint32_t> availableNodes;
-
-        // 1. 15초 동안 아무도 알박기 안 한 '안전한' 하차지만 골라냅니다.
+        
         for (uint32_t nodeID : dispatchNodes)
         {
-            if (TrafficManager::GetInstance().IsNodeAvailable(nodeID, _serverTime, _serverTime + 15.0f, _agvID))
+            if (TrafficManager::GetInstance().IsNodeAvailable(nodeID, _serverTime, _serverTime + 1.0f, _agvID))
             {
                 availableNodes.push_back(nodeID);
             }
