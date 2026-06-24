@@ -105,16 +105,17 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             float dist = std::sqrt(std::pow(m_ToNode.m_PosX - m_FromNode.m_PosX, 2) + std::pow(m_ToNode.m_PosZ - m_FromNode.m_PosZ, 2));
             
             // Zero Division 방지 및 초단거리 텔레포트 차단
-            if (dist < 0.001f) 
-            {
-                // 두 노드가 물리적으로 같은 위치라면 즉시 완료 처리
-                m_Progress = 1.0f; 
-            }
-            else
-            {
-                float elapsedTime = _serverTime - m_MoveStartTime;
-                m_Progress = elapsedTime / m_PlannedTravelTime;
-            }
+            // if (dist < 0.001f) 
+            // {
+            //     // 두 노드가 물리적으로 같은 위치라면 즉시 완료 처리
+            //     m_Progress = 1.0f; 
+            // }
+            // else
+            // {
+            //     float elapsedTime = _serverTime - m_MoveStartTime;
+            //     m_Progress = elapsedTime / m_PlannedTravelTime;
+            // }
+            m_Progress += _deltaTime / 1.0f;
 
             m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
             m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    

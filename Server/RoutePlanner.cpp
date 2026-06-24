@@ -64,7 +64,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
 
         //TrafficManager::GetInstance().ReserveNode(startNodeID, _serverTime, _serverTime + 2.0f, _agvID);
         // 2초 뒤 재시도 큐에 등록
-        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, 0.1f });
+        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, 1.f });
         
         return; // 실패했으니 여기서 함수 조기 종료!
     }

@@ -2,6 +2,7 @@
 #include <unordered_map>
 #include <string>
 #include <cstdint>
+#include <cmath>
 #include <vector>
 
 constexpr float SLOT_DURATION = 0.1f; 
@@ -18,7 +19,7 @@ public:
     static TrafficManager& GetInstance() { static TrafficManager instance; return instance; }
 
     // float 시간을 0.1초 단위의 정수 슬롯으로 변환 (오차 방지 )
-    static int TimeToSlot(float _time) { return static_cast<int>(_time * 0.1f); }        
+    static int TimeToSlot(float _time) { return static_cast<int>(std::round(_time));}        
 
     // 예약 장부 초기화 (로봇이 새 길을 찾을 때 기존 예약을 지움)
     void ClearFutureReservations(uint32_t _agvID, float _currentTime);
