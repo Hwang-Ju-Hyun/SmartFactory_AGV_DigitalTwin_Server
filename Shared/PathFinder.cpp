@@ -142,7 +142,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
             if (closedList.find(neighborKey) != closedList.end()) 
                 continue;
-
+            
             if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, leaveTime, _agvID)) 
             {
                 continue;

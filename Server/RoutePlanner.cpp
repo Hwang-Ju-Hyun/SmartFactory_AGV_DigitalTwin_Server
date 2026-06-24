@@ -13,19 +13,13 @@ const float CLEARANCE_TIME = 0.6f; // 앞차 꼬리가 빠져나가는 안전 �
 void RoutePlanner::Init()
 {    
     EventManager::GetInstance().Subscribe(RobotEventType::MOVING_WAITING_COMPLETED,[this](const RobotEvent& _e) { OnRobotStepCompleted(_e); });
-    std::cout << "[RoutePlanner Init]" << std::endl;
+    
 }
 
 void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose)
 {
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
-    if (!agv) return;
-    std::cout
-    << "[ROUTE] agv="
-    << _agvID
-    << " serverTime="
-    << _serverTime
-    << std::endl;    
+    if (!agv) return;     
 
     uint32_t curNodeID = agv->GetCurrentNodeID();
 
@@ -101,8 +95,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     
     agv->SetMissionPurpose(_purpose);
     agv->AssignNextStep(fromNode, toNode, AGVState::MOVING,_serverTime);
-    
-    std::cout << "[관제탑] AGV " << _agvID << "번 경로 발급 완료. 목적지: " << _targetNodeID << std::endl;
+        
 }
 
 void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint32_t>& _path, float _serverTime, uint32_t _finalTargetID)
@@ -151,6 +144,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
                 // 윈도우 컷오프(임시 목적지)라면 영구 알박기(ParkNode) 금지!
                 // 다음 AGV 재탐색이 시작될 때까지의 최소한의 공백(예: 0.1초)만 징검다리처럼 예약함
                 TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + WAIT_TIME, _agvID);
+                //TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + 9999.0f, _agvID);
             }             
         }
         else 
@@ -195,8 +189,6 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
             uint32_t finalTarget = plan.finalTargetNodeID;
             m_MasterPlans.erase(agvID); // 일단 헌 계획표 찢음
 
-            std::cout << "[관제탑] AGV " << agvID << "번 윈도우 끝 도달. 진짜 목적지(" << finalTarget << ")를 향해 이어서 탐색!" << std::endl;
-            
             // 멈추지 않고 이어서 남은 구간에 대한 새로운 윈도우 경로를 발급!
             CreateRoute(agvID, finalTarget, _e.timestamp, purpose);
             return; 
@@ -209,5 +201,36 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
             agv->AssignNextStep(toNode, toNode, AGVState::IDLE, _e.timestamp);
         
         m_MasterPlans.erase(agvID); 
+    }
+}
+
+void RoutePlanner::Update(float dt, float serverTime)
+{
+    std::vector<PendingRoute> retryList;
+
+    for(auto it = m_PendingRoutes.begin();
+        it != m_PendingRoutes.end();)
+    {
+        it->retryTimer -= dt;
+
+        if(it->retryTimer <= 0.0f)
+        {
+            retryList.push_back(*it);
+            it = m_PendingRoutes.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+    for(auto& route : retryList)
+    {
+        CreateRoute(
+            route.agvID,
+            route.targetNodeID,
+            serverTime,
+            route.purpose
+        );
     }
 }

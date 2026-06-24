@@ -45,8 +45,7 @@ void TaskManager::OnRobotIdle(const RobotEvent& _e)
     {
         // 작업장 길막 방지를 위해 집으로 차 빼기
         if (agv->GetToNodeID() != agv->GetHomeNode())
-        {
-            std::cout << "[관제탑] 만석 AGV " << _e.agvID << "번 홈으로 복귀." << std::endl;
+        {            
             RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
         }
         return; // 집에 있으면 Robo.cpp의 2초 타이머가 다시 이 함수를 깨워줌!
@@ -59,6 +58,10 @@ void TaskManager::OnRobotIdle(const RobotEvent& _e)
 void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
 {
     int unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(_e.timestamp, _e.agvID);
+    if (unloadNodeID == -1)
+    {
+        returnl
+    }
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_e.agvID));
     if(!agv) 
     {
@@ -71,8 +74,7 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
         m_PendingEvents.push(_e);
 
         if (agv->GetToNodeID() != agv->GetHomeNode() && agv->GetMissionPurpose() != MissionPurpose::HOME)
-        {
-            std::cout << "[관제탑] 하차지 만석! AGV " << _e.agvID << "번 대기." << std::endl;
+        {            
             RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
         }
         return;              

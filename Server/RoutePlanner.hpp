@@ -4,6 +4,7 @@
 #include <cstdint>
 #include "Event.hpp"
 #include "Robo.hpp" 
+#include <queue>
 #include "RRAstar.hpp"
 
 // 로봇이 수행할 '딱 한 칸'의 지시사항
@@ -55,5 +56,5 @@ private:
     std::unordered_map<uint32_t, RoutePlan> m_MasterPlans; // 중앙 계획표 장부
     std::unordered_map<uint32_t, RRAStar> m_RRAEngines;    
 public:
-    std::vector<PendingRoute> m_PendingRoutes; // 비상 대기열
+    std::deque<PendingRoute> m_PendingRoutes; // 비상 대기열    
 };

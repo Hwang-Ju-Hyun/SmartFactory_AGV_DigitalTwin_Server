@@ -37,16 +37,7 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
     m_FromNode = _from;
     m_ToNode = _to;
     m_Progress = 0.0f;
-    m_State = _newState;
-    
-    std::cout
-    << "[ASSIGN] "
-    << _from.m_Id
-    << " -> "
-    << _to.m_Id
-    << " start="
-    << _serverTime
-    << std::endl;
+    m_State = _newState;        
 
     //2. 명령을 받는 즉시 절대 덮어씌워지지 않는 시작 시간 세팅!
     m_MoveStartTime = _serverTime; 
@@ -61,13 +52,7 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
         else // 제자리 대기일 경우
         {
             m_PlannedTravelTime = 1.0f; // WAIT_TIME
-        }
-        
-        //저 고수의 조언대로 시작 로그 찍기!
-        std::cout << "[STEP START] AGV " << GetNetworkID() 
-                  << " | from: " << _from.m_Id 
-                  << " | to: " << _to.m_Id 
-                  << " | time: " << m_MoveStartTime << std::endl;
+        }                
     }
 }
 
@@ -99,7 +84,7 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             m_State = AGVState::IDLE; 
             
             RobotEvent re = { eType, GetNetworkID(), _serverTime };
-            //EventManager::GetInstance().Publish(re);
+            EventManager::GetInstance().Publish(re);
         }
         return;
     }
@@ -112,7 +97,8 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 
         if (m_FromNode.m_Id == m_ToNode.m_Id)
         {
-            m_Progress += _deltaTime / 1.0f; // 제자리 대기
+            float elapsedTime = _serverTime - m_MoveStartTime;
+            m_Progress = elapsedTime / m_PlannedTravelTime;
         }
         else 
         {
@@ -126,7 +112,8 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             }
             else
             {
-                m_Progress += (m_Speed / dist) * _deltaTime;
+                float elapsedTime = _serverTime - m_MoveStartTime;
+                m_Progress = elapsedTime / m_PlannedTravelTime;
             }
 
             m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
@@ -144,17 +131,11 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             m_CurrentNodeID = m_ToNode.m_Id;
 
             float actualTravelTime = _serverTime - m_MoveStartTime;
-            float diff = actualTravelTime - m_PlannedTravelTime;
+            float diff = actualTravelTime - m_PlannedTravelTime;              
             
-            std::cout << "[STEP END] AGV " << GetNetworkID() 
-                      << " | from: " << m_FromNode.m_Id 
-                      << " | to: " << m_ToNode.m_Id 
-                      << " | start: " << m_MoveStartTime 
-                      << " | end: " << _serverTime 
-                      << " | actual: " << actualTravelTime 
-                      << " | diff: " << diff << std::endl;
+            float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
             
-            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), _serverTime };
+            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), scheduledArrivalTime };
             EventManager::GetInstance().Publish(re);
         }
     }
