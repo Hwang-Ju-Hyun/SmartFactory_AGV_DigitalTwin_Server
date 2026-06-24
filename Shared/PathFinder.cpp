@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iostream>
 
-const float AGV_SPEED = 3.8f;
+const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f; // 제자리 대기 시간
 
 std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, 
@@ -152,7 +152,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             {
                 continue;
             }
-            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + 0.04f, _agvID)) 
+            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + SLOT_DURATION, _agvID)) 
             {
                 continue;
             }

@@ -5,9 +5,10 @@
 #include "Map.hpp"
 #include <iostream>
 
-const int WINDOW_SIZE = 16; // WHCA* 논문 권장 탐색 뎁스
-const float AGV_SPEED = 3.8f;
+const int WINDOW_TIME = 16; // WHCA* 논문 권장 탐색 뎁스
+const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f;
+const float CLEARANCE_TIME = 0.6f; // 앞차 꼬리가 빠져나가는 안전 시간
 
 void RoutePlanner::Init()
 {    
@@ -24,8 +25,9 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     << _agvID
     << " serverTime="
     << _serverTime
-    << std::endl;
-    uint32_t curNodeID = agv->GetFromNodeID();
+    << std::endl;    
+
+    uint32_t curNodeID = agv->GetCurrentNodeID();
 
     // 1. 이미 도착한 경우 (제자리 알박기)
     if (curNodeID == _targetNodeID)
@@ -50,8 +52,9 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
         m_RRAEngines[_targetNodeID] = RRAStar();
         m_RRAEngines[_targetNodeID].Init(_targetNodeID); 
     }
+
     PathFinder pf;
-    std::vector<uint32_t> path = pf.FindPath(curNodeID, _targetNodeID, _agvID, _serverTime, WINDOW_SIZE, m_RRAEngines[_targetNodeID]);
+    std::vector<uint32_t> path = pf.FindPath(curNodeID, _targetNodeID, _agvID, _serverTime, WINDOW_TIME, m_RRAEngines[_targetNodeID]);
     
     if (path.size() < 2)
     {
@@ -107,7 +110,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
     float accTime = _serverTime;
     
     // 출발 발밑 예약
-    TrafficManager::GetInstance().ReserveNode(_path[0], accTime, accTime + 0.04f, _agvID);
+    TrafficManager::GetInstance().ReserveNode(_path[0], accTime, accTime + SLOT_DURATION, _agvID);
 
     for (size_t i = 0; i < _path.size() - 1; i++)
     {
@@ -132,7 +135,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         float linkLeaveTime = accTime + travelTime;  
         
         TrafficManager::GetInstance().ReserveLink(fromID, toID, linkEnterTime, linkLeaveTime, _agvID);
-        TrafficManager::GetInstance().ReserveNode(fromID, accTime, accTime + 0.04f, _agvID);
+        TrafficManager::GetInstance().ReserveNode(fromID, linkEnterTime, linkLeaveTime /*+ CLEARANCE_TIME*/, _agvID);
 
         float nodeEnterTime = linkLeaveTime;
 
@@ -152,7 +155,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         }
         else 
         {         
-            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + 0.04f, _agvID);
+            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + SLOT_DURATION, _agvID);
         }        
 
         accTime = nodeEnterTime;
@@ -184,7 +187,7 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     else 
     {
         MissionPurpose purpose = agv->GetMissionPurpose();
-        auto toNode = MapManager::GetInstance().GetMapNode(agv->GetToNodeID());
+        auto toNode = MapManager::GetInstance().GetMapNode(agv->GetCurrentNodeID());
 
         // WHCA* 윈도우의 특징: 목적지가 아닌데 경로가 끝났다면 재탐색!
         if (agv->GetToNodeID() != plan.finalTargetNodeID)

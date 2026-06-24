@@ -8,7 +8,7 @@ Robo::Robo()
 {
     SetName("Robo");
     m_ClassID=ClassID::OBJ_AGV;    
-    m_Speed=3.8f;
+    m_Speed=4.0f;
     m_Progress=0.f;
 }
 
@@ -141,6 +141,8 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             // [상태 변경] 보고하기 전에 먼저 상태를 바꿔버려서, 같은 프레임에서 중복 이벤트가 발생하는 것을 원천 차단!
             m_State = AGVState::IDLE; 
             
+            m_CurrentNodeID = m_ToNode.m_Id;
+
             float actualTravelTime = _serverTime - m_MoveStartTime;
             float diff = actualTravelTime - m_PlannedTravelTime;
             

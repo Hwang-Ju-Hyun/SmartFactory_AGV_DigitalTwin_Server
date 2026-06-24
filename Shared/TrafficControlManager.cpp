@@ -43,6 +43,11 @@ void TrafficManager::ReserveNode(uint32_t _nodeID, float _enterTime, float _leav
 {
     int startSlot = TimeToSlot(_enterTime);
     int endSlot = TimeToSlot(_leaveTime);
+    
+    std::cout << "[RESERVE NODE] AGV " << _agvID 
+              << " | Node: " << _nodeID 
+              << " | Time: " << _enterTime << " ~ " << _leaveTime 
+              << " | Slot: " << startSlot << " ~ " << endSlot << std::endl;
 
     for (int t = startSlot; t <= endSlot; ++t)
     {

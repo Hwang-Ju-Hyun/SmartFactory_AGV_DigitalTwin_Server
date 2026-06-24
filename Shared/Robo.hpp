@@ -34,6 +34,7 @@ public:
     float m_MoveStartTime = -1.0f;
     float m_PlannedTravelTime = 0.0f;
 private:
+    uint32_t m_CurrentNodeID;
     MapNode m_HomeNode;
     MapNode m_FromNode;
     MapNode m_ToNode;    
@@ -47,6 +48,10 @@ private:
     AGVState m_State;
     MissionPurpose m_Purpose; // 왜 달리고 있는지 (상차? 하차? 퇴근?)            
 public:
+    void SetCurrentNodeID(uint32_t _nodeID) { m_CurrentNodeID = _nodeID; }
+    uint32_t GetCurrentNodeID() const { return m_CurrentNodeID; }
+
+    
     float GetSpeed()const{return m_Speed;}
     float GetWaitTime()const{return WaitTime;}
 
