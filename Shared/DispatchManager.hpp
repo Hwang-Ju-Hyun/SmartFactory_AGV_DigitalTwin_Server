@@ -27,24 +27,33 @@ class DispatchManager
 public:
     DispatchManager() 
     {
-        for(int i=56;i<=61;i++)
-        {
-            loadNodes.push_back(i);
-        }
-        for(int i=4;i<=9;i++)
-        {
-            loadNodes.push_back(i);
-        }
-        loadNodes.push_back(13);loadNodes.push_back(30);loadNodes.push_back(47);
+        // for(int i=56;i<=61;i++)
+        // {
+        //     loadNodes.push_back(i);
+        // }
+        // for(int i=4;i<=9;i++)
+        // {
+        //     loadNodes.push_back(i);
+        // }
+        // loadNodes.push_back(13);loadNodes.push_back(30);loadNodes.push_back(47);
         
-        dispatchNodes.push_back(64);
-        dispatchNodes.push_back(63);
-        dispatchNodes.push_back(55);
-        dispatchNodes.push_back(46);
-        dispatchNodes.push_back(29);
-        dispatchNodes.push_back(12);
-        dispatchNodes.push_back(3);
-        dispatchNodes.push_back(2);
+        // dispatchNodes.push_back(64);
+        // dispatchNodes.push_back(63);
+        // dispatchNodes.push_back(55);
+        // dispatchNodes.push_back(46);
+        // dispatchNodes.push_back(29);
+        // dispatchNodes.push_back(12);
+        // dispatchNodes.push_back(3);
+        // dispatchNodes.push_back(2);
+
+        loadNodes.push_back(1);
+        loadNodes.push_back(6);
+        loadNodes.push_back(5);
+
+
+        dispatchNodes.push_back(10);
+        dispatchNodes.push_back(13);
+        dispatchNodes.push_back(14);
     }
     static DispatchManager& GetInstance() 
     { 

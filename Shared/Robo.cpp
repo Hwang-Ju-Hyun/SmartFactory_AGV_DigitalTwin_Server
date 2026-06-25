@@ -37,8 +37,7 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
     m_FromNode = _from;
     m_ToNode = _to;
     m_Progress = 0.0f;
-    m_State = _newState;        
-
+    m_State = _newState;
     //2. 명령을 받는 즉시 절대 덮어씌워지지 않는 시작 시간 세팅!
     m_MoveStartTime = _serverTime; 
 
@@ -47,7 +46,7 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
         if (_from.m_Id != _to.m_Id) // 진짜 이동일 경우
         {
             float dist = std::sqrt(std::pow(_to.m_PosX - _from.m_PosX, 2) + std::pow(_to.m_PosZ - _from.m_PosZ, 2));
-            m_PlannedTravelTime = dist / m_Speed;
+            m_PlannedTravelTime = dist / m_Speed;            
         }
         else // 제자리 대기일 경우
         {
@@ -103,19 +102,15 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
         else 
         {
             float dist = std::sqrt(std::pow(m_ToNode.m_PosX - m_FromNode.m_PosX, 2) + std::pow(m_ToNode.m_PosZ - m_FromNode.m_PosZ, 2));
-            
-            // Zero Division 방지 및 초단거리 텔레포트 차단
-            // if (dist < 0.001f) 
-            // {
-            //     // 두 노드가 물리적으로 같은 위치라면 즉시 완료 처리
-            //     m_Progress = 1.0f; 
-            // }
-            // else
-            // {
-            //     float elapsedTime = _serverTime - m_MoveStartTime;
-            //     m_Progress = elapsedTime / m_PlannedTravelTime;
-            // }
-            m_Progress += _deltaTime / 1.0f;
+                        
+            if (dist < 0.001f) 
+            {
+                m_Progress = 1.0f; 
+            }
+            else
+            {             
+                m_Progress += (m_Speed / dist) * _deltaTime;
+            }
 
             m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
             m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    

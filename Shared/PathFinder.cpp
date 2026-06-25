@@ -102,7 +102,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                     waitNode->h = _rraEngine.GetAbstractDistance(current->id) / AGV_SPEED; 
                     waitNode->f = waitNode->g + waitNode->h;
 
-                    openList.push(waitNode); // 🌟 무조건 다시 push!
+                    openList.push(waitNode); // 무조건 다시 push!
                     openRegistryList[waitKey] = waitNode; // 레지스트리 갱신
                 }
             }
@@ -135,23 +135,14 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             auto from = MapManager::GetInstance().GetNodes().at(current->id);
             auto to = MapManager::GetInstance().GetNodes().at(neighborID);            
             float dist = std::sqrt(std::pow(from.m_PosX - to.m_PosX, 2) + std::pow(from.m_PosZ - to.m_PosZ, 2));
-            float travelTime = dist / AGV_SPEED;
+            float travelTime = std::round(dist / AGV_SPEED);
 
             float enterTime = current->accumulatedTime;
             float leaveTime = enterTime + travelTime;
             std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::TimeToSlot(leaveTime));
 
             if (closedList.find(neighborKey) != closedList.end()) 
-                continue;
-            
-            // if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, leaveTime, _agvID)) 
-            // {
-            //     continue;
-            // }
-            // if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + SLOT_DURATION, _agvID)) 
-            // {
-            //     continue;
-            // }
+                continue;        
             if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, enterTime + CLEARANCE_TIME, _agvID)) 
             {
                 continue;
@@ -159,7 +150,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime, _agvID)) 
             {
                 continue;
-            }
+            }                
             if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + SLOT_DURATION, _agvID)) 
             {
                 continue;

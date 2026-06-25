@@ -18,6 +18,7 @@ void RoutePlanner::Init()
 
 void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose)
 {
+    std::cout << "[CREATE ROUTE] AGV " << _agvID << " | Target: " << _targetNodeID << " | Time: " << _serverTime << std::endl;
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
     if (!agv) return;     
 
@@ -28,7 +29,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     {
         TrafficManager::GetInstance().ClearFutureReservations(_agvID, _serverTime);
         //TrafficManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + 99999.0f, _agvID);
-        TrafficManager::GetInstance().ParkNode(curNodeID, _agvID,_serverTime);
+        TrafficManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + WINDOW_TIME + 2.0f, _agvID);
         
         agv->SetMissionPurpose(_purpose);
         if (_purpose == MissionPurpose::HOME) 
@@ -52,19 +53,30 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     
     if (path.size() < 2)
     {
-        // [실패] 사방이 막혔거나 유효한 경로(최소 길이 2)를 찾지 못한 경우
         m_MasterPlans.erase(_agvID); 
-
         std::cout << "[관제탑] AGV " << _agvID << "번 시공간 체증 감지! 대기 후 재탐색." << std::endl;
                         
-        // 발밑만 안전하게 확보하고 대기
         TrafficManager::GetInstance().ClearFutureReservations(_agvID, _serverTime);
-        TrafficManager::GetInstance().ParkNode(curNodeID, _agvID,_serverTime);
-        
 
-        //TrafficManager::GetInstance().ReserveNode(startNodeID, _serverTime, _serverTime + 2.0f, _agvID);
-        // 2초 뒤 재시도 큐에 등록
-        m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, 1.f });
+        TrafficManager::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + WINDOW_TIME + 2.0f, _agvID);
+        
+        // [핵심 방어] 이미 재시도 큐에 이 AGV가 있는지 확인 (중복 폭주 방지)
+        bool alreadyPending = false;
+        for (const auto& pending : m_PendingRoutes)
+        {
+            if (pending.agvID == _agvID)
+            {
+                alreadyPending = true;
+                break;
+            }
+        }
+
+        if (!alreadyPending)
+        {
+            //[로그 추가] 큐에 들어가는 시점 확인!
+            std::cout << "[RETRY QUEUE PUSH] AGV " << _agvID << " 등록됨!" << std::endl;
+            m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, 1.0f });
+        }        
         
         return; // 실패했으니 여기서 함수 조기 종료!
     }
@@ -124,35 +136,24 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         auto toNode = MapManager::GetInstance().GetMapNode(toID);
 
         float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
-        float travelTime = dist / AGV_SPEED;
+        float travelTime = std::round(dist / AGV_SPEED);
        
         float linkEnterTime = accTime;               
         float linkLeaveTime = accTime + travelTime;  
         
         TrafficManager::GetInstance().ReserveLink(fromID, toID, linkEnterTime, linkLeaveTime, _agvID);
-        TrafficManager::GetInstance().ReserveNode(fromID, linkEnterTime, linkEnterTime + CLEARANCE_TIME, _agvID);
+        TrafficManager::GetInstance().ReserveNode(fromID, linkEnterTime, linkLeaveTime, _agvID);
 
         float nodeEnterTime = linkLeaveTime;
 
         if (i + 1 == _path.size() - 1) 
         {         
-            if (toID == _finalTargetID)
-            {
-                //진짜 최종 목적지일 때만 영구 알박기!
-                TrafficManager::GetInstance().ParkNode(toID, _agvID, nodeEnterTime);            
-            }
-            else 
-            {
-                // 윈도우 컷오프(임시 목적지)라면 영구 알박기(ParkNode) 금지!
-                // 다음 AGV 재탐색이 시작될 때까지의 최소한의 공백(예: 0.1초)만 징검다리처럼 예약함
-                TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + WAIT_TIME, _agvID);
-                //TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + 9999.0f, _agvID);
-            }             
-        }
+            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + WINDOW_TIME + 2.0f, _agvID);
+        }    
         else 
-        {         
-            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + SLOT_DURATION, _agvID);
-        }        
+        {                                
+            TrafficManager::GetInstance().ReserveNode(toID, nodeEnterTime, nodeEnterTime + 1.0f, _agvID);                
+        }       
 
         accTime = nodeEnterTime;
     }
@@ -173,10 +174,24 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     {
         uint32_t nextFrom = plan.steps[plan.currentStepIndex].fromNodeID;
         uint32_t nextTo   = plan.steps[plan.currentStepIndex].toNodeID;
-        
+
+        // =========================================================
+        //[핵심] 출발 직전 재검사 (Just-In-Time Validation)
+        // =========================================================
+        bool isNodeSafe = TrafficManager::GetInstance().IsNodeAvailable(nextTo, _e.timestamp, _e.timestamp + 1.0f, agvID);
+        bool isLinkSafe = TrafficManager::GetInstance().IsLinkAvailable(nextFrom, nextTo, _e.timestamp, _e.timestamp + 1.0f, agvID);
+
+        if (!isNodeSafe || !isLinkSafe)
+        {
+            std::cout << "[관제탑] AGV " << agvID << "번 출발 직전 돌발 장애물 감지! 즉시 재탐색!" << std::endl;
+            m_MasterPlans.erase(agvID);
+            CreateRoute(agvID, plan.finalTargetNodeID, _e.timestamp, plan.purpose);
+            return; 
+        }
+        // =========================================================
+
         auto fromNode = MapManager::GetInstance().GetMapNode(nextFrom);
         auto toNode   = MapManager::GetInstance().GetMapNode(nextTo);
-
         agv->AssignNextStep(fromNode, toNode, AGVState::MOVING, _e.timestamp);
     }
     // 2. 받은 경로의 끝에 도달했을 때

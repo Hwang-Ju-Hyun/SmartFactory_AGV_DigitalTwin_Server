@@ -2,9 +2,7 @@
 #include <iostream>
 
 void TrafficManager::ClearFutureReservations(uint32_t _agvID, float _currentTime)
-{        
-    UnparkNode(_agvID);
-
+{            
     if (m_AgvOwnedKeys.find(_agvID) == m_AgvOwnedKeys.end()) 
         return;
 
@@ -74,14 +72,6 @@ void TrafficManager::ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _en
 
 bool TrafficManager::IsNodeAvailable(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID)
 {
-    if (m_ParkedNodes.find(_nodeID) != m_ParkedNodes.end() && m_ParkedNodes[_nodeID].agvID != _agvID)
-    {
-        if (_leaveTime > m_ParkedNodes[_nodeID].startTime)
-        {
-            return false; 
-        }
-    }
-    
     int startSlot = TimeToSlot(_enterTime);
     int endSlot = TimeToSlot(_leaveTime);
 
@@ -113,26 +103,4 @@ bool TrafficManager::IsLinkAvailable(uint32_t _fromNode, uint32_t _toNode, float
         }
     }
     return true;
-}
-
-//주차장 장부 관리 함수 추가
-void TrafficManager::ParkNode(uint32_t _nodeID, uint32_t _agvID, float _startTime)
-{
-    m_ParkedNodes[_nodeID] = { _agvID, _startTime };
-}
-
-void TrafficManager::UnparkNode(uint32_t _agvID)
-{
-    // 내 차가 주차한 기록이 있으면 싹 지움
-    for (auto it = m_ParkedNodes.begin(); it != m_ParkedNodes.end(); ) 
-    {
-        if (it->second.agvID == _agvID) 
-        {
-            it = m_ParkedNodes.erase(it);
-        }
-        else 
-        {
-            ++it;
-        }
-    }
 }

@@ -5,13 +5,7 @@
 #include <cmath>
 #include <vector>
 
-constexpr float SLOT_DURATION = 0.1f; 
-
-struct ParkInfo 
-{
-    uint32_t agvID;
-    float startTime;
-};
+constexpr float SLOT_DURATION = 1.0f; 
 
 class TrafficManager 
 {
@@ -34,10 +28,7 @@ public:
     bool IsNodeAvailable(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID);
     
     // 해당 시간에 링크가 비어있는지 확인
-    bool IsLinkAvailable(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID);   
-    
-    void ParkNode(uint32_t _nodeID, uint32_t _agvID, float _startTime);
-    void UnparkNode(uint32_t _agvID);
+    bool IsLinkAvailable(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID);           
 private:
     TrafficManager() = default;
 
@@ -48,7 +39,5 @@ private:
     std::unordered_map<std::string, uint32_t> m_LinkReservations;
 
     //AGV ID별로 자신이 등록한 예약 키 목록을 들고 있음
-    std::unordered_map<uint32_t, std::vector<std::string>> m_AgvOwnedKeys;
-        
-    std::unordered_map<uint32_t, ParkInfo> m_ParkedNodes;
+    std::unordered_map<uint32_t, std::vector<std::string>> m_AgvOwnedKeys;            
 };
