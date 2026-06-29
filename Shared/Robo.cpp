@@ -41,28 +41,56 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
     //2. 명령을 받는 즉시 절대 덮어씌워지지 않는 시작 시간 세팅!
     m_MoveStartTime = _serverTime; 
 
+    m_AccStayTime = 0.0f; 
+
+    if (_newState == AGVState::IDLE)
+    {
+        
+        m_bIdleEventSent = false; 
+    }
+
     if (_newState == AGVState::MOVING)
     {
-        if (_from.m_Id != _to.m_Id) // 진짜 이동일 경우
+        if (_from.m_Id != _to.m_Id) 
         {
-            float dist = std::sqrt(std::pow(_to.m_PosX - _from.m_PosX, 2) + std::pow(_to.m_PosZ - _from.m_PosZ, 2));
-            m_PlannedTravelTime = dist / m_Speed;            
+            //매 프레임 찾지 말고, 명령받을 때 딱 한 번만 찾아 캐싱
+            m_CurrentLink = MapManager::GetInstance().FindLink(_from.m_Id, _to.m_Id);
+            
+            // 곡선이면 반드시 JSON의 m_Dist를 사용
+            float dist = 0.0f;
+            if (m_CurrentLink.m_Type == 1) 
+            {
+                dist = m_CurrentLink.m_Dist; 
+            }
+            else 
+            {
+                dist = std::sqrt(std::pow(_to.m_PosX - _from.m_PosX, 2) + std::pow(_to.m_PosZ - _from.m_PosZ, 2));
+            }
+
+            //관제탑과 동일한 시간축(ceil) 강제 주입
+            m_PlannedTravelTime = std::ceil(dist / m_Speed); 
+
+            if (m_PlannedTravelTime < 1.0f) 
+                m_PlannedTravelTime = 1.0f; 
         }
-        else // 제자리 대기일 경우
+        else 
         {
-            m_PlannedTravelTime = 1.0f; // WAIT_TIME
-        }                
+            m_PlannedTravelTime = 1.0f; 
+        }             
     }
 }
 
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {   
+    if (m_State == AGVState::WAIT_REPLAN) return;
     if (m_State == AGVState::IDLE) 
     {
         m_AccStayTime += _deltaTime;
-        if (m_AccStayTime > 0.1f) 
+        if (!m_bIdleEventSent || m_AccStayTime > 5.0f) 
         {
-            m_AccStayTime = 0.f; // 타이머 초기화
+            m_bIdleEventSent = true; 
+            m_AccStayTime = 0.0f; // 5초마다 타이머 초기화
+            
             RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };
             EventManager::GetInstance().Publish(re);
         }
@@ -96,92 +124,58 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 
         if (m_FromNode.m_Id == m_ToNode.m_Id)
         {
-            float elapsedTime = _serverTime - m_MoveStartTime;
-            m_Progress = elapsedTime / m_PlannedTravelTime;
+            // float elapsedTime = _serverTime - m_MoveStartTime;
+            // m_Progress = elapsedTime / m_PlannedTravelTime;
+            m_Progress += _deltaTime / m_PlannedTravelTime;
         }
         else 
         {
-            float dist = std::sqrt(std::pow(m_ToNode.m_PosX - m_FromNode.m_PosX, 2) + std::pow(m_ToNode.m_PosZ - m_FromNode.m_PosZ, 2));
-                        
-            if (dist < 0.001f) 
-            {
-                m_Progress = 1.0f; 
-            }
-            else
-            {             
-               m_Progress += _deltaTime / m_PlannedTravelTime;
+            m_Progress += _deltaTime / m_PlannedTravelTime;
             
-               if (m_Progress > 1.0f) 
-               {
-                    m_Progress = 1.0f;
-               }                
+            if (m_Progress > 1.0f) 
+                m_Progress = 1.0f;                
 
-                // 현재 내가 달리고 있는 링크 정보 찾기 (최적화를 위해 미리 캐싱해두면 더 좋습니다)
-                MapLink currentLink; 
-                bool isCurve = false;
-                for (const auto& l : MapManager::GetInstance().GetLinks()) 
-                {
-                    if ((l.m_FromNodeID == m_FromNode.m_Id && l.m_ToNodeID == m_ToNode.m_Id) || 
-                        (l.m_FromNodeID == m_ToNode.m_Id && l.m_ToNodeID == m_FromNode.m_Id)) 
-                    {
-                        currentLink = l;
-                        if (l.m_Type == 1) 
-                            isCurve = true;
-                        break;
-                    }
-                }
+            //이제 매 프레임 for문 안 돕니다! 캐싱해둔 m_CurrentLink를 바로 씁니다.
+            if (m_CurrentLink.m_Type == 1) // 곡선
+            {                
+                float t = m_Progress;
+                float u = 1.0f - t;
+                float tt = t * t; float uu = u * u;
+                float uuu = uu * u; float ttt = tt * t;
 
-                if (isCurve)
-                {                
-                    float t = m_Progress;
-                    float u = 1.0f - t;
-                    
-                    // 연산 최적화를 위해 거듭제곱 미리 계산
-                    float tt = t * t;
-                    float uu = u * u;
-                    float uuu = uu * u;
-                    float ttt = tt * t;
+                m_PosX = (uuu * m_FromNode.m_PosX) + 
+                         (3.0f * uu * t * m_CurrentLink.m_CX1) + 
+                         (3.0f * u * tt * m_CurrentLink.m_CX2) + 
+                         (ttt * m_ToNode.m_PosX);
 
-                    // P0 = 출발점 (fromNode)
-                    // P1 = 제어점1 (cx1, cz1)
-                    // P2 = 제어점2 (cx2, cz2)
-                    // P3 = 도착점 (toNode)
-
-                    m_posX = (uuu * m_FromNode.m_PosX) + 
-                            (3.0f * uu * t * currentLink.m_CX1) + 
-                            (3.0f * u * tt * currentLink.m_CX2) + 
-                            (ttt * m_ToNode.m_PosX);
-
-                    m_posZ = (uuu * m_FromNode.m_PosZ) + 
-                            (3.0f * uu * t * currentLink.m_CZ1) + 
-                            (3.0f * u * tt * currentLink.m_CZ2) + 
-                            (ttt * m_ToNode.m_PosZ);                         
-                }
-                else
-                {
-                    // 기존 직선(Lerp) 이동
-                    m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
-                    m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
-                }
-            }                  
+                m_PosZ = (uuu * m_FromNode.m_PosZ) + 
+                         (3.0f * uu * t * m_CurrentLink.m_CZ1) + 
+                         (3.0f * u * tt * m_CurrentLink.m_CZ2) + 
+                         (ttt * m_ToNode.m_PosZ);                        
+            }
+            else // 직선
+            {
+                m_PosX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+                m_PosZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
+            }
         }
 
-        // 주행 완료 시 관제탑에 보고
+        //주행 완료 처리 (도착)
         if (m_Progress >= 1.0f)
         {
             m_Progress = 1.0f;
             
-            // [상태 변경] 보고하기 전에 먼저 상태를 바꿔버려서, 같은 프레임에서 중복 이벤트가 발생하는 것을 원천 차단!
+            //도착 즉시 노드 좌표로 정확히 스냅(Snap)
+            m_PosX = m_ToNode.m_PosX;
+            m_PosZ = m_ToNode.m_PosZ;
+
             m_State = AGVState::IDLE; 
-            
             m_CurrentNodeID = m_ToNode.m_Id;
 
-            float actualTravelTime = _serverTime - m_MoveStartTime;
-            float diff = actualTravelTime - m_PlannedTravelTime;              
-            
-            float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
-            
-            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), scheduledArrivalTime };
+            // float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
+            // RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), scheduledArrivalTime };
+            // EventManager::GetInstance().Publish(re);
+            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), _serverTime };
             EventManager::GetInstance().Publish(re);
         }
     }

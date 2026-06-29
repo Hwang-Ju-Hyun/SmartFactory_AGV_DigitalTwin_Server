@@ -36,7 +36,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
     startNode->f = startNode->g + startNode->h;
 
     openList.push(startNode);
-    std::string startKey = std::to_string(_startNodeID) + "_" + std::to_string(TrafficManager::TimeToSlot(_startTime));
+    std::string startKey = std::to_string(_startNodeID) + "_" + std::to_string(TrafficManager::GetStartSlot(_startTime));
     openRegistryList[startKey] = startNode;
 
     std::shared_ptr<AStarNode> endNode = nullptr;
@@ -46,7 +46,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         auto current = openList.top();
         openList.pop();
 
-        int currentSlot = TrafficManager::TimeToSlot(current->accumulatedTime);
+        int currentSlot = TrafficManager::GetStartSlot(current->accumulatedTime);
         std::string currentKey = std::to_string(current->id) + "_" + std::to_string(currentSlot);
         
         // 이미 ClosedList에 있으면(더 짧은 거리로 방문했었다면) 무시! (Lazy Deletion 핵심)
@@ -84,7 +84,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         // 탐색 1: 제자리 대기(WAIT) 액션 
         // ==========================================
         float waitLeaveTime = current->accumulatedTime + WAIT_TIME;
-        std::string waitKey = std::to_string(current->id) + "_" + std::to_string(TrafficManager::TimeToSlot(waitLeaveTime));
+        std::string waitKey = std::to_string(current->id) + "_" + std::to_string(TrafficManager::GetStartSlot(waitLeaveTime));
 
         if (TrafficManager::GetInstance().IsNodeAvailable(current->id, current->accumulatedTime, waitLeaveTime, _agvID))
         {
@@ -118,19 +118,14 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             if (link.m_FromNodeID == current->id) 
             {
                 neighborID = link.m_ToNodeID;
-            }                
-            // 무방향 맵이라면 아래 줄 주석 해제
-            else if (link.m_ToNodeID == current->id) 
-            {
-                neighborID = link.m_FromNodeID;
-            }
+            }                           
             else 
             {
                 continue;
             }
 
             if (link.m_IsBlocked) 
-                continue;
+                continue;           
 
             auto from = MapManager::GetInstance().GetNodes().at(current->id);
             auto to = MapManager::GetInstance().GetNodes().at(neighborID);                        
@@ -153,7 +148,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
             float enterTime = current->accumulatedTime;
             float leaveTime = enterTime + travelTime;
-            std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::TimeToSlot(leaveTime));
+            std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::GetStartSlot(leaveTime));
 
             if (closedList.find(neighborKey) != closedList.end()) 
                 continue;        
@@ -170,11 +165,18 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 continue;
             }
 
+            float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : 1.0f;
+
+            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) 
+            {
+                // 목적지인데 18초 동안 온전히 비어있지 않다면, 이 경로는 버려야 합니다!
+                continue;
+            }
             float nextG = current->g + travelTime;
             
             if (current->parentNode != nullptr && neighborID == current->parentNode->id)
             {
-                nextG += 999.0f; // 999초의 가짜 비용을 줘서 절대 선택하지 않게 만듦 (U턴 방지)
+                continue;
             }
             bool isAlreadyOpen = (openRegistryList.find(neighborKey) != openRegistryList.end());
 
@@ -189,6 +191,16 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
                 openList.push(neighborNode); // 무조건 다시 push!
                 openRegistryList[neighborKey] = neighborNode; // 레지스트리 갱신
+                std::cout
+<< "SEARCH "
+<< current->id
+<< " -> "
+<< neighborID
+<< " enter "
+<< enterTime
+<< " leave "
+<< leaveTime
+<< std::endl;
             }
         }
     }
@@ -198,6 +210,10 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         auto trace = endNode;
         while (trace != nullptr)
         {
+            std::cout
+        << "Node " << trace->id
+        << " time " << trace->accumulatedTime
+        << '\n';
             finalPath.push_back(trace->id);
             trace = trace->parentNode;
         }

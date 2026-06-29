@@ -11,7 +11,8 @@ enum class AGVState
     IDLE,       
     MOVING,     
     LOADING,    
-    UNLOADING   
+    UNLOADING,
+    WAIT_REPLAN
 };
 
 enum class MissionPurpose
@@ -61,6 +62,7 @@ public:
     std::vector<uint32_t> m_FinalPathNodeIDs;     
     size_t m_CurrentPathIndex = 0;       // 현재 티켓의 몇 번째 정거장에 와있는지 (인덱스)       
     std::vector<uint32_t> GetFinalPathNodeIDs(){return m_FinalPathNodeIDs;}
+    bool m_bIdleEventSent = false;
 public:    
     void SetNewTargetRoute(const std::vector<uint32_t>& _newPath) 
     {
@@ -73,12 +75,17 @@ public:
     size_t GetCurrentPathIndex(){return m_CurrentPathIndex;}
     void SetGoalNode(uint32_t _nodeID){m_GoalNode=MapManager::GetInstance().GetMapNode(_nodeID);}    
     MapNode GetGoalNode(){return m_GoalNode;}
-    void ChangeState(AGVState _state){m_State=_state;}
+    void ChangeState(AGVState _state)
+    {
+        m_State = _state;
+        if (_state == AGVState::IDLE) 
+            m_bIdleEventSent = false;
+    }
     float GetTimeSpentOnCurrentLink_FromNode();
     float GetTimeSpendOnCurrentLink_ToNode();    
-
-    bool m_NeedReplan=false;        
+    
     bool isComeBackDone=false;
+    MapLink m_CurrentLink;
 public:
     // 관제탑(스케줄러)이 "다음 한 칸만 가!" 라고 명령을 내릴 때 쓰는 함수
     void AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState,float _serverTime);

@@ -40,18 +40,22 @@ void TaskManager::OnRobotIdle(const RobotEvent& _e)
     {
         return;
     }
+    if (agv->GetState() != AGVState::IDLE)
+    {
+        std::cout << "AGV " << _e.agvID << "번은 진짜 IDLE이 아닙니다! (새 임무 지시 무시)" << std::endl;
+        return; 
+    }
 
     if (loadNodeID == -1)
     {
         // 작업장 길막 방지를 위해 집으로 차 빼기
-        if (agv->GetToNodeID() != agv->GetHomeNode())
-        {            
-            RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
-        }
+        std::cout<<"TaskManager::OnRobotIDle CReateRoute Call : loadNodeID=-1"<<std::endl;
+        RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
         return; // 집에 있으면 Robo.cpp의 2초 타이머가 다시 이 함수를 깨워줌!
     }
     
     WarehouseManager::GetInstance().ReserveStock(loadNodeID);
+    std::cout<<"TaskManager::OnRobotIDle CReateRoute Call"<<std::endl;
     RoutePlanner::GetInstance().CreateRoute(_e.agvID, loadNodeID, _e.timestamp, MissionPurpose::PICKUP);
 }
 
@@ -75,11 +79,12 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
 
         if (agv->GetToNodeID() != agv->GetHomeNode() && agv->GetMissionPurpose() != MissionPurpose::HOME)
         {            
+            std::cout<<"TaskManager::OnRobotLoadCompleted CReateRoute Call : unloadNodeID=-1"<<std::endl;
             RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
         }
         return;              
     }
-    
+    std::cout<<"TaskManager::OnRobotLoadCompleted CReateRoute Call"<<std::endl;
     RoutePlanner::GetInstance().CreateRoute(_e.agvID, unloadNodeID, _e.timestamp, MissionPurpose::DROP);
 }
 

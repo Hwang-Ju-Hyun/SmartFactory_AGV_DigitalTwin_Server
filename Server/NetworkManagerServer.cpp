@@ -263,6 +263,8 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         }   
     }
     
+    EventManager::GetInstance().SwapAndProcessEvents();
+    RoutePlanner::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
 
     for(auto obj:AGVManager::GetInstance().m_AGVs)
     {        
@@ -275,11 +277,6 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
             ClientProxy* proxy = iter->second;
             proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
         }        
-    }          
-    RoutePlanner::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
-
-    EventManager::GetInstance().ProcessEvents();
-
-   
+    }                     
 }
 

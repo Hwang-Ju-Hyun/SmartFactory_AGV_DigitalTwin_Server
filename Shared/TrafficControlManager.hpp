@@ -7,20 +7,33 @@
 
 constexpr float SLOT_DURATION = 1.0f; 
 
+struct SlotRange 
+{ 
+    int start; 
+    int end; 
+};
+
 class TrafficManager 
 {
 public:
     static TrafficManager& GetInstance() { static TrafficManager instance; return instance; }
 
     // float 시간을 0.1초 단위의 정수 슬롯으로 변환 (오차 방지 )
-    static int TimeToSlot(float _time) { return static_cast<int>(std::round(_time));}        
+    //static int TimeToSlot(float _time) { return static_cast<int>(std::round(_time));}        
+
+    static int GetStartSlot(float _time) { return static_cast<int>(std::floor(_time / SLOT_DURATION)); }
+    static int GetEndSlot(float _time) { return static_cast<int>(std::ceil(_time / SLOT_DURATION)); }
+
+    static SlotRange GetSlotRange(float _enterTime, float _leaveTime) 
+    {
+        return { GetStartSlot(_enterTime), GetEndSlot(_leaveTime) };
+    }
 
     // 예약 장부 초기화 (로봇이 새 길을 찾을 때 기존 예약을 지움)
     void ClearFutureReservations(uint32_t _agvID, float _currentTime);
 
     // 노드 점유 예약
-    void ReserveNode(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID);
-    
+    bool ReserveNode(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID);    
     // 링크(도로) 점유 예약 (마주보고 달리는 정면 충돌 방지용)
     void ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID);
 

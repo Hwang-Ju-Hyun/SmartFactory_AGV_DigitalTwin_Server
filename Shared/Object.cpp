@@ -2,8 +2,8 @@
 #include "MemoryStream.hpp"
 
 Object::Object()
-    :m_posX(-1)
-    ,m_posZ(-1)
+    :m_PosX(-1)
+    ,m_PosZ(-1)
     ,m_NetworkID(-1)
 {
     SetName("None");
@@ -21,8 +21,8 @@ void Object::Write(OutputMemoryStream& _outStream)
 
 void Object::Read(InputMemoryStream& _outStream)
 {    
-    _outStream.Read(m_posX);
-    _outStream.Read(m_posZ);
+    _outStream.Read(m_PosX);
+    _outStream.Read(m_PosZ);
     _outStream.Read(m_Rotation.x);
     _outStream.Read(m_Rotation.y);
     _outStream.Read(m_Rotation.z);
