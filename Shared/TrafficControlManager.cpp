@@ -98,7 +98,7 @@ SlotRange range = GetSlotRange(_enterTime, _leaveTime);
     // ==========================================================
     //  1. 검증 페이즈 (Validation): 단 하나라도 막히면 즉시 취소!
     // ==========================================================
-    for (int t = range.start; t <= range.end; ++t)
+    for (int t = range.start; t < range.end; ++t)
     {
         std::string key = std::to_string(_nodeID) + "_" + std::to_string(t);
         auto it = m_NodeReservations.find(key);

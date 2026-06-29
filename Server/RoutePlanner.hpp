@@ -18,12 +18,13 @@ struct RouteStep
 struct RoutePlan 
 {
     uint32_t agvID;
-    std::vector<RouteStep> steps;
-    size_t currentStepIndex;
     MissionPurpose purpose;
-    uint32_t finalTargetNodeID; //추가: 윈도우 때문에 짤리더라도 이 미션의 진짜 끝이 어딘지 기억!
+    uint32_t finalTargetNodeID;
+    
+    // 기존의 from, to 짝을 맞추던 steps 대신 PathStep 리스트를 통째로 들고 있습니다.
+    std::vector<PathStep> steps; 
+    size_t currentStepIndex; 
 };
-
 struct PendingRoute 
 {
     uint32_t agvID;
@@ -49,7 +50,7 @@ private:
     
     void OnRobotStepCompleted(const RobotEvent& _e);
 
-    void ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint32_t>& _path, float _serverTime, uint32_t _finalTargetID);
+    void ReserveRouteTimeline(uint32_t _agvID, const std::vector<PathStep>& _path, float _serverTime, uint32_t _finalTargetID);
 
     void OnLinkBlocked(uint32_t _fromNodeID,uint32_t _toNodeID,float _serverTime);
 

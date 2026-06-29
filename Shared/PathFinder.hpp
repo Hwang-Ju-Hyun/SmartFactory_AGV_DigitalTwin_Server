@@ -5,6 +5,13 @@
 #include <cstdint>
 #include "RRAstar.hpp"
 
+struct PathStep
+{  
+    uint32_t nodeID;
+    float arrivalTime;   // 이 노드에 발을 들이는 시간
+    float departureTime; // 이 노드를 떠나 다음 노드로 출발하는 시간
+};
+
 // 시공간 A*에서 사용할 노드 구조체
 struct AStarNode
 {
@@ -14,8 +21,11 @@ struct AStarNode
     float h; // 목적지까지의 RRA* 휴리스틱 비용 (시간)
     float f;
     
-    std::shared_ptr<AStarNode> parentNode;
+    float arrivalTime;   
+    float departureTime;
 
+    std::shared_ptr<AStarNode> parentNode;
+    
     AStarNode(uint32_t _id) 
         : id(_id), accumulatedTime(0.f), g(0.f), h(0.f), f(0.f), parentNode(nullptr) 
     {
@@ -34,5 +44,5 @@ public:
 
     // WHCA* 메인 경로 탐색 함수
     // _windowSize: 예약 장부를 보며 정밀 탐색할 최대 스텝 수 (논문 권장 16)
-    std::vector<uint32_t> FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine);
+    std::vector<PathStep> FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine);
 };
