@@ -47,7 +47,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         auto current = openList.top();
         openList.pop();
 
-        // 🌟 정밀해진 슬롯 검사: 이 노드에서 출발하는 시각(departureTime)을 기준으로 닫힌 목록 관리
+        // 정밀해진 슬롯 검사: 이 노드에서 출발하는 시각(departureTime)을 기준으로 닫힌 목록 관리
         int currentSlot = TrafficManager::GetStartSlot(current->departureTime);
         std::string currentKey = std::to_string(current->id) + "_" + std::to_string(currentSlot);
         
@@ -72,7 +72,15 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         float waitLeaveTime = current->departureTime + WAIT_TIME;
         std::string waitKey = std::to_string(current->id) + "_" + std::to_string(TrafficManager::GetStartSlot(waitLeaveTime));
 
-        if (TrafficManager::GetInstance().IsNodeAvailable(current->id, current->departureTime, waitLeaveTime, _agvID))
+        //  [디버깅 로그] 대기 노드 시도
+        std::cout << "WAIT TRY " << current->id << " " << current->departureTime << " -> " << waitLeaveTime << std::endl;
+
+        if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, current->departureTime, waitLeaveTime, _agvID))
+        {
+            //  [디버깅 로그] 장애물이나 다른 예약으로 막힘
+            std::cout << "WAIT BLOCKED " << current->id << std::endl;
+        }
+        else
         {
             if (closedList.find(waitKey) == closedList.end())
             {
@@ -81,7 +89,6 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 {
                     auto waitNode = std::make_shared<AStarNode>(current->id); 
                     waitNode->parentNode = current;
-                    // 🌟 WAIT 액션: 도착은 그대로 두고, 출발 시각만 뒤로 미룹니다!
                     waitNode->arrivalTime = current->arrivalTime;
                     waitNode->departureTime = waitLeaveTime;
                     waitNode->g = nextG;
@@ -90,7 +97,15 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
                     openList.push(waitNode); 
                     openRegistryList[waitKey] = waitNode; 
+                    
+                    //  [디버깅 로그] 대기 노드 성공적 생성
+                    std::cout << "WAIT CREATED " << current->id << " dep " << waitLeaveTime << std::endl;
                 }
+            }
+            else 
+            {
+                //  [디버깅 로그] 이미 더 짧은 시간으로 탐색된 적 있음
+                std::cout << "WAIT CLOSED" << std::endl;
             }
         }
 
@@ -109,7 +124,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             float dist = (link.m_Type == 1) ? link.m_Dist : std::sqrt(std::pow(toNodeGeo.m_PosX - fromNodeGeo.m_PosX, 2) + std::pow(toNodeGeo.m_PosZ - fromNodeGeo.m_PosZ, 2));
             float travelTime = std::ceil(dist / AGV_SPEED);
 
-            // 🌟 [핵심 수정] 이전 노드를 '떠난 시각(departureTime)'부터 링크 주행을 시작합니다!
+            //  이전 노드를 '떠난 시각(departureTime)'부터 링크 주행을 시작합니다!
             float enterTime = current->departureTime;
             float leaveTime = enterTime + travelTime;
             std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::GetStartSlot(leaveTime));
@@ -128,7 +143,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             {
                 auto neighborNode = std::make_shared<AStarNode>(neighborID); 
                 neighborNode->parentNode = current;
-                // 🌟 MOVE 액션: 새로운 노드에 도착했으므로 arrival과 departure를 통일시킵니다.
+                //MOVE 액션: 새로운 노드에 도착했으므로 arrival과 departure를 통일시킵니다.
                 neighborNode->arrivalTime = leaveTime;
                 neighborNode->departureTime = leaveTime; 
                 neighborNode->g = nextG;                

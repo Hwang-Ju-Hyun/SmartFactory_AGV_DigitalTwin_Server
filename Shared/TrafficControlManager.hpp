@@ -35,7 +35,7 @@ public:
     // 노드 점유 예약
     bool ReserveNode(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID);    
     // 링크(도로) 점유 예약 (마주보고 달리는 정면 충돌 방지용)
-    void ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID);
+    bool ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID);
 
     // 해당 시간에 노드가 비어있는지 확인 (A* 검색 시 사용)
     bool IsNodeAvailable(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID);
