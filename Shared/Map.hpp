@@ -20,8 +20,17 @@ struct MapLink
 public:
     uint32_t m_Id;
     uint32_t m_FromNodeID;
-    uint32_t m_ToNodeID;
+    uint32_t m_ToNodeID;    
+    uint8_t m_Type;
     bool m_IsBlocked=false;
+
+    float m_Dist;  
+    
+    // 3차 베지어를 위한 제어점 2개
+    float m_CX1;        
+    float m_CZ1;        
+    float m_CX2;        
+    float m_CZ2;
 };
 
 class MapManager

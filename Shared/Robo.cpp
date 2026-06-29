@@ -56,7 +56,7 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 }
 
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
-{    
+{   
     if (m_State == AGVState::IDLE) 
     {
         m_AccStayTime += _deltaTime;
@@ -109,11 +109,61 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
             }
             else
             {             
-                m_Progress += (m_Speed / dist) * _deltaTime;
-            }
+               m_Progress += _deltaTime / m_PlannedTravelTime;
+            
+               if (m_Progress > 1.0f) 
+               {
+                    m_Progress = 1.0f;
+               }                
 
-            m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
-            m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
+                // 현재 내가 달리고 있는 링크 정보 찾기 (최적화를 위해 미리 캐싱해두면 더 좋습니다)
+                MapLink currentLink; 
+                bool isCurve = false;
+                for (const auto& l : MapManager::GetInstance().GetLinks()) 
+                {
+                    if ((l.m_FromNodeID == m_FromNode.m_Id && l.m_ToNodeID == m_ToNode.m_Id) || 
+                        (l.m_FromNodeID == m_ToNode.m_Id && l.m_ToNodeID == m_FromNode.m_Id)) 
+                    {
+                        currentLink = l;
+                        if (l.m_Type == 1) 
+                            isCurve = true;
+                        break;
+                    }
+                }
+
+                if (isCurve)
+                {                
+                    float t = m_Progress;
+                    float u = 1.0f - t;
+                    
+                    // 연산 최적화를 위해 거듭제곱 미리 계산
+                    float tt = t * t;
+                    float uu = u * u;
+                    float uuu = uu * u;
+                    float ttt = tt * t;
+
+                    // P0 = 출발점 (fromNode)
+                    // P1 = 제어점1 (cx1, cz1)
+                    // P2 = 제어점2 (cx2, cz2)
+                    // P3 = 도착점 (toNode)
+
+                    m_posX = (uuu * m_FromNode.m_PosX) + 
+                            (3.0f * uu * t * currentLink.m_CX1) + 
+                            (3.0f * u * tt * currentLink.m_CX2) + 
+                            (ttt * m_ToNode.m_PosX);
+
+                    m_posZ = (uuu * m_FromNode.m_PosZ) + 
+                            (3.0f * uu * t * currentLink.m_CZ1) + 
+                            (3.0f * u * tt * currentLink.m_CZ2) + 
+                            (ttt * m_ToNode.m_PosZ);                         
+                }
+                else
+                {
+                    // 기존 직선(Lerp) 이동
+                    m_posX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+                    m_posZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
+                }
+            }                  
         }
 
         // 주행 완료 시 관제탑에 보고

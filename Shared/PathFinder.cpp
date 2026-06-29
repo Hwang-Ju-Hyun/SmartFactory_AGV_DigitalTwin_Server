@@ -133,9 +133,23 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 continue;
 
             auto from = MapManager::GetInstance().GetNodes().at(current->id);
-            auto to = MapManager::GetInstance().GetNodes().at(neighborID);            
-            float dist = std::sqrt(std::pow(from.m_PosX - to.m_PosX, 2) + std::pow(from.m_PosZ - to.m_PosZ, 2));
-            float travelTime = std::round(dist / AGV_SPEED);
+            auto to = MapManager::GetInstance().GetNodes().at(neighborID);                        
+            float dist = 0.f;
+
+            
+            if (link.m_Type == 1)
+            {                
+                // 유니티 스플라인이 계산해서 JSON으로 구워준 '실제 곡선 길이'를 그대로 가져다 씁니다.
+                dist = link.m_Dist; 
+            }
+            else
+            {
+                // 기존 직선 거리 계산
+                dist = std::sqrt(std::pow(to.m_PosX - from.m_PosX, 2) + std::pow(to.m_PosZ - from.m_PosZ, 2));
+            }
+
+            //2. 올림(ceil)을 통해 로봇(Robo.cpp)과 관제탑이 소모 틱(Tick)을 동일하게 인지하도록 동기화!
+            float travelTime = std::ceil(dist / AGV_SPEED);
 
             float enterTime = current->accumulatedTime;
             float leaveTime = enterTime + travelTime;
@@ -160,7 +174,7 @@ std::vector<uint32_t> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             
             if (current->parentNode != nullptr && neighborID == current->parentNode->id)
             {
-                nextG += 999.0f; // 999초의 가짜 비용을 줘서 절대 선택하지 않게 만듦
+                nextG += 999.0f; // 999초의 가짜 비용을 줘서 절대 선택하지 않게 만듦 (U턴 방지)
             }
             bool isAlreadyOpen = (openRegistryList.find(neighborKey) != openRegistryList.end());
 

@@ -72,9 +72,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
         }
 
         if (!alreadyPending)
-        {
-            //[로그 추가] 큐에 들어가는 시점 확인!
-            std::cout << "[RETRY QUEUE PUSH] AGV " << _agvID << " 등록됨!" << std::endl;
+        {                        
             m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, 1.0f });
         }        
         
@@ -136,7 +134,7 @@ void RoutePlanner::ReserveRouteTimeline(uint32_t _agvID, const std::vector<uint3
         auto toNode = MapManager::GetInstance().GetMapNode(toID);
 
         float dist = std::sqrt(std::pow(fromNode.m_PosX - toNode.m_PosX, 2) + std::pow(fromNode.m_PosZ - toNode.m_PosZ, 2));
-        float travelTime = std::round(dist / AGV_SPEED);
+        float travelTime = std::ceil(dist / AGV_SPEED);
        
         float linkEnterTime = accTime;               
         float linkLeaveTime = accTime + travelTime;  
@@ -183,7 +181,7 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 
         if (!isNodeSafe || !isLinkSafe)
         {
-            std::cout << "[관제탑] AGV " << agvID << "번 출발 직전 돌발 장애물 감지! 즉시 재탐색!" << std::endl;
+            std::cout << "AGV " << agvID << "번 출발 직전 돌발 장애물 감지 즉시 재탐색" << std::endl;
             m_MasterPlans.erase(agvID);
             CreateRoute(agvID, plan.finalTargetNodeID, _e.timestamp, plan.purpose);
             return; 

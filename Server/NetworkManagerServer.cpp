@@ -168,19 +168,33 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 { 
     StartSimulation();
 }
-
+//#define _TESTCASE2
+#define _TESTCASE3
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 {
-    int spawnCount=3;
+    #ifdef _TESTCASE2    
+    int spawnCount=8;
     ObjectPtr mainRobo=nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();
+    WarehouseManager::GetInstance().Init();        
 
-    //uint32_t initNodes[8]      = {65, 66, 67, 68, 69, 70, 71, 72}; 
-    uint32_t initNodes[3]      = {1,3,8}; 
+    uint32_t initNodes[8]      = {65, 66, 67, 68, 69, 70, 71, 72}; 
+    
+    #elifdef _TESTCASE3  
+    
+    int spawnCount=3;
 
+    ObjectPtr mainRobo=nullptr;
+
+    TaskManager::GetInsance();
+    RoutePlanner::GetInstance().Init();
+    WarehouseManager::GetInstance().Init();        
+
+    uint32_t initNodes[3]      = {1,2,4}; 
+  
+    
     std::vector<Robo*> Robos;
     for(int i=0;i<spawnCount;i++)
     {
@@ -209,6 +223,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         
         EventManager::GetInstance().Publish(startEvent); 
     }
+    #endif
 }
 static bool a=true;
 int i=0;
@@ -267,3 +282,4 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
 
    
 }
+

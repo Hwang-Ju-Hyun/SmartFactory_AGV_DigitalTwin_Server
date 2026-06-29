@@ -71,10 +71,21 @@ void OutputMemoryStream::Write(const std::vector<MapLink>& _inData)
         uint32_t id = _inData[i].m_Id;
         uint32_t FromNodeID =_inData[i].m_FromNodeID;
         uint32_t ToNodeID =_inData[i].m_ToNodeID;        
+        uint8_t type = _inData[i].m_Type;
+        float cx1=_inData[i].m_CX1;
+        float cz1=_inData[i].m_CZ1;
+        float cx2=_inData[i].m_CX2;
+        float cz2=_inData[i].m_CZ2;
 
         Write(id);
         Write(FromNodeID);
-        Write(ToNodeID);        
+        Write(ToNodeID);  
+        
+        Write(type); 
+        Write(cx1);
+        Write(cz1);
+        Write(cx2);
+        Write(cz2);
     }
 }
 
