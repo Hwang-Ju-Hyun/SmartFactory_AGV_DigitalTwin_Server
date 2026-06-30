@@ -37,9 +37,12 @@ void TrafficManager::ClearFutureReservations(uint32_t _agvID, float _currentTime
 
 bool TrafficManager::ReserveNode(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID)
 {
-int startSlot = GetStartSlot(_enterTime);
+    int startSlot = GetStartSlot(_enterTime);
     int endSlot = GetEndSlot(_leaveTime);
-     
+    
+    if (startSlot == endSlot) 
+        endSlot++;
+
     // ==========================================================
     // 1. 검증 페이즈 (Validation): 단 하나라도 충돌나면 바로 false 반환!
     // ==========================================================
@@ -72,9 +75,12 @@ int startSlot = GetStartSlot(_enterTime);
 
 bool TrafficManager::ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _enterTime, float _leaveTime, uint32_t _agvID)
 {
-   int startSlot = GetStartSlot(_enterTime);
+    int startSlot = GetStartSlot(_enterTime);
     int endSlot = GetEndSlot(_leaveTime);
 
+    if (startSlot == endSlot) 
+        endSlot++;
+    
     uint32_t minNode = std::min(_fromNode, _toNode);
     uint32_t maxNode = std::max(_fromNode, _toNode);
 
@@ -99,8 +105,11 @@ bool TrafficManager::ReserveLink(uint32_t _fromNode, uint32_t _toNode, float _en
 
 bool TrafficManager::IsNodeAvailable(uint32_t _nodeID, float _enterTime, float _leaveTime, uint32_t _agvID)
 {
-   int startSlot = GetStartSlot(_enterTime);
+    int startSlot = GetStartSlot(_enterTime);
     int endSlot = GetEndSlot(_leaveTime);
+
+    if (startSlot == endSlot) 
+        endSlot++;
 
     for (int t = startSlot; t < endSlot; ++t) 
     {

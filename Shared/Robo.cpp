@@ -82,7 +82,8 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {   
-    if (m_State == AGVState::WAIT_REPLAN) return;
+    if (m_State == AGVState::WAIT_REPLAN) 
+        return;
     if (m_State == AGVState::IDLE) 
     {
         m_AccStayTime += _deltaTime;
@@ -118,25 +119,20 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 
     if (m_State == AGVState::MOVING)
     {
-        //  이미 이번 프레임에서 도착 처리가 끝났다면 더 이상 업데이트하지 않음
         if (m_Progress >= 1.0f) 
             return; 
+        if (_serverTime < m_MoveStartTime) 
+            return;
 
-        if (m_FromNode.m_Id == m_ToNode.m_Id)
-        {
-            // float elapsedTime = _serverTime - m_MoveStartTime;
-            // m_Progress = elapsedTime / m_PlannedTravelTime;
-            m_Progress += _deltaTime / m_PlannedTravelTime;
-        }
-        else 
-        {
-            m_Progress += _deltaTime / m_PlannedTravelTime;
+        float elapsedTime = _serverTime - m_MoveStartTime;
+        m_Progress = elapsedTime / m_PlannedTravelTime;
             
-            if (m_Progress > 1.0f) 
-                m_Progress = 1.0f;                
+        if (m_Progress > 1.0f) 
+            m_Progress = 1.0f;                
 
-            //이제 매 프레임 for문 안 돕니다! 캐싱해둔 m_CurrentLink를 바로 씁니다.
-            if (m_CurrentLink.m_Type == 1) // 곡선
+        if (m_FromNode.m_Id != m_ToNode.m_Id)
+        {
+            if (m_CurrentLink.m_Type == 1) 
             {                
                 float t = m_Progress;
                 float u = 1.0f - t;
@@ -153,29 +149,26 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
                          (3.0f * u * tt * m_CurrentLink.m_CZ2) + 
                          (ttt * m_ToNode.m_PosZ);                        
             }
-            else // 직선
+            else 
             {
                 m_PosX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
                 m_PosZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
             }
         }
-
-        //주행 완료 처리 (도착)
+    
         if (m_Progress >= 1.0f)
         {
             m_Progress = 1.0f;
             
-            //도착 즉시 노드 좌표로 정확히 스냅(Snap)
             m_PosX = m_ToNode.m_PosX;
             m_PosZ = m_ToNode.m_PosZ;
 
             m_State = AGVState::IDLE; 
             m_CurrentNodeID = m_ToNode.m_Id;
-
-            // float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
-            // RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), scheduledArrivalTime };
-            // EventManager::GetInstance().Publish(re);
-            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), _serverTime };
+            
+            
+            float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
+            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), scheduledArrivalTime };
             EventManager::GetInstance().Publish(re);
         }
     }
