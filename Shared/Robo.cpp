@@ -28,7 +28,17 @@ float Robo::GetTimeSpendOnCurrentLink_ToNode()
 
 
 void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState, float _startTime, float _arrivalTime)
-{
+{std::cout
+<< "[Assign]"
+<< " AGV "
+<< GetNetworkID()
+<< " "
+<< _from.m_Id
+<< " -> "
+<< _to.m_Id
+<< " state="
+<< (int)_newState
+<< std::endl;
     m_FromNode = _from;
     m_ToNode = _to;
     m_Progress = 0.0f;
@@ -63,7 +73,14 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {   
     if (m_State == AGVState::WAIT_REPLAN) 
-        return;
+    {
+        std::cout
+    << "WAIT_REPLAN "
+    << GetNetworkID()
+    << std::endl;
+return;
+    }
+        
     
     if (m_State == AGVState::IDLE) 
     {
@@ -96,6 +113,16 @@ void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 
     if (m_State == AGVState::MOVING)
     {
+        std::cout
+<< "[Update]"
+<< GetNetworkID()
+<< " state="
+<< (int)m_State
+<< " from "
+<< m_FromNode.m_Id
+<< " to "
+<< m_ToNode.m_Id
+<< std::endl;
         if (m_Progress >= 1.0f) 
             return; 
         

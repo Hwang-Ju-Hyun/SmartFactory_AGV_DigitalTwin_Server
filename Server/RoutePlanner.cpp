@@ -41,7 +41,7 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
         
         if (!resTable.IsNodeFree(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID))
         {
-                
+            return false;
         } 
 
         if (i + 1 < _path.size())
