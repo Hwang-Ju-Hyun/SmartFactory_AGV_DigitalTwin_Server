@@ -73,12 +73,8 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {   
     if (m_State == AGVState::WAIT_REPLAN) 
-    {
-        std::cout
-    << "WAIT_REPLAN "
-    << GetNetworkID()
-    << std::endl;
-return;
+    {        
+        return;
     }
         
     
@@ -113,16 +109,7 @@ return;
 
     if (m_State == AGVState::MOVING)
     {
-        std::cout
-<< "[Update]"
-<< GetNetworkID()
-<< " state="
-<< (int)m_State
-<< " from "
-<< m_FromNode.m_Id
-<< " to "
-<< m_ToNode.m_Id
-<< std::endl;
+        
         if (m_Progress >= 1.0f) 
             return; 
         

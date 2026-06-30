@@ -37,24 +37,23 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     for (size_t i = 0; i < _path.size(); i++)
     {
         const PathStep& cur = _path[i];                
-        float nodeLeaveTime = (cur.nodeID == _finalTargetID) ? cur.arrivalTime + WINDOW_TIME + 2.0f : cur.departureTime + TIME_MARGIN;
+        bool isLastNode = (i == _path.size() - 1);
+        
+        // 경로의 마지막 노드라면, 목적지이든 윈도우 컷이든 무조건 영원히(9999초) 막아야 합니다!
+        float nodeLeaveTime = isLastNode ? cur.arrivalTime + + WINDOW_TIME + 2.0f : cur.departureTime + TIME_MARGIN;
+        //float nodeLeaveTime = (cur.nodeID == _finalTargetID) ? cur.arrivalTime + WINDOW_TIME + 2.0f : cur.departureTime + TIME_MARGIN;
         
         if (!resTable.IsNodeFree(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID))
         {
             return false;
         } 
 
-        if (i + 1 < _path.size())
+        if (!isLastNode)
         {
             const PathStep& next = _path[i + 1];        
             if (!resTable.IsEdgeFree(cur.nodeID, next.nodeID, cur.departureTime, next.arrivalTime + TIME_MARGIN, _agvID)) 
             {
-                std::cout
-            << "EDGE FAIL "
-            << cur.nodeID
-            << "->"
-            << next.nodeID
-            << '\n';
+                std::cout<< "EDGE FAIL "<< cur.nodeID<< "->"<< next.nodeID<< '\n';
                 return false; 
             }
         }
@@ -69,14 +68,15 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     for (size_t i = 0; i < _path.size(); i++)
     {
         const PathStep& cur = _path[i];        
-        bool isGoal = (cur.nodeID == _finalTargetID);
+        bool isGoal = (i == _path.size() - 1);
         
         float nodeLeaveTime = isGoal ? cur.arrivalTime + WINDOW_TIME + 2.0f : cur.departureTime + TIME_MARGIN;
-        ReservationType nodeType = isGoal ? ReservationType::Goal : ReservationType::Normal;
+
+        ReservationType nodeType = isGoal ? (cur.nodeID == _finalTargetID ? ReservationType::Goal : ReservationType::Waiting) : ReservationType::Normal;
         
         resTable.ReserveNode(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID, nodeType);
 
-        if (i + 1 < _path.size())
+        if (!isGoal)
         {
             const PathStep& next = _path[i + 1];        
             resTable.ReserveEdge(cur.nodeID, next.nodeID, cur.departureTime, next.arrivalTime + TIME_MARGIN, _agvID, ReservationType::Normal);
@@ -127,7 +127,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
         std::cout << "[관제탑] AGV " << _agvID << "번 시공간 체증 감지! " << REPLAN_PENALTY_TIME << "초 대기 후 재탐색." << std::endl;
                         
         ReservationTable::GetInstance().ClearFutureReservations(_agvID, _serverTime);
-        ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME, _agvID, ReservationType::Waiting);
+        ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME + 1.0f, _agvID, ReservationType::Waiting);
 
         agv->ChangeState(AGVState::WAIT_REPLAN);
         m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, REPLAN_PENALTY_TIME });
@@ -141,7 +141,8 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     {
         std::cout << " [트랜잭션 거부] AGV " << _agvID << " 경로 예약 중 타 차량 선점 발견. 재탐색 대기." << std::endl;
         
-        ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME, _agvID, ReservationType::Waiting);
+        //ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME, _agvID, ReservationType::Waiting);
+        ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME + 1.0f, _agvID, ReservationType::Waiting);
         agv->ChangeState(AGVState::WAIT_REPLAN);
         m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, REPLAN_PENALTY_TIME });
         return;
@@ -169,6 +170,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     agv->AssignNextStep(fromNode, toNode, AGVState::MOVING, path[0].departureTime, path[1].arrivalTime);        
 }
 
+
 void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 {
     uint32_t agvID = _e.agvID;
@@ -187,19 +189,30 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
         auto fromNode = MapManager::GetInstance().GetMapNode(currentStep.nodeID);
         auto toNode   = MapManager::GetInstance().GetMapNode(nextStep.nodeID);
         
-        
-        
-        bool isBlocked = false;
+        // 🌟 [방어막 복구] 내가 가려는 미래의 시간에 타 차량이 고립(Waiting)되어 알박기를 했는지 검증합니다.
+        float expectedArrivalTime = nextStep.arrivalTime;
+        bool isNodeSafe = ReservationTable::GetInstance().IsNodeFree(nextStep.nodeID, expectedArrivalTime, expectedArrivalTime + 0.5f, agvID);
+        bool isLinkSafe = true;
 
+        if (currentStep.nodeID != nextStep.nodeID)
+        {
+            isLinkSafe = ReservationTable::GetInstance().IsEdgeFree(currentStep.nodeID, nextStep.nodeID, currentStep.departureTime, expectedArrivalTime + 0.5f, agvID);
+        }
+
+        // 동적 링크 차단 검사
+        bool isBlocked = false;
         if (currentStep.nodeID != nextStep.nodeID)
         {
             MapLink currentLink = MapManager::GetInstance().FindLink(currentStep.nodeID, nextStep.nodeID);
             isBlocked = currentLink.m_IsBlocked;
         }
 
-        if (isBlocked)
+        // 장부가 유효하지 않거나 오염되었다면 즉시 진입을 취소하고 제자리 재탐색을 수행합니다.
+        if (!isNodeSafe || !isLinkSafe || isBlocked)
         {
-            std::cout << "AGV " << agvID << "번 동적 장애물 감지! 즉시 우회 재탐색" << std::endl;
+            std::cout << "[동적 충돌 회피] AGV " << agvID << "번 진입 예정 노드/링크(" << nextStep.nodeID 
+                      << ")에 타 차량 고립 감지! 즉시 계획을 폐기하고 재탐색합니다." << std::endl;
+            
             uint32_t finalTarget = plan.finalTargetNodeID;
             MissionPurpose purpose = plan.purpose;
             

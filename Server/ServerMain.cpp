@@ -33,7 +33,7 @@ int main(void)
     
     const std::chrono::duration<double> kTickDuration(1.0 / 30.0); 
     auto lastUpdateTime = std::chrono::high_resolution_clock::now();
-    
+    printf("%a");
     while(g_LOOP)
     {
         timeval timeoutValue;

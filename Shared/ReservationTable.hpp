@@ -112,25 +112,29 @@ public:
 
     void ClearFutureReservations(uint32_t _agvID, float _currentTime)
     {
-        //  쓰레기통 비우기 로직 고도화
-        // 1. 임시 대기(Waiting)는 무조건 삭제!
-        // 2. 일반(Normal)이나 목적지(Goal) 예약은 과거~현재 발밑은 놔두고, 아직 안 온 '미래'만 삭제!
         for (auto& pair : m_NodeTable)
         {
             auto& intervals = pair.second;
             intervals.erase(std::remove_if(intervals.begin(), intervals.end(),
                 [_agvID, _currentTime](const TimeInterval& t) { 
-                    return t.agvID == _agvID && (t.type == ReservationType::Waiting || t.start >= _currentTime); 
+                    if (t.agvID != _agvID) return false;
+                    
+                    if (t.type == ReservationType::Waiting || t.type == ReservationType::Goal) return true;
+                    return t.start >= _currentTime; 
                 }),
                 intervals.end());
         }
-
+        
+        // 엣지 장부 정리
         for (auto& pair : m_EdgeTable)
         {
             auto& intervals = pair.second;
             intervals.erase(std::remove_if(intervals.begin(), intervals.end(),
                 [_agvID, _currentTime](const TimeInterval& t) { 
-                    return t.agvID == _agvID && (t.type == ReservationType::Waiting || t.start >= _currentTime); 
+                    if (t.agvID != _agvID) return false;
+                    
+                    if (t.type == ReservationType::Waiting || t.type == ReservationType::Goal) return true;
+                    return t.start >= _currentTime; 
                 }),
                 intervals.end());
         }
