@@ -4,21 +4,19 @@
 #include <cstdint>
 #include <algorithm>
 
-
+// 🌟 예약 타입 정의
 enum class ReservationType
 {
-    Normal,     // 일반적인 이동 예약
-    Waiting,    // 길 막힘으로 인한 1초 임시 대기 (재탐색용)
-    Goal        // 최종 목적지에 도착한 후의 장기 알박기
+    Normal,     // 경로 이동 중의 점유
+    Goal        // 목적지 도달 후 장기 점유
 };
 
-// 1. 시공간 구간 (Float 기반)
 struct TimeInterval
 {
     float start;
     float end;
     uint32_t agvID;
-    ReservationType type; 
+    ReservationType type;
 
     bool Overlaps(float s, float e) const
     {
@@ -32,7 +30,6 @@ inline uint64_t MakeEdgeKey(uint32_t from, uint32_t to)
     uint32_t maxNode = std::max(from, to);
     return (static_cast<uint64_t>(minNode) << 32) | static_cast<uint64_t>(maxNode);
 }
-#include <iostream>
 
 class ReservationTable
 {
@@ -47,26 +44,7 @@ public:
         for (const auto& interval : it->second)
         {
             if (interval.agvID == _ignoreAgvID) continue; 
-            if (interval.Overlaps(_startTime, _endTime))
-            {
-                    std::cout
-            << "Conflict node "
-            << _nodeID
-            << " requester "
-            << _ignoreAgvID
-            << " existing "
-            << interval.agvID
-            << " existing ["
-            << interval.start
-            << ","
-            << interval.end
-            << "] request ["
-            << _startTime
-            << ","
-            << _endTime
-            << "]\n";
-            return false;
-            }
+            if (interval.Overlaps(_startTime, _endTime)) return false;
         }
         return true;
     }
@@ -85,7 +63,6 @@ public:
         return true;
     }
 
-    // 🌟 [핵심 2] 예약 시 타입을 받도록 수정 (기본값은 Normal)
     void ReserveNode(uint32_t _nodeID, float _startTime, float _endTime, uint32_t _agvID, ReservationType _type = ReservationType::Normal)
     {
         auto& intervals = m_NodeTable[_nodeID];
@@ -101,7 +78,6 @@ public:
     {
         uint64_t key = MakeEdgeKey(_from, _to);
         auto& intervals = m_EdgeTable[key];
-        
         for (const auto& interval : intervals)
         {
             if (interval.agvID == _agvID && std::abs(interval.start - _startTime) < 0.001f && std::abs(interval.end - _endTime) < 0.001f)
@@ -110,31 +86,27 @@ public:
         intervals.push_back({_startTime, _endTime, _agvID, _type});
     }
 
-    void ClearFutureReservations(uint32_t _agvID, float _currentTime)
+    
+    void OverrideFutureReservations(uint32_t _agvID, float _currentTime, float _safetyMargin)
     {
+        float safeTime = _currentTime + _safetyMargin;
+        
         for (auto& pair : m_NodeTable)
         {
             auto& intervals = pair.second;
             intervals.erase(std::remove_if(intervals.begin(), intervals.end(),
-                [_agvID, _currentTime](const TimeInterval& t) { 
-                    if (t.agvID != _agvID) return false;
-                    
-                    if (t.type == ReservationType::Waiting || t.type == ReservationType::Goal) return true;
-                    return t.start >= _currentTime; 
+                [_agvID, safeTime](const TimeInterval& t) { 
+                    // 현재부터 safetyMargin 이후의 "완전한 미래"만 지우고, 발밑은 잠가둠!
+                    return t.agvID == _agvID && (t.type == ReservationType::Goal || t.start > safeTime); 
                 }),
                 intervals.end());
         }
-        
-        // 엣지 장부 정리
         for (auto& pair : m_EdgeTable)
         {
             auto& intervals = pair.second;
             intervals.erase(std::remove_if(intervals.begin(), intervals.end(),
-                [_agvID, _currentTime](const TimeInterval& t) { 
-                    if (t.agvID != _agvID) return false;
-                    
-                    if (t.type == ReservationType::Waiting || t.type == ReservationType::Goal) return true;
-                    return t.start >= _currentTime; 
+                [_agvID, safeTime](const TimeInterval& t) { 
+                    return t.agvID == _agvID && (t.type == ReservationType::Goal || t.start > safeTime); 
                 }),
                 intervals.end());
         }

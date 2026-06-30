@@ -3,6 +3,7 @@
 #include <iostream>
 #include "Event.hpp"
 #include "WarehouseManager.hpp"
+#include "ReservationTable.hpp"
 
 Robo::Robo()
 {
@@ -28,17 +29,7 @@ float Robo::GetTimeSpendOnCurrentLink_ToNode()
 
 
 void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _newState, float _startTime, float _arrivalTime)
-{std::cout
-<< "[Assign]"
-<< " AGV "
-<< GetNetworkID()
-<< " "
-<< _from.m_Id
-<< " -> "
-<< _to.m_Id
-<< " state="
-<< (int)_newState
-<< std::endl;
+{
     m_FromNode = _from;
     m_ToNode = _to;
     m_Progress = 0.0f;
@@ -72,19 +63,22 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
 
 void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
 {   
-    if (m_State == AGVState::WAIT_REPLAN) 
-    {        
-        return;
-    }
-        
-    
-    if (m_State == AGVState::IDLE) 
+   if (m_State == AGVState::IDLE) 
     {
         m_AccStayTime += _deltaTime;
-        if (!m_bIdleEventSent || m_AccStayTime > 5.0f) 
+                
+        if (m_AccStayTime > 1.0f)
+        {
+            ReservationTable::GetInstance().ReserveNode(m_CurrentNodeID, _serverTime, _serverTime + 2.0f, GetNetworkID(), ReservationType::Normal);
+            m_AccStayTime = 0.0f; // 초기화
+        }
+
+        // 5초마다 IDLE_READY 알림은 기존대로 유지
+        m_AccWaitTime += _deltaTime;
+        if (!m_bIdleEventSent || m_AccWaitTime > 5.0f) 
         {
             m_bIdleEventSent = true; 
-            m_AccStayTime = 0.0f; 
+            m_AccWaitTime = 0.0f; 
             
             RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };
             EventManager::GetInstance().Publish(re);

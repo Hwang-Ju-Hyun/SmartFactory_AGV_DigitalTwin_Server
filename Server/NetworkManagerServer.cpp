@@ -207,15 +207,16 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
         int32_t startNodeID = initNodes[i];
         MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
         
- 
         // 제자리 대기이므로 0.0f에 출발해서 1.0f에 도착하는 것으로 설정.
         agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f, 1.0f); 
         
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
         agv->SetCurrentNodeID(startNodeID);
         
-        
-       ReservationTable::GetInstance().ReserveNode(startNodeID, 0.0f, 9999.0f, agv->GetNetworkID(), ReservationType::Waiting);
+        // [최종 수정 1] Waiting 타입이 삭제되었으므로, 초기 스폰은 Goal(목적지 장기 체류)로 취급합니다.
+        // [최종 수정 2] 9999.0f 대신 100.0f로 플로트 에러를 방지합니다. 
+        // (어차피 0.1초 뒤 첫 임무 배정 시 Override 로직에 의해 덮어씌워집니다.)
+        ReservationTable::GetInstance().ReserveNode(startNodeID, 0.0f, 100.0f, agv->GetNetworkID(), ReservationType::Goal);        
     }        
 
     for (Robo* agv : Robos)
