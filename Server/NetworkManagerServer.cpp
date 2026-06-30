@@ -12,13 +12,12 @@
 #include "PathFinder.hpp"
 #include <cassert>
 #include "AGVManager.hpp"
-#include "TaskScheduler.hpp"
 #include "WarehouseManager.hpp"
 #include "TaskManager.hpp"
 #include "RoutePlanner.hpp"
 #include "Map.hpp"
 #include "Event.hpp"
-
+#include "ReservationTable.hpp"
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -170,33 +169,32 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 }
 //#define _TESTCASE2
 #define _TESTCASE3
-void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
+void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
 {
     #ifdef _TESTCASE2    
-    int spawnCount=8;
-    ObjectPtr mainRobo=nullptr;
+    int spawnCount = 8;
+    ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[8]      = {65, 66, 67, 68, 69, 70, 71, 72}; 
+    uint32_t initNodes[8] = {65, 66, 67, 68, 69, 70, 71, 72}; 
     
     #elifdef _TESTCASE3  
     
-    int spawnCount=3;
+    int spawnCount = 3;
 
-    ObjectPtr mainRobo=nullptr;
+    ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[3]      = {1,2,4}; 
+    uint32_t initNodes[3] = {1, 2, 4}; 
   
-    
     std::vector<Robo*> Robos;
-    for(int i=0;i<spawnCount;i++)
+    for(int i = 0; i < spawnCount; i++)
     {
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
         RegisterObject(newRobo); 
@@ -206,14 +204,20 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
         agv->ChangeState(AGVState::IDLE);
         agv->SetHomeNode(initNodes[i]);
 
-        int32_t startNodeID =initNodes[i];
+        int32_t startNodeID = initNodes[i];
         MapNode startNode = MapManager::GetInstance().GetNodes().find(startNodeID)->second;
-        agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f); 
+        
+ 
+        // 제자리 대기이므로 0.0f에 출발해서 1.0f에 도착하는 것으로 설정.
+        agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f, 1.0f); 
+        
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
         agv->SetCurrentNodeID(startNodeID);
         
-        TrafficManager::GetInstance().ReserveNode(startNodeID, 0.0f, 100.0f, agv->GetNetworkID());        
+        
+       ReservationTable::GetInstance().ReserveNode(startNodeID, 0.0f, 9999.0f, agv->GetNetworkID(), ReservationType::Waiting);
     }        
+
     for (Robo* agv : Robos)
     {
         RobotEvent startEvent;
@@ -225,9 +229,11 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy,InputMemory
     }
     #endif
 }
+
 static bool a=true;
 int i=0;
-#include "RoutePlanner.hpp"
+
+
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
 {    
     if(!m_IsSimulationActive)

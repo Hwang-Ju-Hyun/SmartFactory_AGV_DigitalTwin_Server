@@ -12,9 +12,7 @@ add_library(Shared STATIC
     LinkingContext.cpp
     ObjectRegistry.cpp    
     Map.cpp
-    PathFinder.cpp
-    TrafficControlManager.cpp
-    TaskScheduler.cpp
+    PathFinder.cpp    
     AGVManager.cpp
     WarehouseManager.cpp
     Event.cpp

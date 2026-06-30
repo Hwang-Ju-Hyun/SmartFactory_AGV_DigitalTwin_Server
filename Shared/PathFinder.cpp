@@ -1,7 +1,7 @@
 #include "PathFinder.hpp"
 #include "Map.hpp"
-#include "TrafficControlManager.hpp"
 #include <queue>
+#include "ReservationTable.hpp" 
 #include <unordered_map>
 #include <cmath>
 #include <algorithm>
@@ -10,6 +10,12 @@
 const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f; 
 constexpr float CLEARANCE_TIME = 0.6f;
+
+inline std::string GenerateTimeSpaceKey(uint32_t nodeID, float time)
+{
+    int timeSlot = static_cast<int>(std::round(time * 10.0f)); 
+    return std::to_string(nodeID) + "_" + std::to_string(timeSlot);
+}
 
 std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, 
                                            uint32_t _agvID, float _startTime, float _windowTimeLimit, RRAStar& _rraEngine)
@@ -31,13 +37,13 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
     auto startNode = std::make_shared<AStarNode>(_startNodeID);
     startNode->arrivalTime = _startTime;
-    startNode->departureTime = _startTime; // 시작점은 도착하자마자 출발 대기 상태
+    startNode->departureTime = _startTime; 
     startNode->g = 0.f;
     startNode->h = _rraEngine.GetAbstractDistance(_startNodeID) / AGV_SPEED; 
     startNode->f = startNode->g + startNode->h;
 
     openList.push(startNode);
-    std::string startKey = std::to_string(_startNodeID) + "_" + std::to_string(TrafficManager::GetStartSlot(_startTime));
+    std::string startKey = GenerateTimeSpaceKey(_startNodeID, _startTime);
     openRegistryList[startKey] = startNode;
 
     std::shared_ptr<AStarNode> endNode = nullptr;
@@ -47,9 +53,8 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         auto current = openList.top();
         openList.pop();
 
-        // 정밀해진 슬롯 검사: 이 노드에서 출발하는 시각(departureTime)을 기준으로 닫힌 목록 관리
-        int currentSlot = TrafficManager::GetStartSlot(current->departureTime);
-        std::string currentKey = std::to_string(current->id) + "_" + std::to_string(currentSlot);
+        
+        std::string currentKey = GenerateTimeSpaceKey(current->id, current->departureTime);
         
         if (closedList.find(currentKey) != closedList.end()) continue;
         closedList[currentKey] = current;
@@ -67,20 +72,13 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         }
 
         // ==========================================
-        // 탐색 1: 제자리 대기 (WAIT) 액션
+        // 탐색 1: 제자리 대기 (WAIT)
         // ==========================================
         float waitLeaveTime = current->departureTime + WAIT_TIME;
-        std::string waitKey = std::to_string(current->id) + "_" + std::to_string(TrafficManager::GetStartSlot(waitLeaveTime));
+        std::string waitKey = GenerateTimeSpaceKey(current->id, waitLeaveTime);
 
-        //  [디버깅 로그] 대기 노드 시도
-        std::cout << "WAIT TRY " << current->id << " " << current->departureTime << " -> " << waitLeaveTime << std::endl;
-
-        if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, current->departureTime, waitLeaveTime+CLEARANCE_TIME, _agvID))
-        {
-            //  [디버깅 로그] 장애물이나 다른 예약으로 막힘
-            std::cout << "WAIT BLOCKED " << current->id << std::endl;
-        }
-        else
+        
+        if (ReservationTable::GetInstance().IsNodeFree(current->id, current->arrivalTime, waitLeaveTime + CLEARANCE_TIME, _agvID))
         {
             if (closedList.find(waitKey) == closedList.end())
             {
@@ -97,20 +95,12 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
                     openList.push(waitNode); 
                     openRegistryList[waitKey] = waitNode; 
-                    
-                    //  [디버깅 로그] 대기 노드 성공적 생성
-                    std::cout << "WAIT CREATED " << current->id << " dep " << waitLeaveTime << std::endl;
                 }
-            }
-            else 
-            {
-                //  [디버깅 로그] 이미 더 짧은 시간으로 탐색된 적 있음
-                std::cout << "WAIT CLOSED" << std::endl;
             }
         }
 
         // ==========================================
-        // 탐색 2: 주변 노드로 이동 (MOVE) 액션
+        // 탐색 2: 주변 노드로 이동 (MOVE)
         // ==========================================
         const auto& links = MapManager::GetInstance().GetLinks();
         for (const auto& link : links)
@@ -122,28 +112,31 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             auto toNodeGeo = MapManager::GetInstance().GetNodes().at(neighborID);
             
             float dist = (link.m_Type == 1) ? link.m_Dist : std::sqrt(std::pow(toNodeGeo.m_PosX - fromNodeGeo.m_PosX, 2) + std::pow(toNodeGeo.m_PosZ - fromNodeGeo.m_PosZ, 2));
-            float travelTime = std::ceil(dist / AGV_SPEED);
+            
+            
+            float travelTime = dist / AGV_SPEED;
 
-            //  이전 노드를 '떠난 시각(departureTime)'부터 링크 주행을 시작합니다!
             float enterTime = current->departureTime;
             float leaveTime = enterTime + travelTime;
-            std::string neighborKey = std::to_string(neighborID) + "_" + std::to_string(TrafficManager::GetStartSlot(leaveTime));
+            std::string neighborKey = GenerateTimeSpaceKey(neighborID, leaveTime);
 
             if (closedList.find(neighborKey) != closedList.end()) continue;        
-            if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, enterTime + CLEARANCE_TIME, _agvID)) continue;
-            if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime+CLEARANCE_TIME, _agvID)) continue;                
             
-            float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : 1.0f;
-            if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
+            // 🌟 [핵심 변경] 조언자 규칙 통일: 엣지 점유 = [departure, next.arrival] + 마진
+            if (!ReservationTable::GetInstance().IsEdgeFree(current->id, neighborID, enterTime, leaveTime + CLEARANCE_TIME, _agvID)) continue;                
+            
+            float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : CLEARANCE_TIME;
+            
+            // 🌟 [핵심 변경] 조언자 규칙 통일: 다음 노드 점유 = [next.arrival, next.departure]
+            if (!ReservationTable::GetInstance().IsNodeFree(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
 
             float nextG = current->g + travelTime;
-            if (current->parentNode != nullptr && neighborID == current->parentNode->id) continue; // 유턴 방지
+            if (current->parentNode != nullptr && neighborID == current->parentNode->id) continue; 
 
             if (openRegistryList.find(neighborKey) == openRegistryList.end() || nextG < openRegistryList[neighborKey]->g)
             {
                 auto neighborNode = std::make_shared<AStarNode>(neighborID); 
                 neighborNode->parentNode = current;
-                //MOVE 액션: 새로운 노드에 도착했으므로 arrival과 departure를 통일시킵니다.
                 neighborNode->arrivalTime = leaveTime;
                 neighborNode->departureTime = leaveTime; 
                 neighborNode->g = nextG;                
@@ -156,9 +149,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         }
     }
 
-    // =========================================================
-    // 역추적 페이즈 (Trace): 중복 노드 없이 깔끔하게 압축 맵핑
-    // =========================================================
+    // Trace 단계는 이전과 동일
     if (endNode != nullptr)
     {
         std::vector<std::shared_ptr<AStarNode>> rawTrace;
@@ -181,7 +172,6 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             {
                 if (rawTrace[i]->id == currentStep.nodeID)
                 {
-                    // 🌟 내부 노드에서 연장된 departureTime을 최종 시간표에 그대로 흡수합니다!
                     currentStep.departureTime = rawTrace[i]->departureTime;
                 }
                 else
