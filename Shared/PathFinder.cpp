@@ -75,7 +75,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         //  [디버깅 로그] 대기 노드 시도
         std::cout << "WAIT TRY " << current->id << " " << current->departureTime << " -> " << waitLeaveTime << std::endl;
 
-        if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, current->departureTime, waitLeaveTime, _agvID))
+        if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, current->departureTime, waitLeaveTime+CLEARANCE_TIME, _agvID))
         {
             //  [디버깅 로그] 장애물이나 다른 예약으로 막힘
             std::cout << "WAIT BLOCKED " << current->id << std::endl;
@@ -131,7 +131,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
             if (closedList.find(neighborKey) != closedList.end()) continue;        
             if (!TrafficManager::GetInstance().IsNodeAvailable(current->id, enterTime, enterTime + CLEARANCE_TIME, _agvID)) continue;
-            if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime, _agvID)) continue;                
+            if (!TrafficManager::GetInstance().IsLinkAvailable(current->id, neighborID, enterTime, leaveTime+CLEARANCE_TIME, _agvID)) continue;                
             
             float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : 1.0f;
             if (!TrafficManager::GetInstance().IsNodeAvailable(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
