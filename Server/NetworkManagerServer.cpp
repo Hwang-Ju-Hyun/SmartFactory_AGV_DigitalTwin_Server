@@ -241,35 +241,45 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     {
         return;
     }    
-    m_TotalElapsedServerTime+=_deltaTime;
+    m_TotalElapsedServerTime+=_deltaTime;    
+
+    // ========================================================
+    // 🚧 [동적 장애물 테스트 코드] 15초마다 39번<->44번 도로 토글
+    // ========================================================
+    static float lastToggleTime = 0.0f;
+    static bool isBlockedNow = false;
+
+    // 15초마다 한 번씩 토글 발동
+    if (m_TotalElapsedServerTime - lastToggleTime > 15.0f)
     {
-        if (m_TotalElapsedServerTime > 15.0f&&a==false)
+        lastToggleTime = m_TotalElapsedServerTime;
+        isBlockedNow = !isBlockedNow; // 상태 반전 (막힘 <-> 뚫림)
+        
+        uint32_t blockFrom = 7; // 테스트할 노드 ID 1
+        uint32_t blockTo = 8;   // 테스트할 노드 ID 2
+
+        std::cout << "\n=================================================" << std::endl;
+        if (isBlockedNow)
+            std::cout << " [신의 손] " << blockFrom << "번 <-> " << blockTo << "번 도로 [차단] 발동!" << std::endl;
+        else
+            std::cout << " [신의 손] " << blockFrom << "번 <-> " << blockTo << "번 도로 [해제] 발동!" << std::endl;
+        std::cout << "=================================================\n" << std::endl;
+
+        // 맵 매니저에서 실제 링크 속성 변경
+        std::vector<MapLink>& links = MapManager::GetInstance().GetLinks();
+        for (auto& link : links) 
         {
-            a=true;
-            
-            uint32_t blockFrom = 39; // 맵에 맞게 수정
-            uint32_t blockTo = 44;   // 맵에 맞게 수정
-
-            std::cout << "\n=================================================" << std::endl;
-            std::cout << blockFrom << "번 -> " << blockTo << "번 도로 동적 차단 발생 " << std::endl;
-            std::cout << "=================================================\n" << std::endl;
-
-            // 1. 맵 매니저에서 실제 링크를 막아버림 (A*가 이제 이 길을 피해서 탐색함)
-            std::vector<MapLink>& links = MapManager::GetInstance().GetLinks();
-            for (auto& link : links) 
+            // 양방향 모두 처리
+            if ((link.m_FromNodeID == blockFrom && link.m_ToNodeID == blockTo) ||
+                (link.m_FromNodeID == blockTo && link.m_FromNodeID == blockFrom)) 
             {
-                if (link.m_FromNodeID == blockFrom && link.m_ToNodeID == blockTo) 
-                {
-                    link.m_IsBlocked = true; // 네 코드의 변수명 그대로 사용
-                }
-                if (link.m_ToNodeID == blockFrom && link.m_FromNodeID == blockTo) 
-                {
-                    link.m_IsBlocked = true; // 네 코드의 변수명 그대로 사용
-                }
+                link.m_IsBlocked = isBlockedNow; 
             }
-        }   
+        }
     }
-    
+    // ========================================================
+
+
     EventManager::GetInstance().SwapAndProcessEvents();
     RoutePlanner::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
 

@@ -9,7 +9,7 @@
 const int WINDOW_TIME = 16; 
 const float CLEARANCE_TIME = 0.6f; 
 const float REPLAN_PENALTY_TIME = 1.0f; 
-const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f; // 🌟 [핵심 2: 9999 대체] 약 48초의 안전한 장기 윈도우
+const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f; 
 
 void RoutePlanner::Init()
 {    
