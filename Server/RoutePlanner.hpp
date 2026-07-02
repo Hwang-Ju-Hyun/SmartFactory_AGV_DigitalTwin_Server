@@ -44,6 +44,7 @@ public:
     void CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose);
     void Update(float _deltaTime, float _serverTime); 
     
+    void ClearRRAEngines() { m_RRAEngines.clear(); }
 private:
     RoutePlanner() = default;
     

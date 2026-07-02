@@ -28,7 +28,7 @@ public:
     void Init(uint32_t _goalNodeID);
 
     // WHCA*가 "이 노드에서 목적지까지 얼마나 남았어?" 라고 물어볼 때 호출하는 함수
-    float GetAbstractDistance(uint32_t _nodeID);
+    float GetAbstractDistance(uint32_t _nodeID);    
 
 private:
     // 휴리스틱용 단순 맨해튼/유클리드 거리 계산

@@ -167,19 +167,30 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 { 
     StartSimulation();
 }
+
+//#define _TESTCASE1
 //#define _TESTCASE2
-#define _TESTCASE3
+//#define _TESTCASE3
+#define _TESTCASE4
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
 {
-    #ifdef _TESTCASE2    
-    int spawnCount = 8;
+    #ifdef _TESTCASE1
+    int spawnCount = 22;
+    ObjectPtr mainRobo = nullptr;
+    TaskManager::GetInsance();
+    RoutePlanner::GetInstance().Init();
+    WarehouseManager::GetInstance().Init();        
+    uint32_t initNodes[22] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22}; 
+
+    #elifdef _TESTCASE2    
+    int spawnCount = 2;
     ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[8] = {65, 66, 67, 68, 69, 70, 71, 72}; 
+    uint32_t initNodes[2] = {3,4}; 
     
     #elifdef _TESTCASE3  
     
@@ -191,8 +202,19 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[3] = {1, 2, 4}; 
-  
+    uint32_t initNodes[3] = {1, 2, 4};
+    
+    #elifdef _TESTCASE4
+    int spawnCount = 10;
+    ObjectPtr mainRobo = nullptr;
+
+    TaskManager::GetInsance();
+    RoutePlanner::GetInstance().Init();
+    WarehouseManager::GetInstance().Init();        
+
+    uint32_t initNodes[10] = {15,19,18,17,16,8,7,6,5,4};
+    #endif
+
     std::vector<Robo*> Robos;
     for(int i = 0; i < spawnCount; i++)
     {
@@ -228,7 +250,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
         
         EventManager::GetInstance().Publish(startEvent); 
     }
-    #endif
+   
 }
 
 static bool a=true;
@@ -244,21 +266,21 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     m_TotalElapsedServerTime+=_deltaTime;    
 
     // ========================================================
-    // 🚧 [동적 장애물 테스트 코드] 15초마다 39번<->44번 도로 토글
+    // [동적 장애물 테스트 코드] 15초마다 39번<->44번 도로 토글
     // ========================================================
     static float lastToggleTime = 0.0f;
     static bool isBlockedNow = false;
 
     // 15초마다 한 번씩 토글 발동
-    if (m_TotalElapsedServerTime - lastToggleTime > 15.0f)
+    if (m_TotalElapsedServerTime - lastToggleTime > 1500000.0f)
     {
         lastToggleTime = m_TotalElapsedServerTime;
         isBlockedNow = !isBlockedNow; // 상태 반전 (막힘 <-> 뚫림)
         
         uint32_t blockFrom = 7; // 테스트할 노드 ID 1
         uint32_t blockTo = 8;   // 테스트할 노드 ID 2
-
         std::cout << "\n=================================================" << std::endl;
+
         if (isBlockedNow)
             std::cout << " [신의 손] " << blockFrom << "번 <-> " << blockTo << "번 도로 [차단] 발동!" << std::endl;
         else
@@ -271,11 +293,12 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         {
             // 양방향 모두 처리
             if ((link.m_FromNodeID == blockFrom && link.m_ToNodeID == blockTo) ||
-                (link.m_FromNodeID == blockTo && link.m_FromNodeID == blockFrom)) 
+                (link.m_FromNodeID == blockTo && link.m_ToNodeID == blockFrom)) 
             {
-                link.m_IsBlocked = isBlockedNow; 
+                link.m_IsBlocked = isBlockedNow;                            
             }
         }
+        RoutePlanner::GetInstance().ClearRRAEngines();
     }
     // ========================================================
 

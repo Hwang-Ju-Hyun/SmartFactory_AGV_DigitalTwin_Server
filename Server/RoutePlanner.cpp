@@ -37,7 +37,7 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
         const PathStep& cur = _path[i];                
         bool isLastNode = (i == _path.size() - 1);
         
-        // 🌟 9999 대신 LONG_TERM_HORIZON 적용
+        //9999 대신 LONG_TERM_HORIZON 적용
         float nodeLeaveTime = isLastNode ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
         
         if (!resTable.IsNodeFree(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID))
