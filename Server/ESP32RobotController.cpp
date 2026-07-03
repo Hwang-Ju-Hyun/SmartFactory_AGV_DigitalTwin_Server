@@ -1,0 +1,41 @@
+#include "ESP32RobotController.hpp"
+
+ESP32RobotController::ESP32RobotController(TCPSessionPtr _robotSession)
+    : m_RobotSession(_robotSession)
+{
+ 
+}
+
+ESP32RobotController::~ESP32RobotController() = default;
+
+void ESP32RobotController::FollowRoute(const RoutePacket& _routePacket)
+{
+    // 관제탑이 명령을 내리면 메모리 스트림에 직렬화해서 진짜 로봇에게 쏴버림
+    OutputMemoryStream outStream;
+    uint8_t packetType = PacketType::PT_ROUTE;
+    _routePacket.Serialize(outStream);
+    m_RobotSession->SendPacket(outStream);
+}
+
+void ESP32RobotController::CancelRoute()
+{
+    // ESP32 로봇에게 경로 취소를 전달하는 로직 구현
+    OutputMemoryStream outStream;
+    outStream.Write(static_cast<uint8_t>(PT_CANCEL_ROUTE));
+    m_RobotSession->SendPacket(outStream);
+}
+
+StatusPacket ESP32RobotController::GetStatus()
+{
+    // ESP32 로봇의 상태를 가져오는 로직 구현
+}
+
+bool ESP32RobotController::IsArrived() const
+{
+    // ESP32 로봇이 목적지에 도착했는지 확인하는 로직 구현
+}
+
+void ESP32RobotController::Update(float dt)
+{
+    // ESP32 로봇을 업데이트하는 로직 구현
+}

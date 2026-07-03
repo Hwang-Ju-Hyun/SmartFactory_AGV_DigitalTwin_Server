@@ -25,12 +25,12 @@ enum PacketType : uint8_t
     // ==========================================
     // 2. Robot Protocol (Server <-> 실제 로봇)
     // ==========================================
-    PT_ROBOT_MOVE = 10,       // 이 경로(Link들)를 따라 이동해라
-    PT_ROBOT_STOP = 11,       // 긴급 정지
-    PT_ROBOT_RESUME = 12,     // 다시 출발
-    PT_ROBOT_STATUS = 13,     // (로봇->서버) 내 현재 위치, 속도, 배터리 상태
-    PT_ROBOT_HEARTBEAT = 14,  // (로봇->서버) 나 살아있음
-    PT_ROBOT_ERROR = 15       // (로봇->서버) 장애물 발견 / 에러 발생
+    PT_ROUTE = 10,          // (서버->로봇) "이 노드들을 순서대로 거쳐서 가라"
+    PT_CANCEL_ROUTE = 11,   // (서버->로봇) "경로 폐기! 그 자리에 정지해라"
+    PT_ARRIVED = 12,        // (로봇->서버) "다음 노드에 무사히 도착했습니다"
+    PT_STATUS = 13,         // (로봇->서버) "현재 X, Z, 각도, 속도, 배터리 상태 보고"
+    PT_ERROR = 14,          // (로봇->서버) "모터 고장 / 충돌 감지"
+    PT_HEARTBEAT = 15       // (로봇->서버) "나 아직 살아있음 (1초 주기)"
 };
 
 enum ReplicationAction : uint8_t

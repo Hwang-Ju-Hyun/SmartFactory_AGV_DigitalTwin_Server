@@ -51,7 +51,7 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
         }
     }
 
-    // 🌟 2단계: 기록 (안전 마진을 주어 기존 예약 덮어쓰기)
+    // 2단계: 기록 (안전 마진을 주어 기존 예약 덮어쓰기)
     resTable.OverrideFutureReservations(_agvID, _serverTime, CLEARANCE_TIME);
 
     if (initialWaitTime > 0.01f)
@@ -111,7 +111,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     PathFinder pf;
     std::vector<PathStep> path = pf.FindPath(curNodeID, _targetNodeID, _agvID, _serverTime, WINDOW_TIME, m_RRAEngines[_targetNodeID]);
     
-    // 🌟 [핵심 변경: 탐색 실패 시]
+    //[핵심 변경: 탐색 실패 시]
     if (path.size() < 2 || !TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime))
     {
         std::cout << "[관제탑] AGV " << _agvID << "번 경로 확보 실패! 현 위치 점유 연장 후 재탐색 대기." << std::endl;

@@ -56,7 +56,7 @@ public:
     void SetHomeNode(uint32_t _node) { m_HomeNode = MapManager::GetInstance().GetMapNode(_node); }
     uint32_t GetHomeNode() const { return m_HomeNode.m_Id; }
     
-    MapNode m_GoalNode;    
+    MapNode m_GoalNode;
     std::vector<uint32_t> m_FinalPathNodeIDs;     
     size_t m_CurrentPathIndex = 0;       
     std::vector<uint32_t> GetFinalPathNodeIDs() { return m_FinalPathNodeIDs; }
