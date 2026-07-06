@@ -11,8 +11,9 @@
 //#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-#define _TESTCASE3
-//#define _TESTCASE4
+//#define _TESTCASE3
+#define _TESTCASE4
+//#define _TESTCASE5
 
 struct NodeDistance 
 {
@@ -31,7 +32,7 @@ public:
     std::vector<uint32_t> loadNodes;
     std::vector<uint32_t> dispatchNodes;
 
-#ifdef _TESTCASE4    
+#ifdef _TESTCASE5    
     std::vector<uint32_t> groupA = {15,19,18,17,16};
     std::vector<uint32_t> groupB = {8,7,6,5,4};
 #endif
@@ -69,8 +70,14 @@ public:
         dispatchNodes.push_back(3);
         dispatchNodes.push_back(4);
         dispatchNodes.push_back(6);
-
+        
         #elifdef _TESTCASE4
+        loadNodes.push_back(5);
+        loadNodes.push_back(3);
+        dispatchNodes.push_back(4);
+        dispatchNodes.push_back(6);
+
+        #elifdef _TESTCASE5
         // _TESTCASE4 에서는 전역 loadNodes를 쓰지 않고 아래 함수에서 그룹을 교차시킵니다.
         #endif
     }
@@ -98,7 +105,7 @@ public:
     {                
         std::vector<uint32_t> availableNodes;
         
-#ifdef _TESTCASE4        
+#ifdef _TESTCASE5        
         Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
         if (!agv) return -1;
 
@@ -142,7 +149,7 @@ public:
     {            
         std::vector<uint32_t> availableNodes;
         
-#ifdef _TESTCASE4        
+#ifdef _TESTCASE5        
        Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
         if (agv) return agv->GetCurrentNodeID(); 
 

@@ -10,6 +10,8 @@
 const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f; 
 constexpr float CLEARANCE_TIME = 0.6f;
+const int WINDOW_TIME = 16; 
+const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f; 
 
 inline std::string GenerateTimeSpaceKey(uint32_t nodeID, float time)
 {
@@ -106,32 +108,39 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         {            
             if (link.m_FromNodeID != current->id || link.m_IsBlocked) continue;
 
-
             uint32_t neighborID = link.m_ToNodeID;
+                        
+            bool isCycle = false;
+            auto traceNode = current;
+            while (traceNode != nullptr)
+            {
+                if (traceNode->id == neighborID)
+                {
+                    isCycle = true;
+                    break;
+                }
+                traceNode = traceNode->parentNode;
+            }
+            if (isCycle) continue;
+
+            // (거리 및 시간 계산 유지)
             auto fromNodeGeo = MapManager::GetInstance().GetNodes().at(current->id);
             auto toNodeGeo = MapManager::GetInstance().GetNodes().at(neighborID);
-            
             float dist = (link.m_Type == 1) ? link.m_Dist : std::sqrt(std::pow(toNodeGeo.m_PosX - fromNodeGeo.m_PosX, 2) + std::pow(toNodeGeo.m_PosZ - fromNodeGeo.m_PosZ, 2));
-            
-            
             float travelTime = dist / AGV_SPEED;
-
             float enterTime = current->departureTime;
             float leaveTime = enterTime + travelTime;
             std::string neighborKey = GenerateTimeSpaceKey(neighborID, leaveTime);
 
             if (closedList.find(neighborKey) != closedList.end()) continue;        
             
-            // 🌟 [핵심 변경] 조언자 규칙 통일: 엣지 점유 = [departure, next.arrival] + 마진
             if (!ReservationTable::GetInstance().IsEdgeFree(current->id, neighborID, enterTime, leaveTime + CLEARANCE_TIME, _agvID)) continue;                
+                        
+            float requiredDwellTime = (neighborID == _targetNodeID) ? LONG_TERM_HORIZON : CLEARANCE_TIME;
             
-            float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : CLEARANCE_TIME;
-
-            // 🌟 [핵심 변경] 조언자 규칙 통일: 다음 노드 점유 = [next.arrival, next.departure]
             if (!ReservationTable::GetInstance().IsNodeFree(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
 
-            float nextG = current->g + travelTime;
-            if (current->parentNode != nullptr && neighborID == current->parentNode->id) continue; 
+            float nextG = current->g + travelTime;            
 
             if (openRegistryList.find(neighborKey) == openRegistryList.end() || nextG < openRegistryList[neighborKey]->g)
             {

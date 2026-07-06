@@ -173,8 +173,8 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 //#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-#define _TESTCASE3
-//#define _TESTCASE4
+//#define _TESTCASE3
+#define _TESTCASE4
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
 {
     #ifdef _TESTCASE0
@@ -216,14 +216,14 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
     uint32_t initNodes[3] = {1, 2, 4};
     
     #elifdef _TESTCASE4
-    int spawnCount = 10;
+    int spawnCount = 2;
     ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[10] = {15,19,18,17,16,8,7,6,5,4};
+    uint32_t initNodes[2] = {1,2};
     #endif
 
     std::vector<Robo*> Robos;

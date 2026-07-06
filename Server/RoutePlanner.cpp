@@ -84,7 +84,7 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
 void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose)
 {
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
-    if (!agv) return;     
+    if (!agv) return;         
 std::cout
 << "\n=========================\n"
 << "CreateRoute\n"
@@ -174,7 +174,7 @@ std::cout << std::endl;
     IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
     std::cout
 << "Controller = "
-<< controller
+<< controller<<"Purpose : " << (int)_purpose
 << std::endl;
     if (controller)
     {
@@ -186,27 +186,42 @@ std::cout << std::endl;
 void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 {
     uint32_t agvID = _e.agvID;
-    
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(agvID));
     if (!agv) return;
 
     if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
     RoutePlan& plan = m_MasterPlans[agvID]; 
 
-    // 1. 서버 장부의 현재 위치 갱신
+    // 1. 서버 장부 갱신: 로봇의 실제 위치를 업데이트합니다.
     agv->SetCurrentNodeID(_e.currentNodeID);
+        
+    size_t prevIndex = plan.currentStepIndex;
+    plan.currentStepIndex++; 
 
-    // 2. 최종 목적지에 도착했는가?
+    // 2. 부분 경로가 아직 남아있는 경우 (로봇은 이미 계속 달리고 있음)
+    if (plan.currentStepIndex < plan.steps.size())
+    {
+        const PathStep& currentStep = plan.steps[prevIndex]; // 명시적 이전 스텝
+        const PathStep& nextStep    = plan.steps[plan.currentStepIndex]; // 명시적 다음 스텝
+        
+        auto fromNode = MapManager::GetInstance().GetMapNode(currentStep.nodeID);
+        auto toNode   = MapManager::GetInstance().GetMapNode(nextStep.nodeID);
+        
+        // 서버의 장부만 다음 노드를 향해 '이동 중'으로 갱신 (서버 장부 동기화 용도)
+        agv->AssignNextStep(fromNode, toNode, AGVState::MOVING, currentStep.departureTime, nextStep.arrivalTime);
+        return;
+    }
+
+    // ==========================================================
+    // 3. 발급받은 경로(부분 경로)의 끝에 도달했을 경우
+    // ==========================================================
+    
     if (_e.currentNodeID == plan.finalTargetNodeID)
     {
+        // [CASE A: 거기가 진짜 최종 목적지일 때]
         MissionPurpose purpose = agv->GetMissionPurpose();
-        
-        //  도착했으니 1초간 작업을 지시합니다!
-        agv->StartWorkTimer(1.0f); 
-        std::cout
-<< "[MISSION COMPLETE]"
-<< agvID
-<< std::endl;
+        agv->StartWorkTimer(1.0f); // 1초 상하차 타이머 시작 (추후 하드웨어 센서 신호로 교체 가능)
+
         if (purpose == MissionPurpose::PICKUP) 
         {
             agv->ChangeState(AGVState::LOADING);
@@ -226,8 +241,27 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
             EventManager::GetInstance().Publish(homeEvent);
             std::cout << "[관제탑] AGV " << agvID << "번 HOME 복귀 완료." << std::endl;
         }
-
-        m_MasterPlans.erase(agvID); // 현재 임무 계획표 삭제
+        
+        m_MasterPlans.erase(agvID); // 새 경로 발급 전에 깔끔하게 장부 삭제 완료!
+    }
+    else
+    {
+        // [CASE B: 타임 윈도우 때문에 발급받은 '부분 경로'가 끝났을 때]
+        std::cout << "[관제탑] AGV " << agvID << "번 부분 경로(Window Time) 도달. 남은 경로 재탐색!" << std::endl;
+        
+        uint32_t finalTarget = plan.finalTargetNodeID;
+        MissionPurpose purpose = plan.purpose;
+        
+        //  로봇이 지각했을 경우 과거로 돌아가는 시간 역전 버그 방지
+        float nextStartTime = _e.timestamp; 
+        if (!plan.steps.empty()) 
+        {
+            nextStartTime = std::max(_e.timestamp, plan.steps.back().departureTime);
+        }
+        
+        m_MasterPlans.erase(agvID); 
+        
+        CreateRoute(agvID, finalTarget, nextStartTime, purpose); 
     }
 }
 
