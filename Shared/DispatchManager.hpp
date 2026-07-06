@@ -9,9 +9,9 @@
 #include "WarehouseManager.hpp"
 
 //#define _TESTCASE1
-//#define _TESTCASE2
+#define _TESTCASE2
 //#define _TESTCASE3
-#define _TESTCASE4
+//#define _TESTCASE4
 
 struct NodeDistance 
 {
