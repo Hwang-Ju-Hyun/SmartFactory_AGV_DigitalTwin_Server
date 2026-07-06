@@ -61,99 +61,125 @@ void Robo::AssignNextStep(const MapNode& _from, const MapNode& _to, AGVState _ne
     }
 }
 
-void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
-{   
-   if (m_State == AGVState::IDLE) 
-    {
-        m_AccStayTime += _deltaTime;
+// void Robo::UpdateNavigation(float _deltaTime, float _serverTime)
+// {   
+//    if (m_State == AGVState::IDLE) 
+//     {
+//         m_AccStayTime += _deltaTime;
                 
-        if (m_AccStayTime > 1.0f)
-        {
-            ReservationTable::GetInstance().ReserveNode(m_CurrentNodeID, _serverTime, _serverTime + 2.0f, GetNetworkID(), ReservationType::Normal);
-            m_AccStayTime = 0.0f; // 초기화
-        }
+//         if (m_AccStayTime > 1.0f)
+//         {
+//             ReservationTable::GetInstance().ReserveNode(m_CurrentNodeID, _serverTime, _serverTime + 2.0f, GetNetworkID(), ReservationType::Normal);
+//             m_AccStayTime = 0.0f; // 초기화
+//         }
 
-        // 5초마다 IDLE_READY 알림은 기존대로 유지
-        m_AccWaitTime += _deltaTime;
-        if (!m_bIdleEventSent || m_AccWaitTime > 5.0f) 
-        {
-            m_bIdleEventSent = true; 
-            m_AccWaitTime = 0.0f; 
+//         // 5초마다 IDLE_READY 알림은 기존대로 유지
+//         m_AccWaitTime += _deltaTime;
+//         if (!m_bIdleEventSent || m_AccWaitTime > 5.0f) 
+//         {
+//             m_bIdleEventSent = true; 
+//             m_AccWaitTime = 0.0f; 
             
-            RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };
-            EventManager::GetInstance().Publish(re);
-        }
-        return;
-    }
+//             RobotEvent re = { RobotEventType::IDLE_READY, GetNetworkID(), _serverTime };
+//             EventManager::GetInstance().Publish(re);
+//         }
+//         return;
+//     }
 
-    if (m_State == AGVState::LOADING || m_State == AGVState::UNLOADING)
-    {
-        m_AccStayTime += _deltaTime;
-        if (m_AccStayTime > 1.0f) 
-        {
-            m_AccStayTime = 0.f;       
-            RobotEventType eType = (m_State == AGVState::LOADING) ? RobotEventType::PICKUP_COMPLETED : RobotEventType::DROP_COMPLETED;
+//     if (m_State == AGVState::LOADING || m_State == AGVState::UNLOADING)
+//     {
+//         m_AccStayTime += _deltaTime;
+//         if (m_AccStayTime > 1.0f) 
+//         {
+//             m_AccStayTime = 0.f;       
+//             RobotEventType eType = (m_State == AGVState::LOADING) ? RobotEventType::PICKUP_COMPLETED : RobotEventType::DROP_COMPLETED;
             
-            m_State = AGVState::IDLE; 
-            RobotEvent re = { eType, GetNetworkID(), _serverTime };
-            EventManager::GetInstance().Publish(re);
-        }
-        return;
-    }
+//             m_State = AGVState::IDLE; 
+//             RobotEvent re = { eType, GetNetworkID(), _serverTime };
+//             EventManager::GetInstance().Publish(re);
+//         }
+//         return;
+//     }
 
-    if (m_State == AGVState::MOVING)
-    {
+//     if (m_State == AGVState::MOVING)
+//     {
         
-        if (m_Progress >= 1.0f) 
-            return; 
+//         if (m_Progress >= 1.0f) 
+//             return; 
         
-        if (_serverTime < m_MoveStartTime) 
-            return;
+//         if (_serverTime < m_MoveStartTime) 
+//             return;
         
-        float elapsedTime = _serverTime - m_MoveStartTime;
-        m_Progress = elapsedTime / m_PlannedTravelTime;
+//         float elapsedTime = _serverTime - m_MoveStartTime;
+//         m_Progress = elapsedTime / m_PlannedTravelTime;
             
-        if (m_Progress > 1.0f) 
-            m_Progress = 1.0f;                
+//         if (m_Progress > 1.0f) 
+//             m_Progress = 1.0f;                
 
-        if (m_FromNode.m_Id != m_ToNode.m_Id)
+//         if (m_FromNode.m_Id != m_ToNode.m_Id)
+//         {
+//             if (m_CurrentLink.m_Type == 1) // 곡선
+//             {                
+//                 float t = m_Progress;
+//                 float u = 1.0f - t;
+//                 float tt = t * t; float uu = u * u;
+//                 float uuu = uu * u; float ttt = tt * t;
+
+//                 m_PosX = (uuu * m_FromNode.m_PosX) + (3.0f * uu * t * m_CurrentLink.m_CX1) + 
+//                          (3.0f * u * tt * m_CurrentLink.m_CX2) + (ttt * m_ToNode.m_PosX);
+//                 m_PosZ = (uuu * m_FromNode.m_PosZ) + (3.0f * uu * t * m_CurrentLink.m_CZ1) + 
+//                          (3.0f * u * tt * m_CurrentLink.m_CZ2) + (ttt * m_ToNode.m_PosZ);                                     
+//             }
+//             else // 직선
+//             {
+//                 m_PosX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
+//                 m_PosZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
+//             }
+//         }
+
+//         // 주행 완료 처리 (도착)
+//         if (m_Progress >= 1.0f)
+//         {
+//             m_Progress = 1.0f;
+            
+//             m_PosX = m_ToNode.m_PosX;
+//             m_PosZ = m_ToNode.m_PosZ;
+
+//             m_State = AGVState::IDLE; 
+//             m_CurrentNodeID = m_ToNode.m_Id;
+
+//             std::cout << "[도착] AGV " << GetNetworkID() << " | " << m_FromNode.m_Id << "->" << m_ToNode.m_Id 
+//                       << " | 실제출발: " << m_MoveStartTime << " | 실제도착: " << _serverTime << std::endl;
+            
+//             float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
+//             RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), _serverTime };
+//             EventManager::GetInstance().Publish(re);
+//         }
+//     }
+// }
+
+void Robo::UpdateWorkTimer(float dt, float currentServerTime)
+{
+    if (m_WorkTimer > 0.0f)
         {
-            if (m_CurrentLink.m_Type == 1) // 곡선
-            {                
-                float t = m_Progress;
-                float u = 1.0f - t;
-                float tt = t * t; float uu = u * u;
-                float uuu = uu * u; float ttt = tt * t;
-
-                m_PosX = (uuu * m_FromNode.m_PosX) + (3.0f * uu * t * m_CurrentLink.m_CX1) + 
-                         (3.0f * u * tt * m_CurrentLink.m_CX2) + (ttt * m_ToNode.m_PosX);
-                m_PosZ = (uuu * m_FromNode.m_PosZ) + (3.0f * uu * t * m_CurrentLink.m_CZ1) + 
-                         (3.0f * u * tt * m_CurrentLink.m_CZ2) + (ttt * m_ToNode.m_PosZ);                                     
-            }
-            else // 직선
+            m_WorkTimer -= dt;
+            
+            if (m_WorkTimer <= 0.0f) // 시간이 다 됐다면!
             {
-                m_PosX = m_FromNode.m_PosX + (m_ToNode.m_PosX - m_FromNode.m_PosX) * m_Progress;
-                m_PosZ = m_FromNode.m_PosZ + (m_ToNode.m_PosZ - m_FromNode.m_PosZ) * m_Progress;                    
+                if (GetState() == AGVState::LOADING)
+                {
+                    ChangeState(AGVState::IDLE);
+                    RobotEvent e = { RobotEventType::PICKUP_COMPLETED, GetNetworkID(), currentServerTime };
+                    EventManager::GetInstance().Publish(e);
+                    std::cout << "[Robo] 상차(Loading) 완료! PICKUP_COMPLETED 이벤트 발행." << std::endl;
+                }
+                else if (GetState() == AGVState::UNLOADING)
+                {
+                    ChangeState(AGVState::IDLE);
+                    RobotEvent e = { RobotEventType::DROP_COMPLETED, GetNetworkID(), currentServerTime };
+                    EventManager::GetInstance().Publish(e);
+                    std::cout << "[Robo] 하차(Unloading) 완료! DROP_COMPLETED 이벤트 발행." << std::endl;
+                }
             }
         }
-
-        // 주행 완료 처리 (도착)
-        if (m_Progress >= 1.0f)
-        {
-            m_Progress = 1.0f;
-            
-            m_PosX = m_ToNode.m_PosX;
-            m_PosZ = m_ToNode.m_PosZ;
-
-            m_State = AGVState::IDLE; 
-            m_CurrentNodeID = m_ToNode.m_Id;
-
-            std::cout << "[도착] AGV " << GetNetworkID() << " | " << m_FromNode.m_Id << "->" << m_ToNode.m_Id 
-                      << " | 실제출발: " << m_MoveStartTime << " | 실제도착: " << _serverTime << std::endl;
-            
-            float scheduledArrivalTime = m_MoveStartTime + m_PlannedTravelTime;
-            RobotEvent re = { RobotEventType::MOVING_WAITING_COMPLETED, GetNetworkID(), _serverTime };
-            EventManager::GetInstance().Publish(re);
-        }
-    }
 }

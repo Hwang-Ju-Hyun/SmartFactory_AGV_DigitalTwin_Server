@@ -4,7 +4,6 @@
 #include "Map.hpp"
 
 OutputMemoryStream::OutputMemoryStream()
-
     :m_Buffer(nullptr)
     ,m_Head(0)
     ,m_Capacity(0)

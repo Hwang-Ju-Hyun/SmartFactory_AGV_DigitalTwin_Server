@@ -8,10 +8,9 @@ private:
     TCPSessionPtr m_RobotSession; // ESP32 로봇과의 TCP 세션
 public:
     ESP32RobotController(TCPSessionPtr _robotSession);
-    virtual ~ESP32RobotController() override = default;
+    virtual ~ESP32RobotController()override{};
     void FollowRoute(const RoutePacket& _routePacket) override;
     void CancelRoute() override;
-    StatusPacket GetStatus() override;
-    bool IsArrived() const override;
+    StatusPacket GetStatus() override;    
     void Update(float dt) override;
 };

@@ -50,9 +50,9 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
     while (!openList.empty())
     {
+        
         auto current = openList.top();
         openList.pop();
-
         
         std::string currentKey = GenerateTimeSpaceKey(current->id, current->departureTime);
         
@@ -92,7 +92,6 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                     waitNode->g = nextG;
                     waitNode->h = _rraEngine.GetAbstractDistance(current->id) / AGV_SPEED; 
                     waitNode->f = waitNode->g + waitNode->h;
-
                     openList.push(waitNode); 
                     openRegistryList[waitKey] = waitNode; 
                 }
@@ -104,8 +103,9 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         // ==========================================
         const auto& links = MapManager::GetInstance().GetLinks();
         for (const auto& link : links)
-        {
+        {            
             if (link.m_FromNodeID != current->id || link.m_IsBlocked) continue;
+
 
             uint32_t neighborID = link.m_ToNodeID;
             auto fromNodeGeo = MapManager::GetInstance().GetNodes().at(current->id);
@@ -126,7 +126,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             if (!ReservationTable::GetInstance().IsEdgeFree(current->id, neighborID, enterTime, leaveTime + CLEARANCE_TIME, _agvID)) continue;                
             
             float requiredDwellTime = (neighborID == _targetNodeID) ? (_windowTimeLimit + 2.0f) : CLEARANCE_TIME;
-            
+
             // 🌟 [핵심 변경] 조언자 규칙 통일: 다음 노드 점유 = [next.arrival, next.departure]
             if (!ReservationTable::GetInstance().IsNodeFree(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
 
@@ -142,7 +142,6 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 neighborNode->g = nextG;                
                 neighborNode->h = _rraEngine.GetAbstractDistance(neighborID) / AGV_SPEED; 
                 neighborNode->f = neighborNode->g + neighborNode->h;
-
                 openList.push(neighborNode); 
                 openRegistryList[neighborKey] = neighborNode; 
             }

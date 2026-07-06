@@ -43,7 +43,8 @@ private:
     float m_AccStayTime = 0.f;
     float m_AccWaitTime = 0.f;
     bool IsStayTime = false;
-    
+
+    float m_WorkTimer = 0.0f; // 상하차 작업 남은 시간
     AGVState m_State;
     MissionPurpose m_Purpose; 
 public:
@@ -55,7 +56,9 @@ public:
 
     void SetHomeNode(uint32_t _node) { m_HomeNode = MapManager::GetInstance().GetMapNode(_node); }
     uint32_t GetHomeNode() const { return m_HomeNode.m_Id; }
-    
+
+    void StartWorkTimer(float time) { m_WorkTimer = time; }
+    void UpdateWorkTimer(float dt, float currentServerTime);
     MapNode m_GoalNode;
     std::vector<uint32_t> m_FinalPathNodeIDs;     
     size_t m_CurrentPathIndex = 0;       

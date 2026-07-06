@@ -32,4 +32,18 @@ public:
         }
         return nullptr;
     }
+
+    void Update(float _dt)
+    {
+        for(auto& pair : m_RobotControllers)
+        {
+            pair.second->Update(_dt);
+        }
+    }
+
+    const std::unordered_map<uint32_t, std::unique_ptr<IRobotController>>& GetRobotControllers() const
+    {
+        return m_RobotControllers;
+    }
+
 };

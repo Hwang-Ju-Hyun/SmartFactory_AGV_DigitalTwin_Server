@@ -4,6 +4,7 @@
 #include "WarehouseManager.hpp"
 #include "AGVManager.hpp"
 #include <iostream>
+#include"NetworkManagerServer.hpp"
 
 void TaskManager::Init()
 {    
@@ -14,22 +15,23 @@ void TaskManager::Init()
 
 void TaskManager::ProcessNextDispatch()
 {
-    int qSize = m_PendingEvents.size();
+    int qSize = m_WaitingAGVs.size();
+    
+    // 현재 서버의 시간을 가져옵니다.
+    float currentTime = NetworkManagerServer::sInstance->GetTotalElapsedServerTime();
     
     for(int i = 0; i < qSize; i++)
     {
-        RobotEvent e = m_PendingEvents.front();
-        m_PendingEvents.pop();
+        uint32_t agvID = m_WaitingAGVs.front();
+        m_WaitingAGVs.pop();
 
-        if (e.type == RobotEventType::PICKUP_COMPLETED)
-        {
-            OnRobotLoadCompleted(e); 
-        }            
-        else if (e.type == RobotEventType::IDLE_READY) 
-        {
-            OnRobotIdle(e);
-        }
-    }    
+        // 번호표 뽑고 기다리던 AGV들을 다시 깨워서 하차지 배정을 시도합니다.
+        RobotEvent e;
+        e.agvID = agvID;
+        e.timestamp = currentTime; 
+
+        OnRobotLoadCompleted(e);
+    }
 }
 
 void TaskManager::OnRobotIdle(const RobotEvent& _e)
@@ -62,37 +64,31 @@ void TaskManager::OnRobotIdle(const RobotEvent& _e)
 void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
 {
     int unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(_e.timestamp, _e.agvID);
-    if (unloadNodeID == -1)
-    {
-        return;
-    }
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_e.agvID));
-    if(!agv) 
-    {
-        return;
-    }
+    if(!agv) return;    
 
     if (unloadNodeID == -1)
     {
-        // 하차지가 날 때까지 대기실에 번호표 뽑고 갓길(집)로 피신!
-        m_PendingEvents.push(_e);
+        // 하차지가 날 때까지 대기실에 번호표(agvID)만 뽑고 갓길(집)로 피신!
+        m_WaitingAGVs.push(_e.agvID); // 🌟 uint32_t만 푸시
 
         if (agv->GetToNodeID() != agv->GetHomeNode() && agv->GetMissionPurpose() != MissionPurpose::HOME)
         {            
-            std::cout<<"TaskManager::OnRobotLoadCompleted CReateRoute Call : unloadNodeID=-1"<<std::endl;
+            std::cout<<"[TaskManager] 하차지 없음. AGV " << _e.agvID << "번 HOME으로 대피!" << std::endl;
             RoutePlanner::GetInstance().CreateRoute(_e.agvID, agv->GetHomeNode(), _e.timestamp, MissionPurpose::HOME);
         }
         return;              
     }
-    std::cout<<"TaskManager::OnRobotLoadCompleted CReateRoute Call"<<std::endl;
+    
+    std::cout << "[TaskManager] 하차지 확보 완료! AGV " << _e.agvID << "번 DROP 이동 시작." << std::endl;
     RoutePlanner::GetInstance().CreateRoute(_e.agvID, unloadNodeID, _e.timestamp, MissionPurpose::DROP);
 }
 
 void TaskManager::OnRobotUnloadCompleted(const RobotEvent& _e)
 {    
-    RobotEvent newEvent = {RobotEventType::IDLE_READY, _e.agvID, _e.timestamp};
+   RobotEvent newEvent = {RobotEventType::IDLE_READY, _e.agvID, _e.timestamp};
     OnRobotIdle(newEvent);
 
-    // 내가 하차를 끝냈으니 자리가 났다! 대기실 인원들 깨우기!
+    // 내가 하차를 끝냈으니 자리가 났다! 번호표 뽑고 기다리던 인원들 깨우기!
     ProcessNextDispatch();
 }

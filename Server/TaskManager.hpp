@@ -9,7 +9,7 @@ public:
 private: 
     TaskManager(){Init();}
     void Init();
-    std::queue<RobotEvent> m_PendingEvents;
+    std::queue<uint32_t> m_WaitingAGVs;
 public:
     void ProcessNextDispatch();
     //1. 로봇이 백수가 됨 -> [새 작업 부여 후 창고로 보냄]

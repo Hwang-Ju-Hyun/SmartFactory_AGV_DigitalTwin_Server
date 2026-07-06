@@ -12,7 +12,7 @@ enum class RobotEventType
     IDLE_READY,         // 대기소 도착 후 완전히 쉬고 있음 (새 임무 받을 준비 완료)
     PICKUP_COMPLETED,   // 상차(Load) 완료
     DROP_COMPLETED,      // 하차(Unload) 완료
-    MOVING_WAITING_COMPLETED
+    NODE_ARRIVED
 };
 
 struct RobotEvent 
@@ -20,6 +20,7 @@ struct RobotEvent
     RobotEventType type;
     uint32_t agvID;
     float timestamp;
+    uint32_t currentNodeID;
 };
 
 using EventCallback=std::function<void(const RobotEvent& _eve)>;

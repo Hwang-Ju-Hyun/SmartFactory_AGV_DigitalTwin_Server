@@ -6,7 +6,6 @@ ESP32RobotController::ESP32RobotController(TCPSessionPtr _robotSession)
  
 }
 
-ESP32RobotController::~ESP32RobotController() = default;
 
 void ESP32RobotController::FollowRoute(const RoutePacket& _routePacket)
 {
@@ -27,12 +26,8 @@ void ESP32RobotController::CancelRoute()
 
 StatusPacket ESP32RobotController::GetStatus()
 {
-    // ESP32 로봇의 상태를 가져오는 로직 구현
-}
-
-bool ESP32RobotController::IsArrived() const
-{
-    // ESP32 로봇이 목적지에 도착했는지 확인하는 로직 구현
+    StatusPacket p;
+    return p;
 }
 
 void ESP32RobotController::Update(float dt)

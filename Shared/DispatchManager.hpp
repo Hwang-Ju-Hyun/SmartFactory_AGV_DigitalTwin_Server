@@ -8,10 +8,11 @@
 #include "Robo.hpp"
 #include "WarehouseManager.hpp"
 
+//#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-//#define _TESTCASE3
-#define _TESTCASE4
+#define _TESTCASE3
+//#define _TESTCASE4
 
 struct NodeDistance 
 {
@@ -37,7 +38,17 @@ public:
 
     DispatchManager() 
     {
-        #ifdef _TESTCASE1
+        #ifdef _TESTCASE0
+        loadNodes.push_back(8);
+        loadNodes.push_back(9);
+        loadNodes.push_back(10);
+        loadNodes.push_back(11);
+        loadNodes.push_back(12);
+
+        dispatchNodes.push_back(5);
+        dispatchNodes.push_back(6);
+        dispatchNodes.push_back(7);
+        #elifdef _TESTCASE1
         for(int i=5; i<=460; i++) { loadNodes.push_back(i); }
         for(int i=1; i<=4; i++) { dispatchNodes.push_back(i); }
 

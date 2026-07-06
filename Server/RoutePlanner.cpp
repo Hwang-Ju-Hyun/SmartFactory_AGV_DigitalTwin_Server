@@ -5,6 +5,9 @@
 #include "Map.hpp"
 #include <iostream>
 #include <algorithm>
+#include "SharedPackets.hpp"
+#include "IRobotController.hpp"
+#include "RobotManager.hpp"
 
 const int WINDOW_TIME = 16; 
 const float CLEARANCE_TIME = 0.6f; 
@@ -13,7 +16,7 @@ const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f;
 
 void RoutePlanner::Init()
 {    
-    EventManager::GetInstance().Subscribe(RobotEventType::MOVING_WAITING_COMPLETED, [this](const RobotEvent& _e) { OnRobotStepCompleted(_e); });
+    EventManager::GetInstance().Subscribe(RobotEventType::NODE_ARRIVED, [this](const RobotEvent& _e) { OnRobotStepCompleted(_e); });
 }
 
 bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<PathStep>& _path, uint32_t _finalTargetID, float _serverTime)
@@ -82,7 +85,14 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
 {
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
     if (!agv) return;     
-
+std::cout
+<< "\n=========================\n"
+<< "CreateRoute\n"
+<< "AGV : " << _agvID
+<< "\nCurrent : " << agv->GetCurrentNodeID()
+<< "\nTarget : " << _targetNodeID
+<< "\nPurpose : " << (int)_purpose
+<< "\n";
     m_PendingRoutes.erase(
         std::remove_if(m_PendingRoutes.begin(), m_PendingRoutes.end(),
             [_agvID](const PendingRoute& r) { return r.agvID == _agvID; }),
@@ -110,10 +120,22 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
 
     PathFinder pf;
     std::vector<PathStep> path = pf.FindPath(curNodeID, _targetNodeID, _agvID, _serverTime, WINDOW_TIME, m_RRAEngines[_targetNodeID]);
-    
+    std::cout << "Target : " << _targetNodeID << std::endl;
+    std::cout << "Last   : " << path.back().nodeID << std::endl;
+    //assert(path.back().nodeID == _targetNodeID);
+    std::cout << "Path : ";
+for (auto& step : path)
+{
+    std::cout << step.nodeID << " ";
+}
+std::cout << std::endl;
     //[핵심 변경: 탐색 실패 시]
     if (path.size() < 2 || !TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime))
-    {
+    {std::cout
+<< "[FAILED]"
+<< " AGV=" << _agvID
+<< " pathsize=" << path.size()
+<< std::endl;
         std::cout << "[관제탑] AGV " << _agvID << "번 경로 확보 실패! 현 위치 점유 연장 후 재탐색 대기." << std::endl;
                         
         // 실패했더라도 절대 장부를 비우지 않습니다. 현재 위치에 안전 버퍼(REPLAN_PENALTY + 1.0f)만큼 Normal 예약을 연장합니다.
@@ -132,83 +154,80 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     plan.steps = path; 
     m_MasterPlans[_agvID] = plan;
 
-    auto fromNode = MapManager::GetInstance().GetMapNode(path[0].nodeID);
-    auto toNode = MapManager::GetInstance().GetMapNode(path[1].nodeID);
-    
+    // 서버 장부에 나 움직인다고 상태 갱신
     agv->SetMissionPurpose(_purpose);
-    agv->AssignNextStep(fromNode, toNode, AGVState::MOVING, path[0].departureTime, path[1].arrivalTime);        
+    agv->ChangeState(AGVState::MOVING); // (AssignNextStep 대신 가볍게 상태만 바꿈!)
+
+    // A*가 찾은 전체 Node 경로를 LinkID 배열로 변환
+    std::vector<uint32_t> routeLinks;
+    for (size_t i = 0; i < path.size() - 1; i++)
+    {
+        MapLink link = MapManager::GetInstance().FindLink(path[i].nodeID, path[i+1].nodeID);
+        routeLinks.push_back(link.m_Id); 
+    }
+
+    RoutePacket commandPacket;
+    commandPacket.agvID = _agvID;
+    commandPacket.linkIDs = routeLinks; 
+
+    // 로봇에게 "목적지까지 혼자 달려라" 명령 하달
+    IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
+    std::cout
+<< "Controller = "
+<< controller
+<< std::endl;
+    if (controller)
+    {
+        controller->FollowRoute(commandPacket);
+        std::cout << "[관제탑] AGV " << _agvID << "번 전체 경로 하달 완료. (총 " << routeLinks.size() << "개 링크)" << std::endl;
+    }
 }
 
 void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 {
     uint32_t agvID = _e.agvID;
-    if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
     
-    RoutePlan& plan = m_MasterPlans[agvID]; 
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(agvID));
+    if (!agv) return;
 
-    plan.currentStepIndex++; 
+    if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
+    RoutePlan& plan = m_MasterPlans[agvID]; 
 
-    if (plan.currentStepIndex < plan.steps.size())
-    {
-        const PathStep& currentStep = plan.steps[plan.currentStepIndex - 1];
-        const PathStep& nextStep    = plan.steps[plan.currentStepIndex];
+    // 1. 서버 장부의 현재 위치 갱신
+    agv->SetCurrentNodeID(_e.currentNodeID);
 
-        auto fromNode = MapManager::GetInstance().GetMapNode(currentStep.nodeID);
-        auto toNode   = MapManager::GetInstance().GetMapNode(nextStep.nodeID);
-        
-        // 🌟 [방어막 복구] 내가 가려는 미래의 시간에 타 차량이 고립(Waiting)되어 알박기를 했는지 검증합니다.
-        float expectedArrivalTime = nextStep.arrivalTime;
-        bool isNodeSafe = ReservationTable::GetInstance().IsNodeFree(nextStep.nodeID, expectedArrivalTime, expectedArrivalTime + 0.5f, agvID);
-        bool isLinkSafe = true;
-
-        if (currentStep.nodeID != nextStep.nodeID)
-        {
-            isLinkSafe = ReservationTable::GetInstance().IsEdgeFree(currentStep.nodeID, nextStep.nodeID, currentStep.departureTime, expectedArrivalTime + 0.5f, agvID);
-        }
-
-        // 동적 링크 차단 검사
-        bool isBlocked = false;
-        if (currentStep.nodeID != nextStep.nodeID)
-        {
-            MapLink currentLink = MapManager::GetInstance().FindLink(currentStep.nodeID, nextStep.nodeID);
-            isBlocked = currentLink.m_IsBlocked;
-        }
-
-        // 장부가 유효하지 않거나 오염되었다면 즉시 진입을 취소하고 제자리 재탐색을 수행합니다.
-        if (!isNodeSafe || !isLinkSafe || isBlocked)
-        {
-            std::cout << "[동적 충돌 회피] AGV " << agvID << "번 진입 예정 노드/링크(" << nextStep.nodeID 
-                      << ")에 타 차량 고립 감지! 즉시 계획을 폐기하고 재탐색합니다." << std::endl;
-            
-            uint32_t finalTarget = plan.finalTargetNodeID;
-            MissionPurpose purpose = plan.purpose;
-            
-            m_MasterPlans.erase(agvID); 
-            CreateRoute(agvID, finalTarget, _e.timestamp, purpose); 
-            return;
-        }        
-                
-        agv->AssignNextStep(fromNode, toNode, AGVState::MOVING, currentStep.departureTime, nextStep.arrivalTime);
-    }
-    else 
+    // 2. 최종 목적지에 도착했는가?
+    if (_e.currentNodeID == plan.finalTargetNodeID)
     {
         MissionPurpose purpose = agv->GetMissionPurpose();
-        auto toNode = MapManager::GetInstance().GetMapNode(agv->GetCurrentNodeID());
-
-        if (agv->GetToNodeID() != plan.finalTargetNodeID)
+        
+        //  도착했으니 1초간 작업을 지시합니다!
+        agv->StartWorkTimer(1.0f); 
+        std::cout
+<< "[MISSION COMPLETE]"
+<< agvID
+<< std::endl;
+        if (purpose == MissionPurpose::PICKUP) 
         {
-            uint32_t finalTarget = plan.finalTargetNodeID;
-            m_MasterPlans.erase(agvID); 
-            CreateRoute(agvID, finalTarget, _e.timestamp, purpose);
-            return;
+            agv->ChangeState(AGVState::LOADING);
+            std::cout << "[관제탑] AGV " << agvID << "번 상차지 도착. LOADING 시작." << std::endl;
         }
-        
-        if (purpose == MissionPurpose::PICKUP) agv->AssignNextStep(toNode, toNode, AGVState::LOADING, _e.timestamp, _e.timestamp + 1.0f);
-        else if (purpose == MissionPurpose::DROP) agv->AssignNextStep(toNode, toNode, AGVState::UNLOADING, _e.timestamp, _e.timestamp + 1.0f);
-        else if (purpose == MissionPurpose::HOME) agv->AssignNextStep(toNode, toNode, AGVState::IDLE, _e.timestamp, _e.timestamp + 1.0f);
-        
-        m_MasterPlans.erase(agvID); 
+        else if (purpose == MissionPurpose::DROP) 
+        {
+            agv->ChangeState(AGVState::UNLOADING);
+            std::cout << "[관제탑] AGV " << agvID << "번 하차지 도착. UNLOADING 시작." << std::endl;
+        }
+        else if (purpose == MissionPurpose::HOME) 
+        {
+            agv->ChangeState(AGVState::IDLE);
+            agv->StartWorkTimer(0.0f); // 집에서는 타이머 필요 없음
+            
+            RobotEvent homeEvent = { RobotEventType::IDLE_READY, agvID, _e.timestamp, _e.currentNodeID };
+            EventManager::GetInstance().Publish(homeEvent);
+            std::cout << "[관제탑] AGV " << agvID << "번 HOME 복귀 완료." << std::endl;
+        }
+
+        m_MasterPlans.erase(agvID); // 현재 임무 계획표 삭제
     }
 }
 
@@ -225,7 +244,10 @@ void RoutePlanner::Update(float dt, float serverTime)
             retryList.push_back(*it);
             it = m_PendingRoutes.erase(it);
         }
-        else ++it;
+        else 
+        {
+            ++it;
+        }
     }
 
     for(auto& route : retryList)

@@ -47,4 +47,5 @@ public:
 public:
     void ReplanPath(uint32_t _agvID);
     void RequestReplan(uint32_t _agvID);
+    float GetTotalElapsedServerTime()const{return m_TotalElapsedServerTime;}
 };
