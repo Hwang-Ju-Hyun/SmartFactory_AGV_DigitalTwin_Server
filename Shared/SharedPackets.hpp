@@ -3,10 +3,18 @@
 #include <vector>
 #include <cstdint>
 
+struct RouteNodeTime 
+{
+    uint32_t nodeID;
+    float arrivalTime;
+    float departureTime;
+};
+
 struct RoutePacket
 {
     uint32_t agvID;
     std::vector<uint32_t> linkIDs;
+    std::vector<RouteNodeTime> nodes;
 
     // 쓰는 함수 (Server -> Robot 보낼 때)
     void Serialize(OutputMemoryStream& _stream) const

@@ -33,11 +33,11 @@ public:
         return nullptr;
     }
 
-    void Update(float _dt)
+    void Update(float _dt, float serverTime)
     {
         for(auto& pair : m_RobotControllers)
         {
-            pair.second->Update(_dt);
+            pair.second->Update(_dt, serverTime);
         }
     }
 

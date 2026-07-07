@@ -21,16 +21,18 @@ void RoutePlanner::Init()
 
 bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<PathStep>& _path, uint32_t _finalTargetID, float _serverTime)
 {
-    if (_path.empty()) return false;
+    if (_path.empty())
+    {        
+        return false;
+    } 
     
     const float TIME_MARGIN = CLEARANCE_TIME; 
     auto& resTable = ReservationTable::GetInstance();
 
     float initialWaitTime = _path[0].arrivalTime - _serverTime;
 
-    // 1단계: 검증
-    if (initialWaitTime > 0.01f)
-    {
+    // 1단계: 검증 루프
+    if (initialWaitTime > 0.01f) {
         if (!resTable.IsNodeFree(_path[0].nodeID, _serverTime, _path[0].arrivalTime + TIME_MARGIN, _agvID))
             return false;
     }
@@ -38,15 +40,18 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     for (size_t i = 0; i < _path.size(); i++)
     {
         const PathStep& cur = _path[i];                
-        bool isLastNode = (i == _path.size() - 1);
+        bool isLastNodeInArray = (i == _path.size() - 1);
         
-        //9999 대신 LONG_TERM_HORIZON 적용
-        float nodeLeaveTime = isLastNode ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
+        // 🌟 [5순위 적용] 현재 노드가 진짜 최종 목적지인지 확인합니다!
+        bool reachedGoal = (cur.nodeID == _finalTargetID); 
+        
+        // 진짜 목적지일 때만 LONG_TERM_HORIZON(무한 점유)을 적용합니다.
+        float nodeLeaveTime = reachedGoal ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
         
         if (!resTable.IsNodeFree(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID))
             return false; 
 
-        if (!isLastNode)
+        if (!isLastNodeInArray)
         {
             const PathStep& next = _path[i + 1];        
             if (!resTable.IsEdgeFree(cur.nodeID, next.nodeID, cur.departureTime, next.arrivalTime + TIME_MARGIN, _agvID)) 
@@ -54,25 +59,27 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
         }
     }
 
-    // 2단계: 기록 (안전 마진을 주어 기존 예약 덮어쓰기)
+    // 2단계: 기록 루프
     resTable.OverrideFutureReservations(_agvID, _serverTime, CLEARANCE_TIME);
 
-    if (initialWaitTime > 0.01f)
-    {
+    if (initialWaitTime > 0.01f) {
         resTable.ReserveNode(_path[0].nodeID, _serverTime, _path[0].arrivalTime + TIME_MARGIN, _agvID, ReservationType::Normal);
     }
 
     for (size_t i = 0; i < _path.size(); i++)
     {
         const PathStep& cur = _path[i];        
-        bool isLastNode = (i == _path.size() - 1);
+        bool isLastNodeInArray = (i == _path.size() - 1);
         
-        float nodeLeaveTime = isLastNode ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
-        ReservationType nodeType = isLastNode ? ReservationType::Goal : ReservationType::Normal;
+        // 🌟 [5순위 적용] 기록할 때도 진짜 목적지일 때만 Goal 타입으로 적습니다!
+        bool reachedGoal = (cur.nodeID == _finalTargetID);
+        
+        float nodeLeaveTime = reachedGoal ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
+        ReservationType nodeType = reachedGoal ? ReservationType::Goal : ReservationType::Normal;
         
         resTable.ReserveNode(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID, nodeType);
 
-        if (!isLastNode)
+        if (!isLastNodeInArray)
         {
             const PathStep& next = _path[i + 1];        
             resTable.ReserveEdge(cur.nodeID, next.nodeID, cur.departureTime, next.arrivalTime + TIME_MARGIN, _agvID, ReservationType::Normal);
@@ -120,8 +127,8 @@ std::cout
 
     PathFinder pf;
     std::vector<PathStep> path = pf.FindPath(curNodeID, _targetNodeID, _agvID, _serverTime, WINDOW_TIME, m_RRAEngines[_targetNodeID]);
-    std::cout << "Target : " << _targetNodeID << std::endl;
-    std::cout << "Last   : " << path.back().nodeID << std::endl;
+    // std::cout << "Target : " << _targetNodeID << std::endl;
+    // std::cout << "Last   : " << path.back().nodeID << std::endl;
     //assert(path.back().nodeID == _targetNodeID);
     std::cout << "Path : ";
 for (auto& step : path)
@@ -131,11 +138,13 @@ for (auto& step : path)
 std::cout << std::endl;
     //[핵심 변경: 탐색 실패 시]
     if (path.size() < 2 || !TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime))
-    {std::cout
-<< "[FAILED]"
-<< " AGV=" << _agvID
-<< " pathsize=" << path.size()
-<< std::endl;
+    {   
+
+        std::cout<< "[FAILED]"<< " AGV=" << _agvID<< " pathsize=" << path.size()<< std::endl;
+        std::cout<< "FAIL NODE "<< _targetNodeID<< std::endl;
+        ReservationTable::GetInstance().DebugPrintNode(_targetNodeID);
+
+
         std::cout << "[관제탑] AGV " << _agvID << "번 경로 확보 실패! 현 위치 점유 연장 후 재탐색 대기." << std::endl;
                         
         // 실패했더라도 절대 장부를 비우지 않습니다. 현재 위치에 안전 버퍼(REPLAN_PENALTY + 1.0f)만큼 Normal 예약을 연장합니다.
@@ -159,27 +168,20 @@ std::cout << std::endl;
     agv->ChangeState(AGVState::MOVING); // (AssignNextStep 대신 가볍게 상태만 바꿈!)
 
     // A*가 찾은 전체 Node 경로를 LinkID 배열로 변환
-    std::vector<uint32_t> routeLinks;
-    for (size_t i = 0; i < path.size() - 1; i++)
+    std::vector<RouteNodeTime> routeNodes;
+    for (size_t i = 0; i < path.size(); i++)
     {
-        MapLink link = MapManager::GetInstance().FindLink(path[i].nodeID, path[i+1].nodeID);
-        routeLinks.push_back(link.m_Id); 
+        routeNodes.push_back({path[i].nodeID, path[i].arrivalTime, path[i].departureTime});
     }
 
     RoutePacket commandPacket;
     commandPacket.agvID = _agvID;
-    commandPacket.linkIDs = routeLinks; 
+    commandPacket.nodes = routeNodes; // 시간표 하달!
 
-    // 로봇에게 "목적지까지 혼자 달려라" 명령 하달
     IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
-    std::cout
-<< "Controller = "
-<< controller<<"Purpose : " << (int)_purpose
-<< std::endl;
     if (controller)
     {
         controller->FollowRoute(commandPacket);
-        std::cout << "[관제탑] AGV " << _agvID << "번 전체 경로 하달 완료. (총 " << routeLinks.size() << "개 링크)" << std::endl;
     }
 }
 

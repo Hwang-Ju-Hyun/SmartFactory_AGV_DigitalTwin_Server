@@ -11,8 +11,8 @@
 //#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-//#define _TESTCASE3
-#define _TESTCASE4
+#define _TESTCASE3
+//#define _TESTCASE4
 //#define _TESTCASE5
 
 struct NodeDistance 
@@ -67,9 +67,9 @@ public:
         loadNodes.push_back(11);
         loadNodes.push_back(10);
 
-        dispatchNodes.push_back(3);
-        dispatchNodes.push_back(4);
-        dispatchNodes.push_back(6);
+        dispatchNodes.push_back(29);
+        dispatchNodes.push_back(25);
+        dispatchNodes.push_back(23);
         
         #elifdef _TESTCASE4
         loadNodes.push_back(5);

@@ -19,26 +19,30 @@ UnityRobotController::~UnityRobotController()
 
 void UnityRobotController::FollowRoute(const RoutePacket& _routePacket)
 {   
-    std::cout << "[FollowRoute] AGV=" << _routePacket.agvID << " Links=";
-    for(auto id : _routePacket.linkIDs) {
-        std::cout << id << " ";
-    }
+   while(!m_EventQueue.empty()) 
+    { m_EventQueue.pop(); } // 찌꺼기 청소
+
     m_CurrentRoute = _routePacket;
     m_CurrentLinkIndex = 0;
     m_LinkProgress = 0.0f;
-    m_Speed=4.f;
     m_CachedLinks.clear();
 
-    for (uint32_t linkID : _routePacket.linkIDs)
-        {
-            
-             MapLink link = MapManager::GetInstance().GetLink(linkID);
-             MapNode from = MapManager::GetInstance().GetMapNode(link.m_FromNodeID);
-             MapNode to   = MapManager::GetInstance().GetMapNode(link.m_ToNodeID);
-            
-            // 이제 안전하게 원본 데이터의 주소를 저장할 수 있습니다.
-            m_CachedLinks.push_back({ link, from, to });
-        }
+    // 🌟 노드 배열을 순회하며 출발/도착 시간을 링크와 매핑합니다.
+    for (size_t i = 0; i < _routePacket.nodes.size() - 1; i++)
+    {
+        uint32_t fromID = _routePacket.nodes[i].nodeID;
+        uint32_t toID   = _routePacket.nodes[i+1].nodeID;
+        
+        // 이 링크를 탈 때의 출발 시간과 도착 시간
+        float depTime = _routePacket.nodes[i].departureTime;
+        float arrTime = _routePacket.nodes[i+1].arrivalTime;
+
+        MapLink link = MapManager::GetInstance().FindLink(fromID, toID);
+        MapNode from = MapManager::GetInstance().GetMapNode(fromID);
+        MapNode to   = MapManager::GetInstance().GetMapNode(toID);
+
+        m_CachedLinks.push_back({ link, from, to, depTime, arrTime });
+    }
 }
 
 void UnityRobotController::CancelRoute()
@@ -85,43 +89,65 @@ ControllerEvent UnityRobotController::PopEvent()
 }
 #include <iostream>
 
-void UnityRobotController::Update(float dt)
+void UnityRobotController::Update(float dt, float serverTime)
 {   
-
-    if (m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size()) 
-    { 
-        m_Speed = 0.0f; 
-        //m_CurrentRoute.linkIDs.clear(); 
+if (m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size()) 
         return; 
-    }
 
     const CachedLink& cache = m_CachedLinks[m_CurrentLinkIndex];
-    float estimatedLinkLength =cache.link.m_Dist;
-
-    if (estimatedLinkLength <= 0) 
-        estimatedLinkLength = 1.0f;
-        
-    m_LinkProgress += (m_Speed / estimatedLinkLength) * dt;
-
-    if (m_LinkProgress >= 1.0f)
-    {         
-    std::cout << "[PUSH] AGV=" << m_CurrentRoute.agvID 
-                  << " LinkIndex=" << m_CurrentLinkIndex << "/" << m_CachedLinks.size() 
-                  << " Node=" << cache.toNode.m_Id << std::endl;
-        m_EventQueue.push({ ControllerEventType::ARRIVED, cache.toNode.m_Id });
-        m_CurrentLinkIndex++;
-        m_LinkProgress = 0.0f;             
+    
+    // 🌟 [핵심 1] 대기(Wait) 처리: 서버 시간이 아직 출발 시간에 도달하지 않았다면 멈춰 있습니다.
+    if (serverTime < cache.departureTime) {
+        m_X = cache.fromNode.m_PosX;
+        m_Z = cache.fromNode.m_PosZ;
+        return; // 교차로나 갓길에서 대기하는 효과 완벽 구현!
     }
-    else
+
+    // 🌟 [핵심 2] 속도 대신 시간 비율(Time Ratio)로 Progress 계산
+    float duration = cache.arrivalTime - cache.departureTime;
+    
+    if (duration <= 0.001f) {
+        m_LinkProgress = 1.0f; // 즉시 공간이동 방어
+    } else {
+        m_LinkProgress = (serverTime - cache.departureTime) / duration;
+    }
+
+    // 🌟 [핵심 3] 프레임 드랍으로 인해 도착 시간을 초과(1.0 이상)했을 경우의 이어달리기
+    while (m_LinkProgress >= 1.0f)
     {
-        Vector2 pos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+        m_X = m_CachedLinks[m_CurrentLinkIndex].toNode.m_PosX;
+        m_Z = m_CachedLinks[m_CurrentLinkIndex].toNode.m_PosZ;
+
+        m_EventQueue.push({ ControllerEventType::ARRIVED, m_CachedLinks[m_CurrentLinkIndex].toNode.m_Id });
+        
+        m_CurrentLinkIndex++;
+        
+        if (m_CurrentLinkIndex >= m_CachedLinks.size()) {
+            m_LinkProgress = 0.0f;
+            break;
+        }
+
+        // 🌟 다음 링크로 넘어왔으므로 서버 시간에 맞춰 Progress 재계산
+        const CachedLink& nextCache = m_CachedLinks[m_CurrentLinkIndex];
+        
+        // 만약 다음 노드 출발 시간 전이라면 여기서 while문 탈출 후 대기!
+        if (serverTime < nextCache.departureTime) {
+            m_LinkProgress = 0.0f;
+            break;
+        }
+        
+        float nextDuration = nextCache.arrivalTime - nextCache.departureTime;
+        if (nextDuration <= 0.001f) m_LinkProgress = 1.0f;
+        else m_LinkProgress = (serverTime - nextCache.departureTime) / nextDuration;
+    }
+
+    // 베지어 곡선 좌표 계산
+    if (m_CurrentLinkIndex < m_CachedLinks.size() && m_LinkProgress > 0.0f)
+    {
+        const CachedLink& currentCache = m_CachedLinks[m_CurrentLinkIndex];
+        Vector2 pos = BezierFollower::Evaluate(currentCache.fromNode, currentCache.toNode, currentCache.link, m_LinkProgress);
         m_X = pos.x;
         m_Z = pos.z;
-        m_Heading=BezierFollower::Heading( cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+        m_Heading = BezierFollower::Heading(currentCache.fromNode, currentCache.toNode, currentCache.link, m_LinkProgress);
     }
-    
-    if(m_CurrentLinkIndex >= m_CurrentRoute.linkIDs.size())
-    {   
-        return;     
-    }   
 }

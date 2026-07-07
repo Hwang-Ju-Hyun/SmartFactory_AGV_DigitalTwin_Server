@@ -8,6 +8,8 @@ struct CachedLink
     MapLink link;
     MapNode fromNode;
     MapNode toNode;
+    float departureTime; // fromNode 출발 시간
+    float arrivalTime;   // toNode 도착 시간
 };
 
 class UnityRobotController : public IRobotController
@@ -35,5 +37,5 @@ public:
     virtual bool HasEvent() const override;
     virtual ControllerEvent PopEvent() override;
     
-    virtual void Update(float dt) override;
+    virtual void Update(float dt,float serverTime) override;
 };

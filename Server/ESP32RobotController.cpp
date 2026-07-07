@@ -30,7 +30,7 @@ StatusPacket ESP32RobotController::GetStatus()
     return p;
 }
 
-void ESP32RobotController::Update(float dt)
+void ESP32RobotController::Update(float dt, float serverTime)
 {
     // ESP32 로봇을 업데이트하는 로직 구현
 }

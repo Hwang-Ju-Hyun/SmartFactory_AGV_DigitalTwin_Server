@@ -35,5 +35,5 @@ public:
     virtual ControllerEvent PopEvent() = 0;
 
     // 로봇 내부의 물리적/논리적 상태 업데이트 (매 프레임 호출)
-    virtual void Update(float dt) = 0;
+    virtual void Update(float dt,float serverTime) = 0;
 };

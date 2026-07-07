@@ -12,5 +12,5 @@ public:
     void FollowRoute(const RoutePacket& _routePacket) override;
     void CancelRoute() override;
     StatusPacket GetStatus() override;    
-    void Update(float dt) override;
+    virtual void Update(float dt,float serverTime) override;
 };

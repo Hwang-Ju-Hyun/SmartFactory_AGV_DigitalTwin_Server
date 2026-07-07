@@ -173,17 +173,17 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 //#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-//#define _TESTCASE3
-#define _TESTCASE4
+#define _TESTCASE3
+//#define _TESTCASE4
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
 {
     #ifdef _TESTCASE0
-    int spawnCount = 2;
+    int spawnCount = 4;
     ObjectPtr mainRobo = nullptr;
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
-    uint32_t initNodes[2] = {1,2}; 
+    uint32_t initNodes[4] = {1,2,3,4}; 
 
     #elifdef _TESTCASE1
     int spawnCount = 22;
@@ -194,18 +194,18 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
     uint32_t initNodes[22] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22}; 
 
     #elifdef _TESTCASE2    
-    int spawnCount = 2;
+    int spawnCount = 22;
     ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[2] = {3,4}; 
+    uint32_t initNodes[22] = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41}; 
     
     #elifdef _TESTCASE3  
     
-    int spawnCount = 3;
+    int spawnCount = 5;
 
     ObjectPtr mainRobo = nullptr;
 
@@ -213,7 +213,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[3] = {1, 2, 4};
+    uint32_t initNodes[5] = {1, 2, 3, 4, 5};
     
     #elifdef _TESTCASE4
     int spawnCount = 2;
@@ -316,7 +316,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     RoutePlanner::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
 
 
-    RobotManager::GetInstance().Update(_deltaTime);
+    RobotManager::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
 
     
     // 2. 서버가 직접 로봇들을 순회하며 상태를 묻고 장부를 고칩니다.
