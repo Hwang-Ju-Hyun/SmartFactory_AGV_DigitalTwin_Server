@@ -57,7 +57,10 @@ private:
 
     std::unordered_map<uint32_t, RoutePlan> m_MasterPlans; // 중앙 계획표 장부
     std::unordered_map<uint32_t, RRAStar> m_RRAEngines;    
-
+    
+    void UpdateRobotPosition(Robo* agv, RoutePlan& plan, const RobotEvent& _e);
+    bool ContinueCurrentRoute(Robo* agv, RoutePlan& plan);
+    void FinishRoute(Robo* agv, RoutePlan& plan, const RobotEvent& _e);
 public:
     std::deque<PendingRoute> m_PendingRoutes; // 비상 대기열    
 };
