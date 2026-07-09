@@ -36,4 +36,8 @@ public:
 
     // 로봇 내부의 물리적/논리적 상태 업데이트 (매 프레임 호출)
     virtual void Update(float dt,float serverTime) = 0;
+
+    //컨트롤러가 앞길을 확인할 수 있게 콜백 함수를 꽂아주는 인터페이스
+    virtual void SetClearanceCallback(std::function<bool(uint32_t, uint32_t)> callback) = 0;
+    virtual void SetEdgeEnterCallback(std::function<void(uint32_t, uint32_t)> callback) = 0;
 };

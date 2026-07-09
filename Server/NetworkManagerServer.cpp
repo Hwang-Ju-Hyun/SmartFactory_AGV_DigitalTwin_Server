@@ -172,8 +172,8 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 
 //#define _TESTCASE0
 //#define _TESTCASE1
-//#define _TESTCASE2
-#define _TESTCASE3
+#define _TESTCASE2
+//#define _TESTCASE3
 //#define _TESTCASE4
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
 {
@@ -312,40 +312,14 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     // ========================================================
 
 
-    EventManager::GetInstance().SwapAndProcessEvents();
-    RoutePlanner::GetInstance().Update(_deltaTime,m_TotalElapsedServerTime);
-
-
-    RobotManager::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
-
-    
-    // 2. 서버가 직접 로봇들을 순회하며 상태를 묻고 장부를 고칩니다.
     for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it)
     {
         uint32_t agvID = it->first;
         IRobotController* controller = it->second.get();
 
-        // 상태 패킷 복사 최소화
-        StatusPacket status = controller->GetStatus();
-
-        // 좌표 장부 덮어쓰기
-        ObjectPtr obj = m_LinkingContext->GetObject(agvID);
-        if (obj && obj->GetClassID() == ClassID::OBJ_AGV) {
-            if (Robo* agv = dynamic_cast<Robo*>(obj.get())) {
-                agv->SetPos(status.x, status.z);
-            }
-        }
-
-        // 3. 밀린 이벤트가 없을 때까지 전부 뽑아서 처리! (유실률 0%)
         while (controller->HasEvent())
         {            
             ControllerEvent ev = controller->PopEvent();
-            std::cout
-<< "[POP]"
-<< agvID
-<< " Node="
-<< ev.nodeID
-<< std::endl;
             if (ev.type == ControllerEventType::ARRIVED)
             {
                 RobotEvent arrivedEvent;
@@ -353,23 +327,50 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
                 arrivedEvent.timestamp = m_TotalElapsedServerTime;
                 arrivedEvent.currentNodeID = ev.nodeID;
                 arrivedEvent.type = RobotEventType::NODE_ARRIVED;
+                std::cout<<"ARRIVED"<<std::endl;
+                // 이벤트 큐에 차곡차곡 쌓아둡니다.
                 EventManager::GetInstance().Publish(arrivedEvent);
             }
         }
     }
 
-    for(auto obj:AGVManager::GetInstance().m_AGVs)
+    // ========================================================
+    //[STEP 2: 장부 갱신] 관제탑이 이벤트를 읽고, 노드 점유(Occupy) 및 다음 길을 계산합니다.
+    // ========================================================
+    EventManager::GetInstance().SwapAndProcessEvents(); // 여기서 OccupyNode가 호출됨!
+    RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
+
+    // ========================================================
+    //[STEP 3: 로봇 구동] 완벽하게 갱신된 장부를 바탕으로 로봇들이 출발(Edge 점유)을 결정합니다!
+    // ========================================================
+    RobotManager::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
+
+    
+    // ========================================================
+    // [STEP 4: 좌표 동기화] (기존 코드 유지)
+    // ========================================================
+    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it)
+    {
+        uint32_t agvID = it->first;
+        StatusPacket status = it->second->GetStatus();
+
+        ObjectPtr obj = m_LinkingContext->GetObject(agvID);
+        if (obj && obj->GetClassID() == ClassID::OBJ_AGV) {
+            if (Robo* agv = dynamic_cast<Robo*>(obj.get())) {
+                agv->SetPos(status.x, status.z);
+            }
+        }
+    }
+
+    // 타이머 및 Replication (기존 코드 유지)
+    for(auto obj : AGVManager::GetInstance().m_AGVs)
     {        
-        ObjectPtr robo = obj;
-        Robo* agv = dynamic_cast<Robo*>(robo.get());
-                
+        Robo* agv = dynamic_cast<Robo*>(obj.get());
         agv->UpdateWorkTimer(_deltaTime, m_TotalElapsedServerTime); 
 
-        for(auto iter = m_SessionIdToProxyMap.begin();iter!=m_SessionIdToProxyMap.end();iter++)
-        {
-            ClientProxy* proxy = iter->second;
-            proxy->GetReplicationManagerServer().SetStateDirty(robo->GetNetworkID());
+        for(auto iter = m_SessionIdToProxyMap.begin(); iter != m_SessionIdToProxyMap.end(); iter++) {
+            iter->second->GetReplicationManagerServer().SetStateDirty(agv->GetNetworkID());
         }
-    }       
+    }
 }
 

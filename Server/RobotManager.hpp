@@ -20,6 +20,17 @@ public:
     
     void RegisterRobot(uint32_t agvID, std::unique_ptr<IRobotController> controller)
     {
+        // 컨트롤러가 "나 출발해도 돼?" 하고 물어볼 콜백
+        controller->SetClearanceCallback([agvID](uint32_t from, uint32_t to) 
+        {
+            return ReservationTable::GetInstance().IsResourceClearForExecution(agvID, from, to);
+        });
+
+        // 컨트롤러가 "나 출발한다!" 하고 보고할 콜백
+        controller->SetEdgeEnterCallback([agvID](uint32_t from, uint32_t to) 
+        {
+            ReservationTable::GetInstance().OccupyEdge(agvID, from, to);
+        });
         m_RobotControllers[agvID] = std::move(controller);
     }
     

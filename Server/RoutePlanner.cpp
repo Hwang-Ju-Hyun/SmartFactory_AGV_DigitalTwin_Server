@@ -62,7 +62,8 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     // 2단계: 기록 루프
     resTable.OverrideFutureReservations(_agvID, _serverTime, CLEARANCE_TIME);
 
-    if (initialWaitTime > 0.01f) {
+    if (initialWaitTime > 0.01f) 
+    {
         resTable.ReserveNode(_path[0].nodeID, _serverTime, _path[0].arrivalTime + TIME_MARGIN, _agvID, ReservationType::Normal);
     }
 
@@ -70,8 +71,7 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     {
         const PathStep& cur = _path[i];        
         bool isLastNodeInArray = (i == _path.size() - 1);
-        
-        // 🌟 [5순위 적용] 기록할 때도 진짜 목적지일 때만 Goal 타입으로 적습니다!
+                
         bool reachedGoal = (cur.nodeID == _finalTargetID);
         
         float nodeLeaveTime = reachedGoal ? cur.arrivalTime + LONG_TERM_HORIZON : cur.departureTime + TIME_MARGIN;
@@ -141,8 +141,7 @@ std::cout << std::endl;
     {   
 
         std::cout<< "[FAILED]"<< " AGV=" << _agvID<< " pathsize=" << path.size()<< std::endl;
-        std::cout<< "FAIL NODE "<< _targetNodeID<< std::endl;
-        ReservationTable::GetInstance().DebugPrintNode(_targetNodeID);
+        std::cout<< "FAIL NODE "<< _targetNodeID<< std::endl;        
 
 
         std::cout << "[관제탑] AGV " << _agvID << "번 경로 확보 실패! 현 위치 점유 연장 후 재탐색 대기." << std::endl;
@@ -187,6 +186,7 @@ std::cout << std::endl;
 
 void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 {
+std::cout << "OnRobotStepCompleted" << std::endl;
     uint32_t agvID = _e.agvID;
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(agvID));
     if (!agv) return;
@@ -196,7 +196,13 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 
     // 1. 서버 장부 갱신: 로봇의 실제 위치를 업데이트합니다.
     agv->SetCurrentNodeID(_e.currentNodeID);
-        
+    ReservationTable::GetInstance().OccupyNode(agvID, _e.currentNodeID);
+std::cout
+<< "[SERVER OCCUPY NODE]"
+<< _e.agvID
+<< " "
+<< _e.currentNodeID
+<< std::endl;
     size_t prevIndex = plan.currentStepIndex;
     plan.currentStepIndex++; 
 
