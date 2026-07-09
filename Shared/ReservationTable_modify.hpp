@@ -103,43 +103,30 @@ public:
         }
     }
 
-    // [Atomic 트랜잭션 전용 함수] 분리된 OccupancyProvider와 정밀 연동 수행
+    // 🌟 [Atomic 트랜잭션 전용 함수] 분리된 OccupancyProvider와 정밀 연동 수행
     bool TryOccupyEdgeForExecution(uint32_t agvID, uint32_t fromNode, uint32_t toNode, float serverTime, float expectedArrivalTime)
-    {
-        constexpr float EXECUTION_CLEARANCE_TIME = 0.6f;
-        constexpr float FINAL_APPROACH_GUARD_TIME = 0.25f;
-
-        std::cout << "[TRY EXEC] AGV " << agvID
-                  << " " << fromNode << " -> " << toNode << std::endl;
-
+    {std::cout << "[TRY EXEC] AGV " << agvID
+          << " " << fromNode << " -> " << toNode << std::endl;
         uint64_t edgeKey = MakeEdgeKey(fromNode, toNode);        
         auto& occ = OccupancyProvider::GetInstance();
 
-        float arrivalCheckStart = std::max(serverTime, expectedArrivalTime);
-        float arrivalCheckEnd = arrivalCheckStart + EXECUTION_CLEARANCE_TIME;
-        float edgeCheckEnd = expectedArrivalTime + EXECUTION_CLEARANCE_TIME;
-        if (edgeCheckEnd < serverTime) edgeCheckEnd = serverTime + EXECUTION_CLEARANCE_TIME;
-
-        // 1단계: 실시간 물리 상태 검사. 링크 점유는 즉시 충돌 영역이므로 출발 전에 막는다.
+        // 1단계: 실시간 물리 상태 검사
         if (occ.IsEdgeOccupiedByOther(edgeKey, agvID)) {
             std::cout << "[EXEC WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 실시간 주행차량 존재 (by AGV " << occ.GetEdgeOccupant(edgeKey) << ")\n";
             return false;
         }
+        if (occ.IsNodeOccupiedByOther(toNode, agvID)) {
+            std::cout << "[EXEC WAIT] AGV " << agvID << " : 노드 " << toNode << " 에 교차 정지차량 존재 (by AGV " << occ.GetNodeOccupant(toNode) << ")\n";
+            return false;
+        }
         
-        // 2단계: 최상위 시공간 예약계획 검사.
-        // 목적지 노드는 지금부터 도착 전까지 비어있을 필요가 없고, 도착 시각 이후만 안전하면 된다.
-        if (!IsEdgeFree(fromNode, toNode, serverTime, edgeCheckEnd, agvID)) {
+        // 2단계: 최상위 시공간 예약계획 검사
+        if (!IsNodeFree(toNode, serverTime, expectedArrivalTime, agvID)) {
+            std::cout << "[PLAN WAIT] AGV " << agvID << " : 노드 " << toNode << " 시공간 계획 테이블 선점 확인\n";
+            return false;
+        }
+        if (!IsEdgeFree(fromNode, toNode, serverTime, expectedArrivalTime, agvID)) {
             std::cout << "[PLAN WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 시공간 계획 테이블 선점 확인\n";
-            return false;
-        }
-        if (!IsNodeFree(toNode, arrivalCheckStart, arrivalCheckEnd, agvID)) {
-            std::cout << "[PLAN WAIT] AGV " << agvID << " : 노드 " << toNode << " 도착 시간창 선점 확인\n";
-            return false;
-        }
-
-        // 도착 직전인데 실제 점유가 아직 남아있으면 마지막 안전장치로 대기한다.
-        if ((expectedArrivalTime - serverTime) <= FINAL_APPROACH_GUARD_TIME && occ.IsNodeOccupiedByOther(toNode, agvID)) {
-            std::cout << "[EXEC WAIT] AGV " << agvID << " : 노드 " << toNode << " 도착 직전 실시간 점유 존재 (by AGV " << occ.GetNodeOccupant(toNode) << ")\n";
             return false;
         }
 
