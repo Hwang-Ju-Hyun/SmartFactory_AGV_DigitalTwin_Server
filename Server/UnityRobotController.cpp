@@ -95,8 +95,8 @@ void UnityRobotController::Update(float dt, float serverTime)
 
         // 원자적 검증 및 점유 획득 시도
         //todo
-        // if (m_TryOccupyEdgeCallback && !m_TryOccupyEdgeCallback(cache.fromNode.m_Id, cache.toNode.m_Id, serverTime, dynamicExpectedArrival)) 
-        //     return; 
+        if (m_TryOccupyEdgeCallback && !m_TryOccupyEdgeCallback(cache.fromNode.m_Id, cache.toNode.m_Id, serverTime, dynamicExpectedArrival)) 
+            return; 
 
         m_IsMovingLink = true;
         m_HasReleasedFromNode = false; 

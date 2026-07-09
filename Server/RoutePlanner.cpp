@@ -98,7 +98,8 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
 
     uint32_t curNodeID = agv->GetCurrentNodeID();
 
-    if (curNodeID == _targetNodeID) {
+    if (curNodeID == _targetNodeID) 
+    {
         ReservationTable::GetInstance().OverrideFutureReservations(_agvID, _serverTime, CLEARANCE_TIME);
         ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + LONG_TERM_HORIZON, _agvID, ReservationType::Goal);
         agv->SetMissionPurpose(_purpose);
@@ -106,13 +107,19 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     }
 
     std::vector<PathStep> path;
-    if (TryFindPath(_agvID, _targetNodeID, _serverTime, path)) {
-        if (TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime)) {
+    if (TryFindPath(_agvID, _targetNodeID, _serverTime, path)) 
+    {
+        if (TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime)) 
+        {
             HandlePathFound(_agvID, _targetNodeID, _purpose, path);
-        } else {
+        } 
+        else 
+        {
             HandlePathFailed(_agvID, _targetNodeID, _serverTime, _purpose);
         }
-    } else {
+    } 
+    else 
+    {
         HandlePathFailed(_agvID, _targetNodeID, _serverTime, _purpose);
     }
 }
@@ -169,9 +176,7 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     RoutePlan& plan = m_MasterPlans[agvID]; 
 
     UpdateRobotPosition(agv, plan, _e);
-    
-    // 🌟 [수정 완료] 멘토님 조언 반영: 불필요한 이중 장부 관리(AssignNextStep)를 생략합니다.
-    // 경로의 진행 상태는 오직 컨트롤러가 단일 권한(Single Source of Truth)을 갖고 이동을 전담합니다.
+        
     if (ContinueCurrentRoute(agv, plan)) return;
     
     FinishRoute(agv, plan, _e);
@@ -186,23 +191,32 @@ void RoutePlanner::UpdateRobotPosition(Robo* agv, RoutePlan& plan, const RobotEv
 
 bool RoutePlanner::ContinueCurrentRoute(Robo* agv, RoutePlan& plan) {
     // 이동 뼈대 유지 및 인덱스 상태 바운더리 체크만 안전하게 수행
-    if (plan.currentStepIndex >= plan.steps.size()) return false;
+    if (plan.currentStepIndex >= plan.steps.size()) 
+    {
+        return false;
+    }
     return true; 
 }
 
 void RoutePlanner::FinishRoute(Robo* agv, RoutePlan& plan, const RobotEvent& _e) {
     uint32_t agvID = _e.agvID;
-    if (_e.currentNodeID == plan.finalTargetNodeID) {
+    if (_e.currentNodeID == plan.finalTargetNodeID)
+    {
         MissionPurpose purpose = agv->GetMissionPurpose();
         agv->StartWorkTimer(1.0f); 
-        if (purpose == MissionPurpose::PICKUP) agv->ChangeState(AGVState::LOADING);
-        else if (purpose == MissionPurpose::DROP) agv->ChangeState(AGVState::UNLOADING);
-        else if (purpose == MissionPurpose::HOME) {
+        if (purpose == MissionPurpose::PICKUP) 
+            agv->ChangeState(AGVState::LOADING);
+        else if (purpose == MissionPurpose::DROP) 
+            agv->ChangeState(AGVState::UNLOADING);
+        else if (purpose == MissionPurpose::HOME) 
+        {
             agv->ChangeState(AGVState::IDLE); agv->StartWorkTimer(0.0f); 
             EventManager::GetInstance().Publish({ RobotEventType::IDLE_READY, agvID, _e.timestamp });
         }
         m_MasterPlans.erase(agvID); 
-    } else {
+    } 
+    else 
+    {
         uint32_t finalTarget = plan.finalTargetNodeID;
         MissionPurpose purpose = plan.purpose;
         float nextStartTime = _e.timestamp; 

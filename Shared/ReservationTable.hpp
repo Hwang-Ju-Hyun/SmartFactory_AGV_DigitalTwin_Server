@@ -105,7 +105,8 @@ public:
 
     // 🌟 [Atomic 트랜잭션 전용 함수] 분리된 OccupancyProvider와 정밀 연동 수행
     bool TryOccupyEdgeForExecution(uint32_t agvID, uint32_t fromNode, uint32_t toNode, float serverTime, float expectedArrivalTime)
-    {
+    {std::cout << "[TRY EXEC] AGV " << agvID
+          << " " << fromNode << " -> " << toNode << std::endl;
         uint64_t edgeKey = MakeEdgeKey(fromNode, toNode);        
         auto& occ = OccupancyProvider::GetInstance();
 

@@ -45,7 +45,8 @@ public:
         }
 
         auto edgeIt = m_AgvCurrentEdge.find(agvID);
-        if (edgeIt != m_AgvCurrentEdge.end()) {
+        if (edgeIt != m_AgvCurrentEdge.end()) 
+        {
             m_EdgeOccupancy.erase(edgeIt->second);
             m_AgvCurrentEdge.erase(edgeIt);
         }
