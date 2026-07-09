@@ -2,52 +2,42 @@
 #include <unordered_map>
 #include <memory>
 #include "IRobotController.hpp"
+#include "ReservationTable.hpp"
 
 class RobotManager
 {
 private:
-    // 로봇 ID를 키값으로, 그 로봇을 조종할 리모컨(IRobotController)을 들고 있습니다.
     std::unordered_map<uint32_t, std::unique_ptr<IRobotController>> m_RobotControllers;
-
     RobotManager() = default;
 
 public:
-    static RobotManager& GetInstance()
-    {
-        static RobotManager instance;
-        return instance;
-    }
+    static RobotManager& GetInstance() { static RobotManager instance; return instance; }
     
     void RegisterRobot(uint32_t agvID, std::unique_ptr<IRobotController> controller)
     {
-        // 컨트롤러가 "나 출발해도 돼?" 하고 물어볼 콜백
-        controller->SetClearanceCallback([agvID](uint32_t from, uint32_t to) 
-        {
-            return ReservationTable::GetInstance().IsResourceClearForExecution(agvID, from, to);
+        // Atomic 실행 허가 및 점유 획득 콜백 바인딩
+        controller->SetTryOccupyEdgeCallback([agvID](uint32_t from, uint32_t to, float serverTime, float expectedArrival) {
+            return ReservationTable::GetInstance().TryOccupyEdgeForExecution(agvID, from, to, serverTime, expectedArrival);
         });
 
-        // 컨트롤러가 "나 출발한다!" 하고 보고할 콜백
-        controller->SetEdgeEnterCallback([agvID](uint32_t from, uint32_t to) 
-        {
-            ReservationTable::GetInstance().OccupyEdge(agvID, from, to);
+        // 꼬리가 빠져나갔을 때 실시간 노드 점유 해제 콜백 바인딩
+        controller->SetNodeLeaveCallback([agvID](uint32_t fromNode) {
+            OccupancyProvider::GetInstance().LeaveNode(agvID, fromNode);
         });
+
         m_RobotControllers[agvID] = std::move(controller);
     }
     
     IRobotController* GetRobotController(uint32_t agvID)
     {
         auto it = m_RobotControllers.find(agvID);
-        if (it != m_RobotControllers.end())
-        {
-            return it->second.get();
-        }
+        if (it != m_RobotControllers.end()) return it->second.get();
         return nullptr;
     }
 
     void Update(float _dt, float serverTime)
     {
-        for(auto& pair : m_RobotControllers)
-        {
+        for(auto& pair : m_RobotControllers) {
             pair.second->Update(_dt, serverTime);
         }
     }
@@ -56,5 +46,4 @@ public:
     {
         return m_RobotControllers;
     }
-
 };

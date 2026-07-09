@@ -12,18 +12,20 @@ struct RouteNodeTime
 
 struct RoutePacket
 {
-    uint32_t agvID;
-    std::vector<uint32_t> linkIDs;
-    std::vector<RouteNodeTime> nodes;
+    uint32_t agvID;    
+    std::vector<RouteNodeTime> nodes; 
 
     // 쓰는 함수 (Server -> Robot 보낼 때)
     void Serialize(OutputMemoryStream& _stream) const
     {
         _stream.Write(agvID);
-        _stream.Write(static_cast<uint16_t>(linkIDs.size()));
-        for (uint32_t linkID : linkIDs)
+        _stream.Write(static_cast<uint16_t>(nodes.size())); 
+        
+        for (const auto& node : nodes)
         {
-            _stream.Write(linkID);
+            _stream.Write(node.nodeID);        // 노드 번호
+            _stream.Write(node.arrivalTime);   // 도착 시간
+            _stream.Write(node.departureTime); // 출발 시간
         }
     }
 
@@ -32,14 +34,17 @@ struct RoutePacket
     {
         _stream.Read(agvID);
         
-        uint16_t linkCount;
-        _stream.Read(linkCount);
+        uint16_t nodeCount;
+        _stream.Read(nodeCount);
         
-        for (uint16_t i = 0; i < linkCount; ++i)
+        nodes.clear(); // 기존 쓰레기값 초기화
+        for (uint16_t i = 0; i < nodeCount; ++i)
         {
-            uint32_t linkID;
-            _stream.Read(linkID);
-            linkIDs.push_back(linkID);
+            RouteNodeTime n;
+            _stream.Read(n.nodeID);
+            _stream.Read(n.arrivalTime);
+            _stream.Read(n.departureTime);
+            nodes.push_back(n); // 파싱한 시간표를 배열에 쏙!
         }
     }
 };

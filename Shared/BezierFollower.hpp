@@ -1,5 +1,5 @@
 #pragma once
-#include "Map.hpp" // MapNode, MapLink 구조체가 있는 헤더
+#include "Map.hpp"
 #include <cmath>
 
 // 2D 벡터 구조체 (간단히 정의)

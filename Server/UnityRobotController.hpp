@@ -23,6 +23,7 @@ private:
     bool m_IsMovingLink = false;      
     float m_ActualStartTime = 0.0f;   
     float m_OverTime = 0.0f;
+    bool m_HasReleasedFromNode = false; // 🌟 오타 및 멤버 변수 일치 완료
 
     float m_X = 0.0f;
     float m_Z = 0.0f;
@@ -31,8 +32,8 @@ private:
     std::vector<CachedLink> m_CachedLinks;
     std::queue<ControllerEvent> m_EventQueue;
     
-    std::function<bool(uint32_t, uint32_t)> m_ClearanceCallback;
-    std::function<void(uint32_t, uint32_t)> m_EdgeEnterCallback;
+    std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
+    std::function<void(uint32_t)> m_NodeLeaveCallback;
 
 public:
     UnityRobotController();
@@ -44,11 +45,8 @@ public:
 
     virtual bool HasEvent() const override;
     virtual ControllerEvent PopEvent() override;
-    
     virtual void Update(float dt, float serverTime) override;
         
-    virtual void SetClearanceCallback(std::function<bool(uint32_t, uint32_t)> callback) override { m_ClearanceCallback = callback; }
-    virtual void SetEdgeEnterCallback(std::function<void(uint32_t, uint32_t)> callback) override { m_EdgeEnterCallback = callback; }
-
-    //bool AdvanceToNextLink(float serverTime,float plannedDuration);
+    virtual void SetTryOccupyEdgeCallback(std::function<bool(uint32_t, uint32_t, float, float)> callback) override { m_TryOccupyEdgeCallback = callback; }
+    virtual void SetNodeLeaveCallback(std::function<void(uint32_t)> callback) override { m_NodeLeaveCallback = callback; }
 };

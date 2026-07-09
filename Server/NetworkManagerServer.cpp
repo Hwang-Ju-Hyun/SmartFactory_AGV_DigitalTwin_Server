@@ -267,109 +267,35 @@ int i=0;
 
 
 void NetworkManagerServer::UpdateWorld(float _deltaTime)
-{    
-    if(!m_IsSimulationActive)
-    {
-        return;
-    }    
-    m_TotalElapsedServerTime+=_deltaTime;    
+{   
+    if(!m_IsSimulationActive) return;
+    m_TotalElapsedServerTime += _deltaTime;    
 
-    // ========================================================
-    // [동적 장애물 테스트 코드] 15초마다 39번<->44번 도로 토글
-    // ========================================================
-    static float lastToggleTime = 0.0f;
-    static bool isBlockedNow = false;
-
-    // 15초마다 한 번씩 토글 발동
-    if (m_TotalElapsedServerTime - lastToggleTime > 1500000.0f)
-    {
-        lastToggleTime = m_TotalElapsedServerTime;
-        isBlockedNow = !isBlockedNow; // 상태 반전 (막힘 <-> 뚫림)
-        
-        uint32_t blockFrom = 7; // 테스트할 노드 ID 1
-        uint32_t blockTo = 8;   // 테스트할 노드 ID 2
-        std::cout << "\n=================================================" << std::endl;
-
-        if (isBlockedNow)
-            std::cout << " [신의 손] " << blockFrom << "번 <-> " << blockTo << "번 도로 [차단] 발동!" << std::endl;
-        else
-            std::cout << " [신의 손] " << blockFrom << "번 <-> " << blockTo << "번 도로 [해제] 발동!" << std::endl;
-        std::cout << "=================================================\n" << std::endl;
-
-        // 맵 매니저에서 실제 링크 속성 변경
-        std::vector<MapLink>& links = MapManager::GetInstance().GetLinks();
-        for (auto& link : links) 
-        {
-            // 양방향 모두 처리
-            if ((link.m_FromNodeID == blockFrom && link.m_ToNodeID == blockTo) ||
-                (link.m_FromNodeID == blockTo && link.m_ToNodeID == blockFrom)) 
-            {
-                link.m_IsBlocked = isBlockedNow;                            
-            }
-        }
-        RoutePlanner::GetInstance().ClearRRAEngines();
-    }
-    // ========================================================
-
-
-    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it)
-    {
-        uint32_t agvID = it->first;
-        IRobotController* controller = it->second.get();
-
-        while (controller->HasEvent())
-        {            
-            ControllerEvent ev = controller->PopEvent();
-            if (ev.type == ControllerEventType::ARRIVED)
-            {
-                RobotEvent arrivedEvent;
-                arrivedEvent.agvID = agvID;
-                arrivedEvent.timestamp = m_TotalElapsedServerTime;
-                arrivedEvent.currentNodeID = ev.nodeID;
-                arrivedEvent.type = RobotEventType::NODE_ARRIVED;
-                std::cout<<"ARRIVED"<<std::endl;
-                // 이벤트 큐에 차곡차곡 쌓아둡니다.
-                EventManager::GetInstance().Publish(arrivedEvent);
+    // 1. INPUT 레이어: 컨트롤러 패킷 수거
+    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) {
+        while (it->second->HasEvent()) {            
+            ControllerEvent ev = it->second->PopEvent();
+            if (ev.type == ControllerEventType::ARRIVED) {
+                EventManager::GetInstance().Publish({ RobotEventType::NODE_ARRIVED, it->first, m_TotalElapsedServerTime, ev.nodeID });
             }
         }
     }
 
-    // ========================================================
-    //[STEP 2: 장부 갱신] 관제탑이 이벤트를 읽고, 노드 점유(Occupy) 및 다음 길을 계산합니다.
-    // ========================================================
-    EventManager::GetInstance().SwapAndProcessEvents(); // 여기서 OccupyNode가 호출됨!
+    // 2. LOGIC 레이어: 장부 갱신 및 시공간 설계
+    EventManager::GetInstance().SwapAndProcessEvents(); 
     RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
 
-    // ========================================================
-    //[STEP 3: 로봇 구동] 완벽하게 갱신된 장부를 바탕으로 로봇들이 출발(Edge 점유)을 결정합니다!
-    // ========================================================
+    // 3. EXECUTION 레이어: 모듈들이 한 프레임 지연 주기에 맞춰 무결점 주행 결정
     RobotManager::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
 
-    
-    // ========================================================
-    // [STEP 4: 좌표 동기화] (기존 코드 유지)
-    // ========================================================
-    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it)
-    {
-        uint32_t agvID = it->first;
+    // 4. VISUALIZATION 레이어: 좌표 렌더링 동기화
+    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) {
         StatusPacket status = it->second->GetStatus();
-
-        ObjectPtr obj = m_LinkingContext->GetObject(agvID);
+        ObjectPtr obj = m_LinkingContext->GetObject(it->first);
         if (obj && obj->GetClassID() == ClassID::OBJ_AGV) {
             if (Robo* agv = dynamic_cast<Robo*>(obj.get())) {
                 agv->SetPos(status.x, status.z);
             }
-        }
-    }
-
-    // 타이머 및 Replication (기존 코드 유지)
-    for(auto obj : AGVManager::GetInstance().m_AGVs)
-    {        
-        Robo* agv = dynamic_cast<Robo*>(obj.get());
-        agv->UpdateWorkTimer(_deltaTime, m_TotalElapsedServerTime); 
-
-        for(auto iter = m_SessionIdToProxyMap.begin(); iter != m_SessionIdToProxyMap.end(); iter++) {
-            iter->second->GetReplicationManagerServer().SetStateDirty(agv->GetNetworkID());
         }
     }
 }
