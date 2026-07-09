@@ -29,7 +29,8 @@ public:
     uint32_t GetNodeOccupant(uint32_t nodeID) const { return m_NodeOccupancy.at(nodeID); }
     uint32_t GetEdgeOccupant(uint64_t edgeKey) const { return m_EdgeOccupancy.at(edgeKey); }
 
-    void SetEdgeOccupancy(uint64_t edgeKey, uint32_t agvID) {
+    void SetEdgeOccupancy(uint64_t edgeKey, uint32_t agvID) 
+    {
         m_EdgeOccupancy[edgeKey] = agvID;
         m_AgvCurrentEdge[agvID] = edgeKey;
     }

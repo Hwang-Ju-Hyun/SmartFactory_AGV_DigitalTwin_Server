@@ -194,15 +194,16 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
     uint32_t initNodes[22] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22}; 
 
     #elifdef _TESTCASE2    
-    int spawnCount = 22;
+    //int spawnCount = 22;
+    int spawnCount = 12;
     ObjectPtr mainRobo = nullptr;
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
     WarehouseManager::GetInstance().Init();        
 
-    uint32_t initNodes[22] = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41}; 
-    
+    //uint32_t initNodes[22] = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41}; 
+    uint32_t initNodes[12] = {75,65,76,73,66,74,68,67,69,70,71,72};
     #elifdef _TESTCASE3  
     
     int spawnCount = 5;
@@ -283,7 +284,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
 
     // 2. LOGIC 레이어: 장부 갱신 및 시공간 설계
     EventManager::GetInstance().SwapAndProcessEvents(); 
-    RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
+    //RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
 
     // 3. EXECUTION 레이어: 모듈들이 한 프레임 지연 주기에 맞춰 무결점 주행 결정
     RobotManager::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
