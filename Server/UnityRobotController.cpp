@@ -5,7 +5,8 @@
 #include <algorithm>
 #include <cmath>
 
-const float NODE_SAFETY_OFFSET = 2.0f;
+const float NODE_RELEASE_OFFSET = 1.1f;
+const float DESTINATION_STOP_OFFSET = 1.2f;
 const float EXECUTION_BLOCK_TIMEOUT = 1.0f;
 const uint32_t EXECUTION_BLOCK_ATTEMPTS = 12;
 
@@ -173,7 +174,7 @@ void UnityRobotController::Update(float dt, float serverTime)
     const float linkDist = GetLinkDistance(cache);
     if (m_IsMovingLink && !m_HasReleasedFromNode)
     {
-        float dynamicReleaseRatio = ClampRatio(NODE_SAFETY_OFFSET / linkDist, 0.25f, 0.85f);
+        float dynamicReleaseRatio = ClampRatio(NODE_RELEASE_OFFSET / linkDist, 0.20f, 0.70f);
 
         if (m_LinkProgress >= dynamicReleaseRatio)
         {
@@ -182,7 +183,7 @@ void UnityRobotController::Update(float dt, float serverTime)
         }
     }
 
-    const float destinationHoldProgress = ClampRatio(1.0f - (NODE_SAFETY_OFFSET / linkDist), 0.15f, 0.85f);
+    const float destinationHoldProgress = ClampRatio(1.0f - (DESTINATION_STOP_OFFSET / linkDist), 0.25f, 0.90f);
     if (m_IsMovingLink && m_IsNodeFreeCallback && m_LinkProgress >= destinationHoldProgress && !m_IsNodeFreeCallback(cache.toNode.m_Id))
     {
         m_LinkProgress = destinationHoldProgress;

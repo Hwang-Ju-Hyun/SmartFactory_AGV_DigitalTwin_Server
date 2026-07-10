@@ -50,6 +50,9 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
 
     std::shared_ptr<AStarNode> endNode = nullptr;
 
+    MapManager& map = MapManager::GetInstance();
+    const auto& links = map.GetLinks();
+
     while (!openList.empty())
     {
         
@@ -103,7 +106,6 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         // ==========================================
         // 탐색 2: 주변 노드로 이동 (MOVE)
         // ==========================================
-        const auto& links = MapManager::GetInstance().GetLinks();
         for (const auto& link : links)
         {            
             if (link.m_FromNodeID != current->id || link.m_IsBlocked) continue;
@@ -124,8 +126,8 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             if (isCycle) continue;
 
             // (거리 및 시간 계산 유지)
-            auto fromNodeGeo = MapManager::GetInstance().GetNodes().at(current->id);
-            auto toNodeGeo = MapManager::GetInstance().GetNodes().at(neighborID);
+            auto fromNodeGeo = map.GetMapNode(current->id);
+            auto toNodeGeo = map.GetMapNode(neighborID);
             float dist = (link.m_Type == 1) ? link.m_Dist : std::sqrt(std::pow(toNodeGeo.m_PosX - fromNodeGeo.m_PosX, 2) + std::pow(toNodeGeo.m_PosZ - fromNodeGeo.m_PosZ, 2));
             float travelTime = dist / AGV_SPEED;
             float enterTime = current->departureTime;

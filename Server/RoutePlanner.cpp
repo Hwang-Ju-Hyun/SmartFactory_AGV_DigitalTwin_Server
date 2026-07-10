@@ -8,6 +8,7 @@
 #include "SharedPackets.hpp"
 #include "IRobotController.hpp"
 #include "RobotManager.hpp"
+#include "OccupancyProvider.hpp"
 
 const int WINDOW_TIME = 16; 
 const float CLEARANCE_TIME = 0.6f; 
@@ -71,7 +72,7 @@ void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, 
     if (_blockedNodeID != 0)
     {
         constexpr uint32_t TEMP_BLOCK_AGV_ID = 0;
-        const float blockEndTime = _serverTime + REPLAN_PENALTY_TIME + CLEARANCE_TIME;
+        const float blockEndTime = _serverTime + REPLAN_PENALTY_TIME;
         ReservationTable::GetInstance().ReserveNode(_blockedNodeID, _serverTime, blockEndTime, TEMP_BLOCK_AGV_ID, ReservationType::Normal);
         ReservationTable::GetInstance().ReserveEdge(_currentNodeID, _blockedNodeID, _serverTime, blockEndTime, TEMP_BLOCK_AGV_ID, ReservationType::Normal);
     }
@@ -92,6 +93,17 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     auto& resTable = ReservationTable::GetInstance();
 
     float initialWaitTime = _path[0].arrivalTime - _serverTime;
+
+    if (_path.size() >= 2 && _path[0].departureTime <= _serverTime + 0.05f)
+    {
+        const uint32_t firstNodeID = _path[0].nodeID;
+        const uint32_t nextNodeID = _path[1].nodeID;
+        const uint64_t firstEdgeKey = MakeEdgeKey(firstNodeID, nextNodeID);
+        auto& occ = OccupancyProvider::GetInstance();
+
+        if (occ.IsNodeOccupiedByOther(nextNodeID, _agvID)) return false;
+        if (occ.IsEdgeOccupiedByOther(firstEdgeKey, _agvID)) return false;
+    }
 
     // 1단계: 검증 루프
     if (initialWaitTime > 0.01f) {
@@ -224,7 +236,7 @@ void RoutePlanner::HandlePathFailed(uint32_t _agvID, uint32_t _targetNodeID, flo
     uint32_t curNodeID = agv->GetCurrentNodeID();
 
     ReservationTable::GetInstance().ReserveNode(curNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME + 1.0f, _agvID, ReservationType::Normal);
-    agv->ChangeState(AGVState::IDLE);
+    agv->ChangeState(AGVState::WAIT_REPLAN);
     m_PendingRoutes.push_back({ _agvID, _targetNodeID, _purpose, REPLAN_PENALTY_TIME });
 }
 
