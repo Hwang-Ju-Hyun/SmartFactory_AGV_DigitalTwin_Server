@@ -246,6 +246,7 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
         agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f, 1.0f); 
         
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
+        agv->SetHeadingAngle(90.0f);
         agv->SetCurrentNodeID(startNodeID);
                 
         RobotManager::GetInstance().RegisterRobot(
@@ -309,6 +310,7 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         if (obj && obj->GetClassID() == ClassID::OBJ_AGV) {
             if (Robo* agv = dynamic_cast<Robo*>(obj.get())) {
                 agv->SetPos(status.x, status.z);
+                agv->SetHeadingAngle(status.heading);
             }
         }
     }

@@ -46,6 +46,11 @@ public:
         if (t < 0.0f) t = 0.0f;
         if (t > 1.0f) t = 1.0f;
 
+        if(link.m_Type != 1)
+        {
+            return std::atan2(toNode.m_PosZ - fromNode.m_PosZ, toNode.m_PosX - fromNode.m_PosX);
+        }
+
         float u = 1.0f - t;
 
         // 미분된 x, z 벡터 (접선 벡터)

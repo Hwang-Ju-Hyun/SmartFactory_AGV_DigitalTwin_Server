@@ -19,6 +19,9 @@ private:
     RoutePacket m_CurrentRoute;
     size_t m_CurrentLinkIndex; 
     float m_LinkProgress;
+    float m_DistanceOnLink = 0.0f;
+    float m_CurrentVelocity = 0.0f;
+    float m_CurrentAngularVelocity = 0.0f;
     
     bool m_IsMovingLink = false;      
     float m_ActualStartTime = 0.0f;   

@@ -1,6 +1,7 @@
 #include "UnityRobotController.hpp"
 #include "Map.hpp"
 #include "BezierFollower.hpp"
+#include "AGVKinematics.hpp"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -26,9 +27,33 @@ static float ClampRatio(float value, float minValue, float maxValue)
     return std::max(minValue, std::min(value, maxValue));
 }
 
+static void StepHeadingTowards(float& heading, float& angularVelocity, float targetHeading, float dt)
+{
+    const float headingError = AGVKinematics::NormalizeAngle(targetHeading - heading);
+    const float targetAngularVelocity = std::clamp(
+        headingError * AGVKinematics::HEADING_KP,
+        -AGVKinematics::MAX_ANGULAR_SPEED,
+        AGVKinematics::MAX_ANGULAR_SPEED
+    );
+
+    angularVelocity = AGVKinematics::MoveAngularVelocityTowards(angularVelocity, targetAngularVelocity, dt);
+
+    const float step = angularVelocity * dt;
+    if (std::abs(step) >= std::abs(headingError))
+    {
+        heading = targetHeading;
+        angularVelocity = 0.0f;
+        return;
+    }
+
+    heading = AGVKinematics::NormalizeAngle(heading + step);
+}
+
 UnityRobotController::UnityRobotController()
-    : m_CurrentLinkIndex(0), m_LinkProgress(0.0f), m_IsMovingLink(false)
-    , m_ActualStartTime(0.0f), m_OverTime(0.0f), m_HasReleasedFromNode(false)
+    : m_CurrentLinkIndex(0), m_LinkProgress(0.0f), m_DistanceOnLink(0.0f)
+    , m_CurrentVelocity(0.0f), m_CurrentAngularVelocity(0.0f)
+    , m_IsMovingLink(false), m_ActualStartTime(0.0f)
+    , m_OverTime(0.0f), m_HasReleasedFromNode(false)
     , m_X(0.0f), m_Z(0.0f), m_Heading(0.0f) {}
 
 UnityRobotController::UnityRobotController(uint32_t agvID, float x, float z, float heading)
@@ -49,6 +74,9 @@ void UnityRobotController::FollowRoute(const RoutePacket& _routePacket)
     m_CurrentRoute = _routePacket;
     m_CurrentLinkIndex = 0;
     m_LinkProgress = 0.0f;
+    m_DistanceOnLink = 0.0f;
+    m_CurrentVelocity = 0.0f;
+    m_CurrentAngularVelocity = 0.0f;
     m_CachedLinks.clear();
     
     m_OverTime = 0.0f;
@@ -90,6 +118,9 @@ void UnityRobotController::CancelRoute()
     m_CachedLinks.clear();
     m_IsMovingLink = false;
     m_LinkProgress = 0.0f;
+    m_DistanceOnLink = 0.0f;
+    m_CurrentVelocity = 0.0f;
+    m_CurrentAngularVelocity = 0.0f;
     m_OverTime = 0.0f;
     m_ExecutionWaitTime = 0.0f;
     m_ExecutionWaitAttempts = 0;
@@ -105,8 +136,10 @@ StatusPacket UnityRobotController::GetStatus()
     else p.currentLinkID = 0; 
     
     p.progress = m_LinkProgress;
-    p.x = m_X; p.z = m_Z; p.heading = m_Heading; 
-    p.velocity = 4.0f; p.battery = 100.0f; 
+    p.x = m_X; 
+    p.z = m_Z; 
+    p.heading = m_Heading; 
+    p.velocity = m_CurrentVelocity; p.battery = 100.0f; 
     return p;
 }
 
@@ -125,8 +158,8 @@ void UnityRobotController::Update(float dt, float serverTime)
     if (m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size()) return; 
 
     const CachedLink& cache = m_CachedLinks[m_CurrentLinkIndex];
-    float plannedDuration = cache.arrivalTime - cache.departureTime;
-    if (plannedDuration <= 0.001f) plannedDuration = 1.0f;
+    const float linkDist = GetLinkDistance(cache);
+    const float travelDuration = AGVKinematics::EstimateStopToStopTravelTime(linkDist);
     
     // ==========================================
     // 1. 대기 및 출발 결심 
@@ -135,10 +168,10 @@ void UnityRobotController::Update(float dt, float serverTime)
     {
         if (serverTime < cache.departureTime) return; 
 
-        // 동적 남은 시간 및 도착 예상 시각 산출
-        float remainingDuration = plannedDuration - m_OverTime;
-        if (remainingDuration <= 0.01f) remainingDuration = 0.01f;
-        float dynamicExpectedArrival = serverTime + remainingDuration;
+        const float startTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, 0.0f);
+        const float startHeadingError = std::abs(AGVKinematics::NormalizeAngle(startTargetHeading - m_Heading));
+        const float turnDuration = AGVKinematics::EstimateTurnInPlaceTime(startHeadingError);
+        float dynamicExpectedArrival = serverTime + std::max(travelDuration + turnDuration, 0.01f);
 
         if (m_TryOccupyEdgeCallback && !m_TryOccupyEdgeCallback(cache.fromNode.m_Id, cache.toNode.m_Id, serverTime, dynamicExpectedArrival))
         {
@@ -161,17 +194,45 @@ void UnityRobotController::Update(float dt, float serverTime)
         m_ExecutionWaitAttempts = 0;
         m_BlockEventSent = false;
 
-        float compensatedTime = serverTime - m_OverTime;
-        m_ActualStartTime = std::max(compensatedTime, cache.departureTime);
+        m_ActualStartTime = serverTime;
+        m_DistanceOnLink = 0.0f;
+        m_LinkProgress = 0.0f;
+        m_CurrentVelocity = 0.0f;
+        m_CurrentAngularVelocity = 0.0f;
         m_OverTime = 0.0f; 
     }
     
-    m_LinkProgress = (serverTime - m_ActualStartTime) / plannedDuration;
+    // ==========================================
+    // 2. 속도 기반 링크 진행
+    // ==========================================
+    const float destinationHoldProgress = ClampRatio(1.0f - (DESTINATION_STOP_OFFSET / linkDist), 0.25f, 0.90f);
+    const float destinationHoldDistance = destinationHoldProgress * linkDist;
+    const bool shouldHoldBeforeDestination = m_IsNodeFreeCallback && !m_IsNodeFreeCallback(cache.toNode.m_Id);
+    const float currentTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    const float headingError = std::abs(AGVKinematics::NormalizeAngle(currentTargetHeading - m_Heading));
+    const float headingSpeedScale = AGVKinematics::HeadingSpeedScale(headingError);
 
-    // ==========================================
-    // 2. [수정 완료] 차체 물리 기반 동적 꼬리 탈출 연산
-    // ==========================================
-    const float linkDist = GetLinkDistance(cache);
+    float targetDistance = shouldHoldBeforeDestination ? destinationHoldDistance : linkDist;
+    if (targetDistance < m_DistanceOnLink)
+        targetDistance = m_DistanceOnLink;
+
+    const float remainingDistance = std::max(0.0f, targetDistance - m_DistanceOnLink);
+    const float stopLimitedSpeed = AGVKinematics::StopLimitedSpeed(remainingDistance);
+    const float targetVelocity = std::min(AGVKinematics::MAX_SPEED, stopLimitedSpeed) * headingSpeedScale;
+
+    const float prevVelocity = m_CurrentVelocity;
+    m_CurrentVelocity = AGVKinematics::MoveVelocityTowards(m_CurrentVelocity, targetVelocity, dt);
+
+    float moveDistance = (prevVelocity + m_CurrentVelocity) * 0.5f * dt;
+    if (moveDistance >= remainingDistance)
+    {
+        moveDistance = remainingDistance;
+        m_CurrentVelocity = 0.0f;
+    }
+
+    m_DistanceOnLink += moveDistance;
+    m_LinkProgress = ClampRatio(m_DistanceOnLink / linkDist, 0.0f, 1.0f);
+
     if (m_IsMovingLink && !m_HasReleasedFromNode)
     {
         float dynamicReleaseRatio = ClampRatio(NODE_RELEASE_OFFSET / linkDist, 0.20f, 0.70f);
@@ -183,15 +244,23 @@ void UnityRobotController::Update(float dt, float serverTime)
         }
     }
 
-    const float destinationHoldProgress = ClampRatio(1.0f - (DESTINATION_STOP_OFFSET / linkDist), 0.25f, 0.90f);
-    if (m_IsMovingLink && m_IsNodeFreeCallback && m_LinkProgress >= destinationHoldProgress && !m_IsNodeFreeCallback(cache.toNode.m_Id))
+    Vector2 pos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    m_X = pos.x;
+    m_Z = pos.z;
+
+    const float targetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, targetHeading, dt);
+
+    if (shouldHoldBeforeDestination && m_DistanceOnLink >= destinationHoldDistance - 0.001f)
     {
         m_LinkProgress = destinationHoldProgress;
-        m_ActualStartTime = serverTime - (plannedDuration * destinationHoldProgress);
-        Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+        m_DistanceOnLink = destinationHoldDistance;
+        m_CurrentVelocity = 0.0f;
+        Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
         m_X = holdPos.x;
         m_Z = holdPos.z;
-        m_Heading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+        const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+        StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
         return;
     }
 
@@ -203,24 +272,29 @@ void UnityRobotController::Update(float dt, float serverTime)
         if (m_CanEnterNodeCallback && !m_CanEnterNodeCallback(cache.toNode.m_Id))
         {
             m_LinkProgress = destinationHoldProgress;
-            m_ActualStartTime = serverTime - (plannedDuration * destinationHoldProgress);
+            m_DistanceOnLink = destinationHoldDistance;
+            m_CurrentVelocity = 0.0f;
             Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
             m_X = holdPos.x;
             m_Z = holdPos.z;
-            m_Heading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+            const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+            StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
             return;
         }
 
         m_X = cache.toNode.m_PosX;
         m_Z = cache.toNode.m_PosZ;
-
-        float exactArrivalTime = m_ActualStartTime + plannedDuration;
-        m_OverTime = serverTime - exactArrivalTime; 
+        m_CurrentVelocity = 0.0f;
+        m_CurrentAngularVelocity = 0.0f;
+        m_DistanceOnLink = linkDist;
+        m_OverTime = 0.0f; 
 
         m_EventQueue.push({ ControllerEventType::ARRIVED, cache.toNode.m_Id });
         
         m_CurrentLinkIndex++;
         m_IsMovingLink = false; 
+        m_DistanceOnLink = 0.0f;
+        m_LinkProgress = 0.0f;
 
         if (m_CurrentLinkIndex >= m_CachedLinks.size()) 
         {
@@ -228,12 +302,5 @@ void UnityRobotController::Update(float dt, float serverTime)
             m_OverTime = 0.0f; 
         }
         return; 
-    }
-
-    if (m_IsMovingLink)
-    {
-        Vector2 pos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-        m_X = pos.x; m_Z = pos.z;
-        m_Heading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
     }
 }

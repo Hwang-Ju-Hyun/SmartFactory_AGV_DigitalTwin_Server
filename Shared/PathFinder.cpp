@@ -6,8 +6,9 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include "AGVKinematics.hpp"
+#include "BezierFollower.hpp"
 
-const float AGV_SPEED = 4.0f;
 const float WAIT_TIME = 1.0f; 
 constexpr float CLEARANCE_TIME = 0.6f;
 const int WINDOW_TIME = 16; 
@@ -17,6 +18,14 @@ inline std::string GenerateTimeSpaceKey(uint32_t nodeID, float time)
 {
     int timeSlot = static_cast<int>(std::round(time * 10.0f)); 
     return std::to_string(nodeID) + "_" + std::to_string(timeSlot);
+}
+
+static std::shared_ptr<AStarNode> FindPreviousMovingNode(const std::shared_ptr<AStarNode>& current)
+{
+    auto trace = current->parentNode;
+    while (trace != nullptr && trace->id == current->id)
+        trace = trace->parentNode;
+    return trace;
 }
 
 std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, 
@@ -41,7 +50,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
     startNode->arrivalTime = _startTime;
     startNode->departureTime = _startTime; 
     startNode->g = 0.f;
-    startNode->h = _rraEngine.GetAbstractDistance(_startNodeID) / AGV_SPEED; 
+    startNode->h = _rraEngine.GetAbstractDistance(_startNodeID) / AGVKinematics::MAX_SPEED; 
     startNode->f = startNode->g + startNode->h;
 
     openList.push(startNode);
@@ -95,7 +104,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                     waitNode->arrivalTime = current->arrivalTime;
                     waitNode->departureTime = waitLeaveTime;
                     waitNode->g = nextG;
-                    waitNode->h = _rraEngine.GetAbstractDistance(current->id) / AGV_SPEED; 
+                    waitNode->h = _rraEngine.GetAbstractDistance(current->id) / AGVKinematics::MAX_SPEED; 
                     waitNode->f = waitNode->g + waitNode->h;
                     openList.push(waitNode); 
                     openRegistryList[waitKey] = waitNode; 
@@ -129,7 +138,18 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             auto fromNodeGeo = map.GetMapNode(current->id);
             auto toNodeGeo = map.GetMapNode(neighborID);
             float dist = (link.m_Type == 1) ? link.m_Dist : std::sqrt(std::pow(toNodeGeo.m_PosX - fromNodeGeo.m_PosX, 2) + std::pow(toNodeGeo.m_PosZ - fromNodeGeo.m_PosZ, 2));
-            float travelTime = dist / AGV_SPEED;
+            float turnTime = 0.0f;
+            if (auto previousMovingNode = FindPreviousMovingNode(current))
+            {
+                MapLink& previousLink = map.FindLink(previousMovingNode->id, current->id);
+                const MapNode previousNodeGeo = map.GetMapNode(previousMovingNode->id);
+                const float previousHeading = BezierFollower::Heading(previousNodeGeo, fromNodeGeo, previousLink, 1.0f);
+                const float nextHeading = BezierFollower::Heading(fromNodeGeo, toNodeGeo, link, 0.0f);
+                const float turnAngle = std::abs(AGVKinematics::NormalizeAngle(nextHeading - previousHeading));
+                turnTime = AGVKinematics::EstimateTurnInPlaceTime(turnAngle) * (1.0f - AGVKinematics::HeadingSpeedScale(turnAngle));
+            }
+
+            float travelTime = turnTime + AGVKinematics::EstimateStopToStopTravelTime(dist);
             float enterTime = current->departureTime;
             float leaveTime = enterTime + travelTime;
             std::string neighborKey = GenerateTimeSpaceKey(neighborID, leaveTime);
@@ -151,7 +171,7 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 neighborNode->arrivalTime = leaveTime;
                 neighborNode->departureTime = leaveTime; 
                 neighborNode->g = nextG;                
-                neighborNode->h = _rraEngine.GetAbstractDistance(neighborID) / AGV_SPEED; 
+                neighborNode->h = _rraEngine.GetAbstractDistance(neighborID) / AGVKinematics::MAX_SPEED; 
                 neighborNode->f = neighborNode->g + neighborNode->h;
                 openList.push(neighborNode); 
                 openRegistryList[neighborKey] = neighborNode; 
