@@ -25,6 +25,19 @@ public:
             OccupancyProvider::GetInstance().LeaveNode(agvID, fromNode);
         });
 
+        controller->SetCanEnterNodeCallback([agvID](uint32_t nodeID) {
+            auto& occ = OccupancyProvider::GetInstance();
+            if (occ.IsNodeOccupiedByOther(nodeID, agvID))
+                return false;
+
+            occ.OccupyNode(agvID, nodeID);
+            return true;
+        });
+
+        controller->SetIsNodeFreeCallback([agvID](uint32_t nodeID) {
+            return !OccupancyProvider::GetInstance().IsNodeOccupiedByOther(nodeID, agvID);
+        });
+
         m_RobotControllers[agvID] = std::move(controller);
     }
     

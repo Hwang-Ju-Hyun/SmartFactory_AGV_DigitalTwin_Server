@@ -13,4 +13,8 @@ public:
     void CancelRoute() override;
     StatusPacket GetStatus() override;    
     virtual void Update(float dt,float serverTime) override;
+    virtual void SetTryOccupyEdgeCallback(std::function<bool(uint32_t, uint32_t, float, float)> callback) override {}
+    virtual void SetNodeLeaveCallback(std::function<void(uint32_t)> callback) override {}
+    virtual void SetCanEnterNodeCallback(std::function<bool(uint32_t)> callback) override {}
+    virtual void SetIsNodeFreeCallback(std::function<bool(uint32_t)> callback) override {}
 };

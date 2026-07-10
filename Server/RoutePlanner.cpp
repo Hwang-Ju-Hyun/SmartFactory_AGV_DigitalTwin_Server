@@ -19,6 +19,68 @@ void RoutePlanner::Init()
     EventManager::GetInstance().Subscribe(RobotEventType::NODE_ARRIVED, [this](const RobotEvent& _e) { OnRobotStepCompleted(_e); });
 }
 
+void RoutePlanner::Update(float _deltaTime, float _serverTime)
+{
+    const size_t pendingCount = m_PendingRoutes.size();
+    for (size_t i = 0; i < pendingCount; ++i)
+    {
+        PendingRoute pending = m_PendingRoutes.front();
+        m_PendingRoutes.pop_front();
+
+        pending.retryTimer -= _deltaTime;
+        if (pending.retryTimer > 0.0f)
+        {
+            m_PendingRoutes.push_back(pending);
+            continue;
+        }
+
+        CreateRoute(pending.agvID, pending.targetNodeID, _serverTime, pending.purpose);
+    }
+}
+
+void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, uint32_t _blockedNodeID, float _serverTime)
+{
+    Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+    if (!agv) return;
+
+    auto planIt = m_MasterPlans.find(_agvID);
+    if (planIt == m_MasterPlans.end())
+    {
+        if (IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID))
+            controller->CancelRoute();
+        agv->SetCurrentNodeID(_currentNodeID);
+        agv->ChangeState(AGVState::IDLE);
+        return;
+    }
+
+    const uint32_t targetNodeID = planIt->second.finalTargetNodeID;
+    const MissionPurpose purpose = planIt->second.purpose;
+
+    if (IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID))
+        controller->CancelRoute();
+
+    m_MasterPlans.erase(planIt);
+    m_PendingRoutes.erase(std::remove_if(m_PendingRoutes.begin(), m_PendingRoutes.end(),
+        [_agvID](const PendingRoute& r) { return r.agvID == _agvID; }), m_PendingRoutes.end());
+
+    agv->SetCurrentNodeID(_currentNodeID);
+    agv->ChangeState(AGVState::WAIT_REPLAN);
+
+    ReservationTable::GetInstance().OverrideFutureReservations(_agvID, _serverTime, 0.0f);
+    ReservationTable::GetInstance().ReserveNode(_currentNodeID, _serverTime, _serverTime + REPLAN_PENALTY_TIME + CLEARANCE_TIME, _agvID, ReservationType::Normal);
+    if (_blockedNodeID != 0)
+    {
+        constexpr uint32_t TEMP_BLOCK_AGV_ID = 0;
+        const float blockEndTime = _serverTime + REPLAN_PENALTY_TIME + CLEARANCE_TIME;
+        ReservationTable::GetInstance().ReserveNode(_blockedNodeID, _serverTime, blockEndTime, TEMP_BLOCK_AGV_ID, ReservationType::Normal);
+        ReservationTable::GetInstance().ReserveEdge(_currentNodeID, _blockedNodeID, _serverTime, blockEndTime, TEMP_BLOCK_AGV_ID, ReservationType::Normal);
+    }
+
+    m_PendingRoutes.push_back({ _agvID, targetNodeID, purpose, 0.1f });
+    std::cout << "[REPLAN] AGV " << _agvID << " execution blocked at node " << _currentNodeID
+              << " toward " << _blockedNodeID << ", route cancelled\n";
+}
+
 bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<PathStep>& _path, uint32_t _finalTargetID, float _serverTime)
 {
     if (_path.empty())
