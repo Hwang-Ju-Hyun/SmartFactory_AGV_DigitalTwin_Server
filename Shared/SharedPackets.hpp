@@ -49,7 +49,7 @@ struct RoutePacket
     }
 };
 
-// 2. 도착 보고 패킷 (PT_ARRIVED)
+// 도착 보고 payload. ESP32/FakeRobot에서는 RobotProtocol::PacketID::ARRIVED와 함께 사용한다.
 struct ArrivedPacket
 {
     uint32_t agvID;
@@ -67,7 +67,7 @@ struct ArrivedPacket
     }
 };
 
-// 3. 상태 보고 패킷 (PT_STATUS) - 100ms마다 발송
+// 상태 보고 payload. ESP32/FakeRobot에서는 RobotProtocol::PacketID::STATUS와 함께 사용한다.
 struct StatusPacket
 {
     uint32_t agvID;
@@ -103,7 +103,7 @@ struct StatusPacket
     }
 };
 
-// 4. 경로 취소 패킷 (PT_CANCEL_ROUTE)
+// 경로 취소 payload. ESP32/FakeRobot에서는 RobotProtocol::PacketID::CANCEL_ROUTE와 함께 사용한다.
 struct CancelRoutePacket
 {
     uint32_t agvID;

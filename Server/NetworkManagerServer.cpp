@@ -20,7 +20,9 @@
 #include "ReservationTable.hpp"
 #include "RobotManager.hpp"
 #include "UnityRobotController.hpp"
+#include "ESP32RobotController.hpp"
 #include "OccupancyProvider.hpp"
+#include "PacketSerializer.hpp"
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -40,31 +42,151 @@ void NetworkManagerServer::StaticInit()
 
 void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream& _inStream) 
 {
+    if (TryProcessRobotProtocolPacket(_session, _inStream))
+        return;
+
     uint8_t packet_type;
     _inStream.Read(packet_type);
     switch (packet_type)
     {
-    case PT_Hello:        
+    case UPT_HELLO:
         HandleHello_Packet(_session,_inStream);
         break;
-    case PT_Replication:   
+    case UPT_REPLICATION:
         break;
-    case PT_MAZE_DATA:
+    case UPT_MAZE_DATA:
         /* code */
         break;
-    case PT_Disconnected:
+    case UPT_DISCONNECTED:
         /* code */
         break;        
-    case PT_READY_MAP:
+    case UPT_READY_MAP:
         HandleReadyMap_Packet(_session,_inStream);
         break;
-    case PT_READY_OBJECT:
+    case UPT_READY_OBJECT:
         HandleReadyObject_Packet(_session,_inStream);
         break;
     default:  
         printf("Inavalid PacketData\n\a");
         break;
     }
+}
+
+bool NetworkManagerServer::TryProcessRobotProtocolPacket(ClientProxy* _proxy, InputMemoryStream& _stream)
+{
+    RobotProtocol::PacketID packetID;
+    if (!RobotProtocol::PeekPacketID(_stream, packetID))
+        return false;
+
+    RobotProtocol::PacketBodyHeader header;
+    if (!RobotProtocol::ReadPacketBodyHeader(_stream, header))
+    {
+        std::cout << "[RobotProtocol] Invalid packet header\n";
+        return true;
+    }
+
+    if (packetID == RobotProtocol::PacketID::HELLO)
+    {
+        HandleRobotHelloPacket(_proxy, header, _stream);
+        return true;
+    }
+
+    RobotSessionPtr robotSession = FindRobotSession(_proxy, header.agvID);
+    if (!robotSession)
+    {
+        std::cout << "[RobotProtocol] Packet from unregistered robot. packetID="
+                  << static_cast<uint16_t>(packetID) << " agvID=" << header.agvID << "\n";
+        return true;
+    }
+
+    robotSession->ProcessPacket(header, _stream);
+    return true;
+}
+
+void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const RobotProtocol::PacketBodyHeader& _header, InputMemoryStream& _stream)
+{
+    RobotProtocol::HelloPayload hello;
+    if (!RobotProtocol::ReadHelloPayload(_stream, hello))
+    {
+        std::cout << "[RobotProtocol] Invalid HELLO payload\n";
+        return;
+    }
+
+    const bool isRobotClient =
+        hello.clientType == RobotProtocol::ClientType::ESP32 ||
+        hello.clientType == RobotProtocol::ClientType::FAKE_ROBOT;
+
+    if (!isRobotClient)
+    {
+        std::cout << "[RobotProtocol] Unsupported robot-protocol client type: "
+                  << static_cast<int>(hello.clientType) << "\n";
+        return;
+    }
+
+    uint32_t assignedAgvID = hello.requestedAgvID != 0 ? hello.requestedAgvID : _header.agvID;
+    if (assignedAgvID == 0 && !AGVManager::GetInstance().m_AGVs.empty())
+    {
+        assignedAgvID = AGVManager::GetInstance().m_AGVs.front()->GetNetworkID();
+    }
+
+    RobotProtocol::HelloAckPayload ack;
+    ack.protocolVersion = RobotProtocol::kProtocolVersion;
+    ack.assignedAgvID = assignedAgvID;
+
+    const bool versionOK = hello.protocolVersion == RobotProtocol::kProtocolVersion;
+    ObjectPtr agvObject = assignedAgvID != 0 ? m_LinkingContext->GetObject(assignedAgvID) : nullptr;
+    const bool agvOK = agvObject && agvObject->GetClassID() == ClassID::OBJ_AGV;
+
+    RobotSessionPtr robotSession = std::make_shared<RobotSession>(_proxy->GetSession(), assignedAgvID);
+
+    if (!versionOK)
+    {
+        ack.accepted = 0;
+        ack.errorCode = RobotProtocol::ErrorCode::PROTOCOL_MISMATCH;
+        robotSession->SendHelloAck(ack);
+        std::cout << "[RobotProtocol] Rejected robot HELLO: protocol version "
+                  << hello.protocolVersion << " != " << RobotProtocol::kProtocolVersion << "\n";
+        return;
+    }
+
+    if (!agvOK)
+    {
+        ack.accepted = 0;
+        ack.errorCode = RobotProtocol::ErrorCode::UNKNOWN_AGV;
+        robotSession->SendHelloAck(ack);
+        std::cout << "[RobotProtocol] Rejected robot HELLO: unknown AGV " << assignedAgvID << "\n";
+        return;
+    }
+
+    ack.accepted = 1;
+    ack.errorCode = RobotProtocol::ErrorCode::NONE;
+
+    m_AgvIdToRobotSessionMap[assignedAgvID] = robotSession;
+    m_ProxyToRobotSessionMap[_proxy] = robotSession;
+
+    RobotManager::GetInstance().RegisterRobot(
+        assignedAgvID,
+        std::make_unique<ESP32RobotController>(robotSession)
+    );
+
+    robotSession->SendHelloAck(ack);
+
+    std::cout << "[RobotProtocol] Robot client connected. agvID=" << assignedAgvID
+              << " clientType=" << static_cast<int>(hello.clientType)
+              << " sequence=" << _header.sequence << "\n";
+}
+
+RobotSessionPtr NetworkManagerServer::FindRobotSession(ClientProxy* _proxy, uint32_t _agvID)
+{
+    auto proxyIt = m_ProxyToRobotSessionMap.find(_proxy);
+    if (proxyIt != m_ProxyToRobotSessionMap.end())
+        return proxyIt->second;
+
+    auto agvIt = m_AgvIdToRobotSessionMap.find(_agvID);
+    if (agvIt != m_AgvIdToRobotSessionMap.end())
+        return agvIt->second;
+
+    return nullptr;
 }
 
 void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
@@ -88,13 +210,13 @@ void NetworkManagerServer::HandleHello_Packet(ClientProxy* _proxy,InputMemoryStr
 
     SendMap_Packet(_proxy);    
 
-    std::cout << "[서버] 맵 전송 완료. PT_READY_MAP 대기 중 \n";
+    std::cout << "[서버] 맵 전송 완료. UPT_READY_MAP 대기 중 \n";
 }
 
 void NetworkManagerServer::SendHello_Packet(ClientProxy* _proxy)
 {
     OutputMemoryStream outStream;
-    uint8_t packetType=PacketType::PT_Hello;    
+    uint8_t packetType = static_cast<uint8_t>(UPT_HELLO);
 
     outStream.Write(packetType);    
     
@@ -109,7 +231,7 @@ void NetworkManagerServer::SendMap_Packet(ClientProxy* _proxy)
     std::vector<MapLink> links = MapManager::GetInstance().GetLinks();
 
     OutputMemoryStream outStream;
-    uint8_t packetType=PacketType::PT_MAZE_DATA;
+    uint8_t packetType = static_cast<uint8_t>(UPT_MAZE_DATA);
     
     outStream.Write(packetType);
     outStream.Write(nodes);
@@ -151,7 +273,7 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
     {
         ClientProxy* proxy = iter->second;
         OutputMemoryStream replicateStream;
-        PacketType packetType = PacketType::PT_Replication;
+        UnityPacketType packetType = UPT_REPLICATION;
         uint8_t packetTypeByte=static_cast<uint8_t>(packetType);
 
         replicateStream.Write(packetTypeByte);

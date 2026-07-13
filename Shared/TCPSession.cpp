@@ -35,7 +35,7 @@ bool TCPSession::ProcessIncomingData()
         InputMemoryStream inputStream(payLoadStart,payloadSize);
 
         //todo :
-        //1. 첫 데이터를 PacketType으로 읽어냅니다.
+        //1. 첫 데이터를 UnityPacketType 또는 RobotProtocol::PacketID로 읽어냅니다.
         //함수포인터 델리게이터 형식으로 한 이유는 지금 tcpsession이 clientproxy를 참조를 금하기위해서        
         if(OnPacketReceived)
         {

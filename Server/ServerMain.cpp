@@ -7,12 +7,13 @@
 #include "NetworkManagerServer.hpp"
 #include "ObjectRegistry.hpp"
 
+#include <algorithm>
 #include <chrono>
 bool g_LOOP=true;
 
 int main(void)
 {    
-    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("127.0.0.1:6666");    
+    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("0.0.0.0:6666");    
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
     int option = 1;
     setsockopt(sockServerTcp->GetSocket(), SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
@@ -33,7 +34,6 @@ int main(void)
     
     const std::chrono::duration<double> kTickDuration(1.0 / 30.0); 
     auto lastUpdateTime = std::chrono::high_resolution_clock::now();
-    printf("%a");
     while(g_LOOP)
     {
         timeval timeoutValue;
@@ -45,6 +45,7 @@ int main(void)
             continue;            
         
         std::vector<TCPSocketPtr> newSockets;
+        std::vector<TCPSocketPtr> closedSockets;
         if(toRet>0)
         {
             for(TCPSocketPtr& socket:readAbleSockets)
@@ -88,7 +89,8 @@ int main(void)
 
                         if(!isAlive)
                         {
-                            std::cout<<"ㅈ됬노 ㅅㅂ"<<std::endl;
+                            std::cout<<"Client disconnected"<<std::endl;
+                            closedSockets.push_back(socket);
                         }                    
                     }                
                 }        
@@ -110,7 +112,14 @@ int main(void)
         for(const auto& ns:newSockets)
         {
             readBlockSockets.push_back(ns);
-        }         
+        }
+        for(const auto& closedSocket:closedSockets)
+        {
+            readBlockSockets.erase(
+                std::remove(readBlockSockets.begin(), readBlockSockets.end(), closedSocket),
+                readBlockSockets.end()
+            );
+        }
     }
     return 0;
 }

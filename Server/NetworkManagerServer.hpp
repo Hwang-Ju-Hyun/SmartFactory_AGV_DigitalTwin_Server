@@ -2,6 +2,8 @@
 #include "Object.hpp"
 #include "TCPSocket.hpp"
 #include "ClientProxy.hpp"
+#include "RobotSession.hpp"
+#include <unordered_map>
 
 class LinkingContext;
 
@@ -16,6 +18,9 @@ public:
 public:
     void ProcessPacket(ClientProxy* _cs,InputMemoryStream& _stream);
 private:
+    bool TryProcessRobotProtocolPacket(ClientProxy* _proxy, InputMemoryStream& _stream);
+    void HandleRobotHelloPacket(ClientProxy* _proxy, const RobotProtocol::PacketBodyHeader& _header, InputMemoryStream& _stream);
+    RobotSessionPtr FindRobotSession(ClientProxy* _proxy, uint32_t _agvID);
     void HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void SendHello_Packet(ClientProxy* _proxy);
     void SendMap_Packet(ClientProxy* _proxy);    
@@ -25,6 +30,8 @@ private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    
     std::unordered_map<uint32_t,ClientProxy*> m_SessionIdToProxyMap;
+    std::unordered_map<uint32_t, RobotSessionPtr> m_AgvIdToRobotSessionMap;
+    std::unordered_map<ClientProxy*, RobotSessionPtr> m_ProxyToRobotSessionMap;
     static uint32_t nextSessionID;    
 private:
     LinkingContext* m_LinkingContext; 

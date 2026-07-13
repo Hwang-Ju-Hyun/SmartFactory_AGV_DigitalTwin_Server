@@ -7,6 +7,7 @@ add_library(Shared STATIC
     MemoryStream.cpp        
     SocketAddressFactory.cpp                 
     TCPSession.cpp
+    PacketSerializer.cpp
     Object.cpp
     Robo.cpp
     LinkingContext.cpp
@@ -24,4 +25,3 @@ add_library(Shared STATIC
 target_include_directories(Shared PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
-
