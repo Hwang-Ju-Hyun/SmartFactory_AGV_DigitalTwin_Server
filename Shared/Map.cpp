@@ -13,7 +13,22 @@ void MapManager::Init()
 {
    std::cout << "[디버그] 현재 실행 작업 디렉터리: " 
               << std::filesystem::current_path() << std::endl;    
-    std::ifstream file("../../Shared/MapData.json"); 
+    const std::vector<std::filesystem::path> mapPathCandidates = {
+        "Shared/MapData.json",
+        "../Shared/MapData.json",
+        "../../Shared/MapData.json",
+        "../../../Shared/MapData.json"
+    };
+
+    std::ifstream file;
+    for (const auto& path : mapPathCandidates)
+    {
+        file.open(path);
+        if (file.is_open())
+            break;
+        file.clear();
+    }
+
     if (!file.is_open())
     {
         std::cerr << "[에러] MapData.json 파일을 열 수 없습니다" << std::endl;

@@ -1,41 +1,13 @@
 #pragma once
 #include "IRobotController.hpp"
+#include "MovementSimulator.hpp"
 #include <queue>
 #include <functional> 
-#include "Map.hpp"
-
-struct CachedLink 
-{
-    MapLink link;
-    MapNode fromNode;
-    MapNode toNode;
-    float departureTime; 
-    float arrivalTime;   
-};
 
 class UnityRobotController : public IRobotController
 {   
 private:
-    RoutePacket m_CurrentRoute;
-    size_t m_CurrentLinkIndex; 
-    float m_LinkProgress;
-    float m_DistanceOnLink = 0.0f;
-    float m_CurrentVelocity = 0.0f;
-    float m_CurrentAngularVelocity = 0.0f;
-    
-    bool m_IsMovingLink = false;      
-    float m_ActualStartTime = 0.0f;   
-    float m_OverTime = 0.0f;
-    bool m_HasReleasedFromNode = false; // 🌟 오타 및 멤버 변수 일치 완료
-    float m_ExecutionWaitTime = 0.0f;
-    uint32_t m_ExecutionWaitAttempts = 0;
-    bool m_BlockEventSent = false;
-
-    float m_X = 0.0f;
-    float m_Z = 0.0f;
-    float m_Heading = 0.0f;
-
-    std::vector<CachedLink> m_CachedLinks;
+    MovementSimulator m_Simulator;
     std::queue<ControllerEvent> m_EventQueue;
     
     std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
@@ -60,4 +32,7 @@ public:
     virtual void SetNodeLeaveCallback(std::function<void(uint32_t)> callback) override { m_NodeLeaveCallback = callback; }
     virtual void SetCanEnterNodeCallback(std::function<bool(uint32_t)> callback) override { m_CanEnterNodeCallback = callback; }
     virtual void SetIsNodeFreeCallback(std::function<bool(uint32_t)> callback) override { m_IsNodeFreeCallback = callback; }
+
+private:
+    void DrainSimulatorEvents();
 };

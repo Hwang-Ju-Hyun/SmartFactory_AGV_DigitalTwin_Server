@@ -401,13 +401,17 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     m_TotalElapsedServerTime += _deltaTime;    
 
     // 1. INPUT 레이어: 컨트롤러 패킷 수거
-    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) {
-        while (it->second->HasEvent()) {            
+    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) 
+    {
+        while (it->second->HasEvent()) 
+        {            
             ControllerEvent ev = it->second->PopEvent();
-            if (ev.type == ControllerEventType::ARRIVED) {
+            if (ev.type == ControllerEventType::ARRIVED) 
+            {
                 EventManager::GetInstance().Publish({ RobotEventType::NODE_ARRIVED, it->first, m_TotalElapsedServerTime, ev.nodeID });
             }
-            else if (ev.type == ControllerEventType::EXECUTION_BLOCKED) {
+            else if (ev.type == ControllerEventType::EXECUTION_BLOCKED) 
+            {
                 RoutePlanner::GetInstance().OnExecutionBlocked(it->first, ev.nodeID, ev.relatedNodeID, m_TotalElapsedServerTime);
             }
         }
@@ -416,8 +420,10 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     // 2. LOGIC 레이어: 장부 갱신 및 시공간 설계
     EventManager::GetInstance().SwapAndProcessEvents(); 
     RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
-    for (auto& agvObj : AGVManager::GetInstance().m_AGVs) {
-        if (Robo* agv = dynamic_cast<Robo*>(agvObj.get())) {
+    for (auto& agvObj : AGVManager::GetInstance().m_AGVs) 
+    {
+        if (Robo* agv = dynamic_cast<Robo*>(agvObj.get())) 
+        {
             agv->UpdateWorkTimer(_deltaTime, m_TotalElapsedServerTime);
         }
     }

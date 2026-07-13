@@ -68,9 +68,8 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
     if(!agv) return;    
 
     if (unloadNodeID == -1)
-    {
-        // 하차지가 날 때까지 대기실에 번호표(agvID)만 뽑고 갓길(집)로 피신!
-        m_WaitingAGVs.push(_e.agvID); // 🌟 uint32_t만 푸시
+    {        
+        m_WaitingAGVs.push(_e.agvID); // 
 
         if (agv->GetToNodeID() != agv->GetHomeNode() && agv->GetMissionPurpose() != MissionPurpose::HOME)
         {            

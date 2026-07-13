@@ -8,6 +8,7 @@ add_library(Shared STATIC
     SocketAddressFactory.cpp                 
     TCPSession.cpp
     PacketSerializer.cpp
+    MovementSimulator.cpp
     Object.cpp
     Robo.cpp
     LinkingContext.cpp

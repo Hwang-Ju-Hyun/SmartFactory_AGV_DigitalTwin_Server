@@ -1,4 +1,5 @@
 #include "MemoryStream.hpp"
+#include "MovementSimulator.hpp"
 #include "PacketSerializer.hpp"
 #include "SocketAddressFactory.hpp"
 #include "SocketUtil.hpp"
@@ -38,22 +39,22 @@ namespace
         SendRobotPacket(session, RobotProtocol::PacketID::HELLO, requestedAgvID, sequence, payloadStream);
     }
 
-    void SendStatus(TCPSessionPtr session, uint32_t agvID, uint32_t currentNodeID, float progress, uint32_t& sequence)
+    void SendStatus(TCPSessionPtr session, const StatusPacket& status, uint32_t& sequence)
     {
         RobotProtocol::StatusPayload payload;
-        payload.currentNodeID = currentNodeID;
-        payload.currentLinkID = 0;
-        payload.progress = progress;
-        payload.x = progress * 10.0f;
-        payload.z = static_cast<float>(agvID);
-        payload.heading = 0.0f;
-        payload.velocity = progress > 0.0f && progress < 1.0f ? 1.0f : 0.0f;
-        payload.battery = 99.0f;
-        payload.state = RobotProtocol::RobotState::MOVING;
+        payload.currentNodeID = 0;
+        payload.currentLinkID = status.currentLinkID;
+        payload.progress = status.progress;
+        payload.x = status.x;
+        payload.z = status.z;
+        payload.heading = status.heading;
+        payload.velocity = status.velocity;
+        payload.battery = status.battery;
+        payload.state = status.velocity > 0.001f ? RobotProtocol::RobotState::MOVING : RobotProtocol::RobotState::IDLE;
 
         OutputMemoryStream payloadStream;
         RobotProtocol::WriteStatusPayload(payloadStream, payload);
-        SendRobotPacket(session, RobotProtocol::PacketID::STATUS, agvID, sequence, payloadStream);
+        SendRobotPacket(session, RobotProtocol::PacketID::STATUS, status.agvID, sequence, payloadStream);
     }
 
     void SendArrived(TCPSessionPtr session, uint32_t agvID, uint32_t currentNodeID, uint32_t& sequence)
@@ -105,10 +106,11 @@ int main(int argc, char** argv)
     bool running = true;
     bool routeActive = false;
     uint32_t sequence = 1;
-    uint32_t currentNodeID = 0;
-    size_t nextNodeIndex = 0;
-    float progress = 0.0f;
+    float simulatorTime = 0.0f;
+    auto lastUpdate = std::chrono::steady_clock::now();
+    auto lastStatus = lastUpdate;
     RobotProtocol::RouteCommandPayload currentRoute;
+    MovementSimulator simulator(agvID, 0.0f, 0.0f, 0.0f);
 
     session->OnPacketReceived = [&](InputMemoryStream& inStream)
     {
@@ -142,9 +144,14 @@ int main(int argc, char** argv)
             if (RobotProtocol::ReadRouteCommandPayload(inStream, currentRoute))
             {
                 routeActive = currentRoute.nodes.size() >= 2;
-                nextNodeIndex = routeActive ? 1 : 0;
-                progress = 0.0f;
-                currentNodeID = currentRoute.nodes.empty() ? currentNodeID : currentRoute.nodes.front().nodeID;
+                RoutePacket routePacket;
+                routePacket.agvID = agvID;
+                routePacket.nodes = currentRoute.nodes;
+                simulator.LoadRoute(routePacket);
+
+                if (!routePacket.nodes.empty())
+                    simulatorTime = routePacket.nodes.front().departureTime;
+
                 std::cout << "[FakeRobot] ROUTE routeID=" << currentRoute.routeID
                           << " nodes=" << currentRoute.nodes.size() << "\n";
             }
@@ -152,7 +159,7 @@ int main(int argc, char** argv)
         }
         case RobotProtocol::PacketID::CANCEL_ROUTE:
             routeActive = false;
-            progress = 0.0f;
+            simulator.CancelRoute();
             std::cout << "[FakeRobot] CANCEL_ROUTE\n";
             break;
         case RobotProtocol::PacketID::PING:
@@ -173,7 +180,6 @@ int main(int argc, char** argv)
     std::vector<TCPSocketPtr> readSockets{ socket };
     std::vector<TCPSocketPtr> readableSockets;
 
-    auto lastStatus = std::chrono::steady_clock::now();
     while (running)
     {
         timeval timeoutValue;
@@ -191,38 +197,37 @@ int main(int argc, char** argv)
         }
 
         auto now = std::chrono::steady_clock::now();
-        float dt = std::chrono::duration<float>(now - lastStatus).count();
-        if (dt < 0.5f)
-            continue;
-
-        lastStatus = now;
+        float dt = std::chrono::duration<float>(now - lastUpdate).count();
+        lastUpdate = now;
 
         if (!accepted)
             continue;
 
-        if (routeActive && nextNodeIndex < currentRoute.nodes.size())
-        {
-            progress += 0.25f;
-            if (progress >= 1.0f)
-            {
-                currentNodeID = currentRoute.nodes[nextNodeIndex].nodeID;
-                SendStatus(session, agvID, currentNodeID, 1.0f, sequence);
-                SendArrived(session, agvID, currentNodeID, sequence);
-                std::cout << "[FakeRobot] ARRIVED node=" << currentNodeID << "\n";
+        simulatorTime += dt;
 
-                ++nextNodeIndex;
-                progress = 0.0f;
-                if (nextNodeIndex >= currentRoute.nodes.size())
-                    routeActive = false;
-            }
-            else
-            {
-                SendStatus(session, agvID, currentNodeID, progress, sequence);
-            }
-        }
-        else
+        if (routeActive)
         {
-            SendStatus(session, agvID, currentNodeID, 0.0f, sequence);
+            simulator.Update(dt, simulatorTime);
+            while (simulator.HasEvent())
+            {
+                MovementEvent event = simulator.PopEvent();
+                if (event.type == MovementEventType::ARRIVED)
+                {
+                    SendArrived(session, agvID, event.nodeID, sequence);
+                    std::cout << "[FakeRobot] ARRIVED node=" << event.nodeID << "\n";
+                }
+            }
+
+            routeActive = !simulator.IsRouteComplete();
+        }
+
+        const float statusInterval = std::chrono::duration<float>(now - lastStatus).count();
+        if (statusInterval >= 0.1f)
+        {
+            StatusPacket status = simulator.GetStatus();
+            status.agvID = agvID;
+            SendStatus(session, status, sequence);
+            lastStatus = now;
         }
     }
 
