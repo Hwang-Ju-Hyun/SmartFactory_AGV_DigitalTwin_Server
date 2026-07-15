@@ -17,6 +17,7 @@ target_link_libraries(AGV_Server PRIVATE Shared)
 
 add_executable(FakeRobot
     FakeRobotMain.cpp
+    FakeRobotApp.cpp
 )
 
 target_link_libraries(FakeRobot PRIVATE Shared)

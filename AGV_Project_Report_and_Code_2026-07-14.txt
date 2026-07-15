@@ -1,11 +1,211 @@
-AGV Fleet Control System - Full Code Snapshot
-Generated: 2026-07-13 16:51:03 KST
-Project root: /home/hwang-juhyun/FinalProject/AGV_FleetControlSystem
-Purpose: One-file text snapshot for human code review. Source code files were not modified.
-Included: current project source, headers, CMake files, README, and JSON data.
-Excluded: .git, build output, previous snapshot txt files, caches, binaries, archives, databases, and images.
+# AGV Fleet Control System 프로젝트 정리 및 전체 코드
 
-Included files:
+생성일: 2026-07-14
+프로젝트 경로: /home/hwang-juhyun/FinalProject/AGV_FleetControlSystem
+목적: 현재 프로젝트 상황을 외부 검토자가 한 번에 이해할 수 있도록, 기획/구조/현재 상태/앞으로 할 일/전체 소스코드를 하나의 TXT로 묶은 문서입니다.
+주의: 이 TXT 생성 과정에서는 소스 코드를 수정하지 않았습니다.
+
+================================================================================
+1. 프로젝트 목적
+================================================================================
+
+이 프로젝트의 최종 목적은 여러 대의 AGV(Automated Guided Vehicle)를 중앙 서버가 관제하고, Unity 디지털 트윈과 실제 ESP32 기반 로봇을 동시에 연결하는 AGV Fleet Control System을 만드는 것입니다.
+
+핵심 목표는 다음과 같습니다.
+- 서버가 창고 지도, 경로 계획, 예약 기반 충돌 회피, 작업 배정을 담당합니다.
+- Unity는 실제/가상 AGV 상태를 시각화하는 디지털 트윈 역할을 합니다.
+- ESP32는 실제 로봇 차체의 모터, 엔코더, 배터리, 상태 보고를 담당합니다.
+- 서버는 Unity와 ESP32를 모두 TCP 클라이언트로 받아들이는 중앙 관제탑 역할을 합니다.
+- 최종적으로는 시뮬레이션에서 검증한 경로와 상태 흐름을 실제 로봇 주행으로 확장합니다.
+
+한 줄로 정리하면, 이 프로젝트는 단순한 Unity 시뮬레이션이 아니라 실제 로봇과 디지털 트윈이 같은 서버를 공유하는 관제 시스템을 목표로 합니다.
+
+================================================================================
+2. 전체 개요
+================================================================================
+
+현재 구조:
+
+    Unity Client
+        | TCP
+        v
+    Server
+        |
+        +-- RoutePlanner
+        +-- ReservationTable
+        +-- DispatchManager / TaskManager
+        +-- RobotManager
+        +-- UnityRobotController 또는 ESP32RobotController
+
+목표 구조:
+
+    Unity Digital Twin  <---- TCP ---->  Server  <---- TCP ---->  ESP32 Robot
+          ^                              |                         |
+          |                              |                         +-- TB6612FNG Motor Driver
+          |                              |                         +-- MG310 Encoder Motors
+          |                              |                         +-- Battery / Buck Converter
+          |                              |
+          +--------- STATUS ------------+
+
+서버는 경로를 만들고, 로봇은 경로를 실행하고, Unity는 상태를 그립니다. 최종 구조에서 Unity는 로봇을 직접 움직이는 주체라기보다 실제 로봇 상태를 반영하는 화면이 됩니다.
+
+================================================================================
+3. 왜 FakeRobot이 있는가
+================================================================================
+
+FakeRobot은 UnityRobotController와 다른 개념입니다.
+
+- UnityRobotController: 서버 내부에서 Unity 시뮬레이션 AGV를 움직이기 위한 컨트롤러입니다.
+- FakeRobot: ESP32가 아직 없을 때, ESP32처럼 서버에 TCP로 접속해서 HELLO/STATUS/ARRIVED 같은 로봇 프로토콜을 테스트하는 별도 프로그램입니다.
+
+FakeRobot의 역할은 다음과 같습니다.
+- ESP32가 도착하기 전에 서버-로봇 TCP 프로토콜을 검증합니다.
+- 서버가 ROUTE_COMMAND를 보내고 로봇이 STATUS/ARRIVED를 돌려주는 흐름을 테스트합니다.
+- 나중에 ESP32 문제가 생겼을 때, 문제가 서버인지 하드웨어인지 분리해서 확인할 수 있는 기준점 역할을 합니다.
+
+ESP32가 실제로 연결되면 FakeRobot은 운영의 주역에서는 빠지지만, 디버깅/회귀 테스트용 도구로 계속 가치가 있습니다.
+
+================================================================================
+4. 현재 상황
+================================================================================
+
+현재까지의 큰 진행 상태는 다음과 같습니다.
+
+- 서버, Unity 연동 구조는 이미 존재합니다.
+- RoutePlanner, ReservationTable, DispatchManager, TaskManager 등 관제 서버의 핵심 구조가 존재합니다.
+- Unity용 기존 패킷과 실제 로봇용 RobotProtocol을 분리하는 방향으로 정리되어 있습니다.
+- RobotProtocol에는 HELLO, HELLO_ACK, ROUTE_COMMAND, CANCEL_ROUTE, STATUS, ARRIVED, PING, PONG, ERROR_PACKET, EMERGENCY_STOP 등이 정의되어 있습니다.
+- RobotState에는 IDLE, MOVING, LOADING, UNLOADING, WAIT_REPLAN, FAULT, EMERGENCY_STOPPED 등이 포함되어 있습니다.
+- ESP32RobotController는 서버에서 실제 로봇 세션으로 ROUTE/CANCEL을 보내는 방향으로 구성되어 있습니다.
+- RobotSession은 ESP32 또는 FakeRobot과 통신하며 상태/이벤트를 서버 컨트롤러 쪽으로 넘기는 역할을 합니다.
+- MovementSimulator는 UnityRobotController와 FakeRobot이 공유할 수 있는 이동 시뮬레이션 로직입니다.
+- FakeRobot은 ESP32가 오기 전까지 실제 로봇처럼 서버에 접속해 경로 수신, 상태 보고, 도착 보고를 테스트하는 프로그램입니다.
+
+대략적인 진행률 감각:
+
+- Server / 관제 구조: 거의 완료 단계
+- Unity / 디지털 트윈 구조: 대부분 완료 단계
+- RobotProtocol / TCP 로봇 연결 구조: 기본 골격 완료, 실제 하드웨어 테스트 전 단계
+- FakeRobot: ESP32 대체 테스트 도구로 동작 가능한 단계
+- ESP32 펌웨어: 아직 하드웨어 도착 전이라 본격 구현 전 단계
+- 실제 차체/모터/전원: 부품 준비 및 안전한 전원 설계가 필요한 단계
+
+================================================================================
+5. 프로토콜 설계 방향
+================================================================================
+
+현재 추천 구조는 TCP 위에서 size-first 패킷을 사용하는 방식입니다. TCP는 메시지 단위가 아니라 바이트 스트림이기 때문에 packetSize가 중요합니다.
+
+개념적인 패킷 헤더:
+
+    packetSize  : 전체 패킷 크기
+    packetID    : 패킷 종류
+    agvID       : 어떤 AGV에 대한 패킷인지
+    sequence    : 로그/디버깅/재접속 추적용 번호
+
+중요한 판단:
+- TCP는 순서를 보장하므로 sequence는 순서 보장용이 아니라 디버깅, 로그 추적, 누락 확인, 재접속 이후 상태 확인용입니다.
+- HELLO 같은 연결 초기 패킷은 agvID가 0이거나 requestedAgvID를 별도로 담을 수 있습니다.
+- ESP32와 서버 사이에서는 구조체를 그대로 send하지 않고 Serializer/Deserializer를 사용하는 편이 안전합니다.
+- 서버는 지도와 경로 계획을 알고 있고, ESP32는 처음에는 복잡한 맵 전체보다 실행 가능한 이동 명령/경로를 받는 쪽이 안정적입니다.
+
+초기 ESP32 단계에서는 완벽한 자율 주행보다 다음 흐름을 먼저 목표로 잡는 것이 좋습니다.
+
+    ESP32 부팅
+        -> WiFi 연결
+        -> Server TCP 접속
+        -> HELLO 전송
+        -> HELLO_ACK 수신
+        -> ROUTE_COMMAND 또는 단순 이동 명령 수신
+        -> STATUS 주기 보고
+        -> ARRIVED 보고
+
+================================================================================
+6. 하드웨어 계획
+================================================================================
+
+현재 준비 방향:
+
+- ESP32-DevKitC 계열 38핀 CP2102 Type-C 보드
+- MG310 엔코더 모터가 포함된 2WD 스마트카 키트
+- TB6612FNG 모터 드라이버 모듈 1개
+- 18650 배터리 2알
+- 18650 2구 배터리 홀더
+- 점퍼 케이블 세트
+
+추가로 필요한 것:
+
+- 5V Buck Converter: 2S 배터리 전압을 ESP32가 받을 수 있는 5V로 낮추기 위한 DC-DC 변환기입니다.
+- 2S 배터리 충전/보호 수단: 18650 리튬이온 배터리 2개를 직렬로 쓸 때 과충전, 과방전, 단락 위험을 줄이기 위해 필요합니다.
+- 공통 GND 구성: ESP32, TB6612FNG, 배터리/전원부는 제어 신호 기준을 맞추기 위해 GND를 공유해야 합니다.
+
+전원 감각:
+- 2S 18650은 공칭 약 7.4V, 완충 시 약 8.4V입니다.
+- 이 전압은 TB6612FNG의 모터 전원 VM 쪽에 사용할 수 있지만, ESP32에 직접 넣으면 안 됩니다.
+- ESP32는 Buck Converter를 통해 5V/VIN 쪽으로 공급하는 방향이 안전합니다.
+
+================================================================================
+7. 앞으로 할 일
+================================================================================
+
+ESP32 도착 전:
+- FakeRobot으로 서버-로봇 TCP 흐름을 계속 검증합니다.
+- HELLO -> HELLO_ACK -> ROUTE_COMMAND -> STATUS -> ARRIVED 시나리오를 문서화하고 반복 실행합니다.
+- RobotProtocol, PacketSerializer, RobotSession의 책임을 더 명확히 이해합니다.
+- ESP32 펌웨어 폴더/구조를 문서 수준으로 설계합니다. 실제 코드는 보드가 온 뒤 테스트하면서 작성하는 편이 좋습니다.
+- 전원 구성, GND 연결, 모터 드라이버 핀맵을 미리 종이에 그려봅니다.
+
+ESP32 도착 후 1차 목표:
+- USB 연결 및 시리얼 로그 확인
+- WiFi 연결 확인
+- 서버 TCP 접속 확인
+- HELLO/HELLO_ACK 송수신 확인
+- 모터 없이 STATUS만 보내는 테스트
+- TB6612FNG 연결 후 바퀴 하나씩 아주 낮은 PWM으로 테스트
+- 엔코더 값 읽기 테스트
+- 간단한 전진/정지/회전 테스트
+
+ESP32 도착 후 2차 목표:
+- 서버 ROUTE_COMMAND를 받아 단순 구간 이동으로 변환
+- 주기적으로 STATUS 보고
+- 도착 판정 후 ARRIVED 보고
+- Unity에서 실제 로봇 상태를 디지털 트윈으로 표시
+- FakeRobot과 ESP32의 로그를 비교해서 서버 쪽 흐름이 동일한지 확인
+
+================================================================================
+8. 추천 테스트 시나리오
+================================================================================
+
+기본 시나리오:
+1. Server 실행
+2. Unity 실행 및 AGV 생성/맵 준비
+3. FakeRobot을 agvID 1로 실행
+4. FakeRobot이 HELLO 전송
+5. Server가 HELLO_ACK 전송
+6. Server가 ROUTE_COMMAND 전송
+7. FakeRobot이 MovementSimulator로 이동 상태 계산
+8. FakeRobot이 STATUS 주기 전송
+9. 도착하면 ARRIVED 전송
+10. Unity에서 상태가 반영되는지 확인
+
+ESP32가 오면 3번의 FakeRobot만 ESP32로 바꾸고 같은 시나리오를 따라가면 됩니다.
+
+================================================================================
+9. 현재 Git 상태
+================================================================================
+
+ M Server/CMakeLists.txt
+ M Server/FakeRobotMain.cpp
+?? AGV_Project_Report_and_Code_2026-07-14.txt
+?? Server/FakeRobotApp.cpp
+?? Server/FakeRobotApp.hpp
+
+================================================================================
+10. 포함된 전체 코드 파일 목록
+================================================================================
+
+총 파일 수: 78
+
 - CMakeLists.txt
 - Client/CMakeLists.txt
 - Client/ClientMain.cpp
@@ -15,6 +215,8 @@ Included files:
 - Server/ClientProxy.hpp
 - Server/ESP32RobotController.cpp
 - Server/ESP32RobotController.hpp
+- Server/FakeRobotApp.cpp
+- Server/FakeRobotApp.hpp
 - Server/FakeRobotMain.cpp
 - Server/IRobotController.hpp
 - Server/NetworkManagerServer.cpp
@@ -49,6 +251,8 @@ Included files:
 - Shared/MapData.json
 - Shared/MemoryStream.cpp
 - Shared/MemoryStream.hpp
+- Shared/MovementSimulator.cpp
+- Shared/MovementSimulator.hpp
 - Shared/Object.cpp
 - Shared/Object.hpp
 - Shared/ObjectRegistry.cpp
@@ -81,10 +285,14 @@ Included files:
 - Shared/header.hpp
 - Shared/json.hpp
 
+================================================================================
+11. 전체 코드
+================================================================================
 
 
-===== BEGIN FILE: CMakeLists.txt =====
-
+================================================================================
+BEGIN FILE: CMakeLists.txt
+================================================================================
 cmake_minimum_required(VERSION 3.15)
 project(AGV_FleetControlSystem LANGUAGES CXX)
 
@@ -96,11 +304,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(Shared)
 add_subdirectory(Server)
 add_subdirectory(Client)
+================================================================================
+END FILE: CMakeLists.txt
 
-===== END FILE: CMakeLists.txt =====
+================================================================================
 
-===== BEGIN FILE: Client/CMakeLists.txt =====
 
+================================================================================
+BEGIN FILE: Client/CMakeLists.txt
+================================================================================
 # 실행 파일 이름 정의 및 소스 등록
 add_executable(AGV_Client
     ClientMain.cpp    
@@ -108,11 +320,15 @@ add_executable(AGV_Client
 
 # 🌟 정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
 target_link_libraries(AGV_Client PRIVATE Shared)
+================================================================================
+END FILE: Client/CMakeLists.txt
 
-===== END FILE: Client/CMakeLists.txt =====
+================================================================================
 
-===== BEGIN FILE: Client/ClientMain.cpp =====
 
+================================================================================
+BEGIN FILE: Client/ClientMain.cpp
+================================================================================
 #include <iostream>
 
 using namespace std;
@@ -122,18 +338,26 @@ int main(void)
         
     return 0;
 }
+================================================================================
+END FILE: Client/ClientMain.cpp
 
-===== END FILE: Client/ClientMain.cpp =====
+================================================================================
 
-===== BEGIN FILE: README.md =====
 
+================================================================================
+BEGIN FILE: README.md
+================================================================================
 # SmartFactory_AGV_DigitalTwin
 
+================================================================================
+END FILE: README.md
 
-===== END FILE: README.md =====
+================================================================================
 
-===== BEGIN FILE: Server/CMakeLists.txt =====
 
+================================================================================
+BEGIN FILE: Server/CMakeLists.txt
+================================================================================
 # 실행 파일 이름 정의 및 소스 등록
 add_executable(AGV_Server
     ServerMain.cpp
@@ -153,15 +377,20 @@ target_link_libraries(AGV_Server PRIVATE Shared)
 
 add_executable(FakeRobot
     FakeRobotMain.cpp
+    FakeRobotApp.cpp
 )
 
 target_link_libraries(FakeRobot PRIVATE Shared)
 
+================================================================================
+END FILE: Server/CMakeLists.txt
 
-===== END FILE: Server/CMakeLists.txt =====
+================================================================================
 
-===== BEGIN FILE: Server/ClientProxy.cpp =====
 
+================================================================================
+BEGIN FILE: Server/ClientProxy.cpp
+================================================================================
 #include "ClientProxy.hpp"
 #include "TCPSession.hpp"
 #include "MemoryStream.hpp"
@@ -182,11 +411,15 @@ void ClientProxy::SendPacket(OutputMemoryStream& _inStream)
 {
     m_TCPSession->SendPacket(_inStream);
 }
+================================================================================
+END FILE: Server/ClientProxy.cpp
 
-===== END FILE: Server/ClientProxy.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ClientProxy.hpp =====
 
+================================================================================
+BEGIN FILE: Server/ClientProxy.hpp
+================================================================================
 #pragma once
 #include <memory>
 #include "TCPSession.hpp"
@@ -216,11 +449,15 @@ public:
 };
 
 using ClientProxyPtr = std::shared_ptr<ClientProxy>;
+================================================================================
+END FILE: Server/ClientProxy.hpp
 
-===== END FILE: Server/ClientProxy.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ESP32RobotController.cpp =====
 
+================================================================================
+BEGIN FILE: Server/ESP32RobotController.cpp
+================================================================================
 #include "ESP32RobotController.hpp"
 
 ESP32RobotController::ESP32RobotController(TCPSessionPtr _robotSession)
@@ -290,11 +527,15 @@ void ESP32RobotController::Update(float dt, float serverTime)
     (void)serverTime;
 }
 
+================================================================================
+END FILE: Server/ESP32RobotController.cpp
 
-===== END FILE: Server/ESP32RobotController.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ESP32RobotController.hpp =====
 
+================================================================================
+BEGIN FILE: Server/ESP32RobotController.hpp
+================================================================================
 #pragma once
 #include "IRobotController.hpp"
 #include "RobotSession.hpp"
@@ -329,197 +570,53 @@ public:
     virtual void SetIsNodeFreeCallback(std::function<bool(uint32_t)> callback) override { m_IsNodeFreeCallback = callback; }
 };
 
+================================================================================
+END FILE: Server/ESP32RobotController.hpp
 
-===== END FILE: Server/ESP32RobotController.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/FakeRobotMain.cpp =====
 
-#include "MemoryStream.hpp"
-#include "PacketSerializer.hpp"
+================================================================================
+BEGIN FILE: Server/FakeRobotApp.cpp
+================================================================================
+#include "FakeRobotApp.hpp"
 #include "SocketAddressFactory.hpp"
 #include "SocketUtil.hpp"
-#include "TCPSession.hpp"
-#include <chrono>
 #include <cstdlib>
 #include <iostream>
-#include <string>
-#include <thread>
-#include <vector>
 
-namespace
+FakeRobotApp::FakeRobotApp(std::string serverAddress, uint32_t requestedAgvID)
+    : m_ServerAddress(std::move(serverAddress))
+    , m_AgvID(requestedAgvID)
+    , m_Simulator(requestedAgvID, 0.0f, 0.0f, 0.0f)
 {
-    uint32_t NowMs()
-    {
-        using namespace std::chrono;
-        return static_cast<uint32_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
-    }
-
-    void SendRobotPacket(TCPSessionPtr session, RobotProtocol::PacketID packetID, uint32_t agvID, uint32_t& sequence, OutputMemoryStream& payloadStream)
-    {
-        OutputMemoryStream bodyStream;
-        RobotProtocol::WritePacketBodyHeader(bodyStream, packetID, agvID, sequence++);
-        bodyStream.Write(payloadStream.GetBuffer(), payloadStream.GetLength());
-        session->SendPacket(bodyStream);
-    }
-
-    void SendHello(TCPSessionPtr session, uint32_t requestedAgvID, uint32_t& sequence)
-    {
-        RobotProtocol::HelloPayload payload;
-        payload.protocolVersion = RobotProtocol::kProtocolVersion;
-        payload.clientType = RobotProtocol::ClientType::FAKE_ROBOT;
-        payload.requestedAgvID = requestedAgvID;
-
-        OutputMemoryStream payloadStream;
-        RobotProtocol::WriteHelloPayload(payloadStream, payload);
-        SendRobotPacket(session, RobotProtocol::PacketID::HELLO, requestedAgvID, sequence, payloadStream);
-    }
-
-    void SendStatus(TCPSessionPtr session, uint32_t agvID, uint32_t currentNodeID, float progress, uint32_t& sequence)
-    {
-        RobotProtocol::StatusPayload payload;
-        payload.currentNodeID = currentNodeID;
-        payload.currentLinkID = 0;
-        payload.progress = progress;
-        payload.x = progress * 10.0f;
-        payload.z = static_cast<float>(agvID);
-        payload.heading = 0.0f;
-        payload.velocity = progress > 0.0f && progress < 1.0f ? 1.0f : 0.0f;
-        payload.battery = 99.0f;
-        payload.state = RobotProtocol::RobotState::MOVING;
-
-        OutputMemoryStream payloadStream;
-        RobotProtocol::WriteStatusPayload(payloadStream, payload);
-        SendRobotPacket(session, RobotProtocol::PacketID::STATUS, agvID, sequence, payloadStream);
-    }
-
-    void SendArrived(TCPSessionPtr session, uint32_t agvID, uint32_t currentNodeID, uint32_t& sequence)
-    {
-        RobotProtocol::ArrivedPayload payload;
-        payload.currentNodeID = currentNodeID;
-
-        OutputMemoryStream payloadStream;
-        RobotProtocol::WriteArrivedPayload(payloadStream, payload);
-        SendRobotPacket(session, RobotProtocol::PacketID::ARRIVED, agvID, sequence, payloadStream);
-    }
-
-    void SendPong(TCPSessionPtr session, uint32_t agvID, uint32_t timestampMs, uint32_t& sequence)
-    {
-        RobotProtocol::TimePayload payload;
-        payload.timestampMs = timestampMs;
-
-        OutputMemoryStream payloadStream;
-        RobotProtocol::WriteTimePayload(payloadStream, payload);
-        SendRobotPacket(session, RobotProtocol::PacketID::PONG, agvID, sequence, payloadStream);
-    }
 }
 
-int main(int argc, char** argv)
+int FakeRobotApp::Run()
 {
     std::cout.setf(std::ios::unitbuf);
 
-    std::string serverAddress = argc >= 2 ? argv[1] : "127.0.0.1:6666";
-    uint32_t agvID = argc >= 3 ? static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 10)) : 1;
-
-    SocketAddressPtr address = SocketAddressFactory::CreateIPv4FromString(serverAddress);
-    if (!address)
-    {
-        std::cerr << "[FakeRobot] Invalid server address: " << serverAddress << "\n";
+    if (!Connect())
         return 1;
-    }
 
-    TCPSocketPtr socket = SocketUtil::CreateTCPSocket(AF_INET);
-    if (socket->Connect(*address) == ERROR)
-    {
-        std::cerr << "[FakeRobot] Failed to connect: " << serverAddress << "\n";
-        return 1;
-    }
+    InstallPacketHandler();
+    SendHello();
+    std::cout << "[FakeRobot] Connected to " << m_ServerAddress
+              << " as requested AGV " << m_AgvID << "\n";
 
-    TCPSessionPtr session = std::make_shared<TCPSession>();
-    session->SetSocket(socket);
+    m_LastUpdate = std::chrono::steady_clock::now();
+    m_LastStatus = m_LastUpdate;
 
-    bool accepted = false;
-    bool running = true;
-    bool routeActive = false;
-    uint32_t sequence = 1;
-    uint32_t currentNodeID = 0;
-    size_t nextNodeIndex = 0;
-    float progress = 0.0f;
-    RobotProtocol::RouteCommandPayload currentRoute;
-
-    session->OnPacketReceived = [&](InputMemoryStream& inStream)
-    {
-        RobotProtocol::PacketBodyHeader header;
-        if (!RobotProtocol::ReadPacketBodyHeader(inStream, header))
-        {
-            std::cout << "[FakeRobot] Invalid packet header\n";
-            return;
-        }
-
-        const RobotProtocol::PacketID packetID = static_cast<RobotProtocol::PacketID>(header.packetID);
-        switch (packetID)
-        {
-        case RobotProtocol::PacketID::HELLO_ACK:
-        {
-            RobotProtocol::HelloAckPayload payload;
-            if (RobotProtocol::ReadHelloAckPayload(inStream, payload))
-            {
-                accepted = payload.accepted != 0;
-                agvID = payload.assignedAgvID != 0 ? payload.assignedAgvID : agvID;
-                std::cout << "[FakeRobot] HELLO_ACK accepted=" << accepted
-                          << " assignedAgvID=" << agvID
-                          << " error=" << static_cast<uint16_t>(payload.errorCode) << "\n";
-                if (!accepted)
-                    running = false;
-            }
-            break;
-        }
-        case RobotProtocol::PacketID::ROUTE_COMMAND:
-        {
-            if (RobotProtocol::ReadRouteCommandPayload(inStream, currentRoute))
-            {
-                routeActive = currentRoute.nodes.size() >= 2;
-                nextNodeIndex = routeActive ? 1 : 0;
-                progress = 0.0f;
-                currentNodeID = currentRoute.nodes.empty() ? currentNodeID : currentRoute.nodes.front().nodeID;
-                std::cout << "[FakeRobot] ROUTE routeID=" << currentRoute.routeID
-                          << " nodes=" << currentRoute.nodes.size() << "\n";
-            }
-            break;
-        }
-        case RobotProtocol::PacketID::CANCEL_ROUTE:
-            routeActive = false;
-            progress = 0.0f;
-            std::cout << "[FakeRobot] CANCEL_ROUTE\n";
-            break;
-        case RobotProtocol::PacketID::PING:
-        {
-            RobotProtocol::TimePayload payload;
-            if (RobotProtocol::ReadTimePayload(inStream, payload))
-                SendPong(session, agvID, payload.timestampMs, sequence);
-            break;
-        }
-        default:
-            break;
-        }
-    };
-
-    SendHello(session, agvID, sequence);
-    std::cout << "[FakeRobot] Connected to " << serverAddress << " as requested AGV " << agvID << "\n";
-
-    std::vector<TCPSocketPtr> readSockets{ socket };
-    std::vector<TCPSocketPtr> readableSockets;
-
-    auto lastStatus = std::chrono::steady_clock::now();
-    while (running)
+    while (m_Running)
     {
         timeval timeoutValue;
         timeoutValue.tv_sec = 0;
         timeoutValue.tv_usec = 100000;
 
-        int selected = SocketUtil::Select(&readSockets, &readableSockets, nullptr, nullptr, nullptr, nullptr, &timeoutValue);
+        int selected = SocketUtil::Select(&m_ReadSockets, &m_ReadableSockets, nullptr, nullptr, nullptr, nullptr, &timeoutValue);
         if (selected > 0)
         {
-            if (!session->ProcessIncomingData())
+            if (!m_Session->ProcessIncomingData())
             {
                 std::cout << "[FakeRobot] Server disconnected\n";
                 return 0;
@@ -527,49 +624,317 @@ int main(int argc, char** argv)
         }
 
         auto now = std::chrono::steady_clock::now();
-        float dt = std::chrono::duration<float>(now - lastStatus).count();
-        if (dt < 0.5f)
+        float dt = std::chrono::duration<float>(now - m_LastUpdate).count();
+        m_LastUpdate = now;
+
+        if (!m_Accepted)
             continue;
 
-        lastStatus = now;
+        UpdateSimulation(dt);
+        SendPeriodicStatus(now);
+    }
 
-        if (!accepted)
-            continue;
+    return m_Accepted ? 0 : 1;
+}
 
-        if (routeActive && nextNodeIndex < currentRoute.nodes.size())
+bool FakeRobotApp::Connect()
+{
+    SocketAddressPtr address = SocketAddressFactory::CreateIPv4FromString(m_ServerAddress);
+    if (!address)
+    {
+        std::cerr << "[FakeRobot] Invalid server address: " << m_ServerAddress << "\n";
+        return false;
+    }
+
+    m_Socket = SocketUtil::CreateTCPSocket(AF_INET);
+    if (m_Socket->Connect(*address) == ERROR)
+    {
+        std::cerr << "[FakeRobot] Failed to connect: " << m_ServerAddress << "\n";
+        return false;
+    }
+
+    m_Session = std::make_shared<TCPSession>();
+    m_Session->SetSocket(m_Socket);
+    m_ReadSockets = { m_Socket };
+    return true;
+}
+
+void FakeRobotApp::InstallPacketHandler()
+{
+    m_Session->OnPacketReceived = [this](InputMemoryStream& inStream)
+    {
+        HandlePacket(inStream);
+    };
+}
+
+void FakeRobotApp::HandlePacket(InputMemoryStream& inStream)
+{
+    RobotProtocol::PacketBodyHeader header;
+    if (!RobotProtocol::ReadPacketBodyHeader(inStream, header))
+    {
+        std::cout << "[FakeRobot] Invalid packet header\n";
+        return;
+    }
+
+    const RobotProtocol::PacketID packetID = static_cast<RobotProtocol::PacketID>(header.packetID);
+    switch (packetID)
+    {
+    case RobotProtocol::PacketID::HELLO_ACK:
+        HandleHelloAck(inStream);
+        break;
+    case RobotProtocol::PacketID::ROUTE_COMMAND:
+        HandleRouteCommand(inStream);
+        break;
+    case RobotProtocol::PacketID::CANCEL_ROUTE:
+        HandleCancelRoute();
+        break;
+    case RobotProtocol::PacketID::PING:
+        HandlePing(inStream);
+        break;
+    default:
+        break;
+    }
+}
+
+void FakeRobotApp::HandleHelloAck(InputMemoryStream& inStream)
+{
+    RobotProtocol::HelloAckPayload payload;
+    if (!RobotProtocol::ReadHelloAckPayload(inStream, payload))
+        return;
+
+    m_Accepted = payload.accepted != 0;
+    m_AgvID = payload.assignedAgvID != 0 ? payload.assignedAgvID : m_AgvID;
+    std::cout << "[FakeRobot] HELLO_ACK accepted=" << m_Accepted
+              << " assignedAgvID=" << m_AgvID
+              << " error=" << static_cast<uint16_t>(payload.errorCode) << "\n";
+
+    if (!m_Accepted)
+        m_Running = false;
+}
+
+void FakeRobotApp::HandleRouteCommand(InputMemoryStream& inStream)
+{
+    if (!RobotProtocol::ReadRouteCommandPayload(inStream, m_CurrentRoute))
+        return;
+
+    m_RouteActive = m_CurrentRoute.nodes.size() >= 2;
+
+    RoutePacket routePacket;
+    routePacket.agvID = m_AgvID;
+    routePacket.nodes = m_CurrentRoute.nodes;
+    m_Simulator.LoadRoute(routePacket);
+
+    if (!routePacket.nodes.empty())
+        m_SimulatorTime = routePacket.nodes.front().departureTime;
+
+    std::cout << "[FakeRobot] ROUTE routeID=" << m_CurrentRoute.routeID
+              << " nodes=" << m_CurrentRoute.nodes.size() << "\n";
+}
+
+void FakeRobotApp::HandleCancelRoute()
+{
+    m_RouteActive = false;
+    m_Simulator.CancelRoute();
+    std::cout << "[FakeRobot] CANCEL_ROUTE\n";
+}
+
+void FakeRobotApp::HandlePing(InputMemoryStream& inStream)
+{
+    RobotProtocol::TimePayload payload;
+    if (RobotProtocol::ReadTimePayload(inStream, payload))
+        SendPong(payload.timestampMs);
+}
+
+void FakeRobotApp::UpdateSimulation(float dt)
+{
+    m_SimulatorTime += dt;
+
+    if (!m_RouteActive)
+        return;
+
+    m_Simulator.Update(dt, m_SimulatorTime);
+    while (m_Simulator.HasEvent())
+    {
+        MovementEvent event = m_Simulator.PopEvent();
+        if (event.type == MovementEventType::ARRIVED)
         {
-            progress += 0.25f;
-            if (progress >= 1.0f)
-            {
-                currentNodeID = currentRoute.nodes[nextNodeIndex].nodeID;
-                SendStatus(session, agvID, currentNodeID, 1.0f, sequence);
-                SendArrived(session, agvID, currentNodeID, sequence);
-                std::cout << "[FakeRobot] ARRIVED node=" << currentNodeID << "\n";
-
-                ++nextNodeIndex;
-                progress = 0.0f;
-                if (nextNodeIndex >= currentRoute.nodes.size())
-                    routeActive = false;
-            }
-            else
-            {
-                SendStatus(session, agvID, currentNodeID, progress, sequence);
-            }
-        }
-        else
-        {
-            SendStatus(session, agvID, currentNodeID, 0.0f, sequence);
+            SendArrived(event.nodeID);
+            std::cout << "[FakeRobot] ARRIVED node=" << event.nodeID << "\n";
         }
     }
 
-    return accepted ? 0 : 1;
+    m_RouteActive = !m_Simulator.IsRouteComplete();
 }
 
+void FakeRobotApp::SendPeriodicStatus(std::chrono::steady_clock::time_point now)
+{
+    const float statusInterval = std::chrono::duration<float>(now - m_LastStatus).count();
+    if (statusInterval < 0.1f)
+        return;
 
-===== END FILE: Server/FakeRobotMain.cpp =====
+    StatusPacket status = m_Simulator.GetStatus();
+    status.agvID = m_AgvID;
+    SendStatus(status);
+    m_LastStatus = now;
+}
 
-===== BEGIN FILE: Server/IRobotController.hpp =====
+void FakeRobotApp::SendHello()
+{
+    RobotProtocol::HelloPayload payload;
+    payload.protocolVersion = RobotProtocol::kProtocolVersion;
+    payload.clientType = RobotProtocol::ClientType::FAKE_ROBOT;
+    payload.requestedAgvID = m_AgvID;
 
+    OutputMemoryStream payloadStream;
+    RobotProtocol::WriteHelloPayload(payloadStream, payload);
+    SendRobotPacket(RobotProtocol::PacketID::HELLO, m_AgvID, payloadStream);
+}
+
+void FakeRobotApp::SendStatus(const StatusPacket& status)
+{
+    RobotProtocol::StatusPayload payload;
+    payload.currentNodeID = 0;
+    payload.currentLinkID = status.currentLinkID;
+    payload.progress = status.progress;
+    payload.x = status.x;
+    payload.z = status.z;
+    payload.heading = status.heading;
+    payload.velocity = status.velocity;
+    payload.battery = status.battery;
+    payload.state = status.velocity > 0.001f ? RobotProtocol::RobotState::MOVING : RobotProtocol::RobotState::IDLE;
+
+    OutputMemoryStream payloadStream;
+    RobotProtocol::WriteStatusPayload(payloadStream, payload);
+    SendRobotPacket(RobotProtocol::PacketID::STATUS, status.agvID, payloadStream);
+}
+
+void FakeRobotApp::SendArrived(uint32_t currentNodeID)
+{
+    RobotProtocol::ArrivedPayload payload;
+    payload.currentNodeID = currentNodeID;
+
+    OutputMemoryStream payloadStream;
+    RobotProtocol::WriteArrivedPayload(payloadStream, payload);
+    SendRobotPacket(RobotProtocol::PacketID::ARRIVED, m_AgvID, payloadStream);
+}
+
+void FakeRobotApp::SendPong(uint32_t timestampMs)
+{
+    RobotProtocol::TimePayload payload;
+    payload.timestampMs = timestampMs;
+
+    OutputMemoryStream payloadStream;
+    RobotProtocol::WriteTimePayload(payloadStream, payload);
+    SendRobotPacket(RobotProtocol::PacketID::PONG, m_AgvID, payloadStream);
+}
+
+void FakeRobotApp::SendRobotPacket(RobotProtocol::PacketID packetID, uint32_t agvID, OutputMemoryStream& payloadStream)
+{
+    OutputMemoryStream bodyStream;
+    RobotProtocol::WritePacketBodyHeader(bodyStream, packetID, agvID, m_NextSequence++);
+    bodyStream.Write(payloadStream.GetBuffer(), payloadStream.GetLength());
+    m_Session->SendPacket(bodyStream);
+}
+
+================================================================================
+END FILE: Server/FakeRobotApp.cpp
+
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Server/FakeRobotApp.hpp
+================================================================================
+#pragma once
+#include "MemoryStream.hpp"
+#include "MovementSimulator.hpp"
+#include "PacketSerializer.hpp"
+#include "TCPSession.hpp"
+#include "TCPSocket.hpp"
+#include <chrono>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+class FakeRobotApp
+{
+public:
+    FakeRobotApp(std::string serverAddress, uint32_t requestedAgvID);
+
+    int Run();
+
+private:
+    bool Connect();
+    void InstallPacketHandler();
+
+    void HandlePacket(InputMemoryStream& inStream);
+    void HandleHelloAck(InputMemoryStream& inStream);
+    void HandleRouteCommand(InputMemoryStream& inStream);
+    void HandleCancelRoute();
+    void HandlePing(InputMemoryStream& inStream);
+
+    void UpdateSimulation(float dt);
+    void SendPeriodicStatus(std::chrono::steady_clock::time_point now);
+
+    void SendHello();
+    void SendStatus(const StatusPacket& status);
+    void SendArrived(uint32_t currentNodeID);
+    void SendPong(uint32_t timestampMs);
+    void SendRobotPacket(RobotProtocol::PacketID packetID, uint32_t agvID, OutputMemoryStream& payloadStream);
+
+private:
+    std::string m_ServerAddress;
+    uint32_t m_AgvID = 0;
+    bool m_Accepted = false;
+    bool m_Running = true;
+    bool m_RouteActive = false;
+
+    uint32_t m_NextSequence = 1;
+    float m_SimulatorTime = 0.0f;
+
+    TCPSocketPtr m_Socket;
+    TCPSessionPtr m_Session;
+    std::vector<TCPSocketPtr> m_ReadSockets;
+    std::vector<TCPSocketPtr> m_ReadableSockets;
+
+    MovementSimulator m_Simulator;
+    RobotProtocol::RouteCommandPayload m_CurrentRoute;
+
+    std::chrono::steady_clock::time_point m_LastUpdate;
+    std::chrono::steady_clock::time_point m_LastStatus;
+};
+
+================================================================================
+END FILE: Server/FakeRobotApp.hpp
+
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Server/FakeRobotMain.cpp
+================================================================================
+#include "FakeRobotApp.hpp"
+#include <cstdlib>
+#include <string>
+
+int main(int argc, char** argv)
+{
+    std::string serverAddress = argc >= 2 ? argv[1] : "127.0.0.1:6666";
+    uint32_t agvID = argc >= 3 ? static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 10)) : 1;
+
+    FakeRobotApp app(serverAddress, agvID);
+    return app.Run();
+}
+
+================================================================================
+END FILE: Server/FakeRobotMain.cpp
+
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Server/IRobotController.hpp
+================================================================================
 #pragma once
 #include "SharedPackets.hpp"
 #include "TCPSession.hpp"
@@ -613,11 +978,15 @@ public:
     virtual void SetIsNodeFreeCallback(std::function<bool(uint32_t)> callback) = 0;
 };
 
+================================================================================
+END FILE: Server/IRobotController.hpp
 
-===== END FILE: Server/IRobotController.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/NetworkManagerServer.cpp =====
 
+================================================================================
+BEGIN FILE: Server/NetworkManagerServer.cpp
+================================================================================
 #include "NetworkManagerServer.hpp"
 #include "MemoryStream.hpp"
 #include "ClientProxy.hpp"
@@ -1021,13 +1390,17 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     m_TotalElapsedServerTime += _deltaTime;    
 
     // 1. INPUT 레이어: 컨트롤러 패킷 수거
-    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) {
-        while (it->second->HasEvent()) {            
+    for (auto it = RobotManager::GetInstance().GetRobotControllers().begin(); it != RobotManager::GetInstance().GetRobotControllers().end(); ++it) 
+    {
+        while (it->second->HasEvent()) 
+        {            
             ControllerEvent ev = it->second->PopEvent();
-            if (ev.type == ControllerEventType::ARRIVED) {
+            if (ev.type == ControllerEventType::ARRIVED) 
+            {
                 EventManager::GetInstance().Publish({ RobotEventType::NODE_ARRIVED, it->first, m_TotalElapsedServerTime, ev.nodeID });
             }
-            else if (ev.type == ControllerEventType::EXECUTION_BLOCKED) {
+            else if (ev.type == ControllerEventType::EXECUTION_BLOCKED) 
+            {
                 RoutePlanner::GetInstance().OnExecutionBlocked(it->first, ev.nodeID, ev.relatedNodeID, m_TotalElapsedServerTime);
             }
         }
@@ -1036,8 +1409,10 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     // 2. LOGIC 레이어: 장부 갱신 및 시공간 설계
     EventManager::GetInstance().SwapAndProcessEvents(); 
     RoutePlanner::GetInstance().Update(_deltaTime, m_TotalElapsedServerTime);
-    for (auto& agvObj : AGVManager::GetInstance().m_AGVs) {
-        if (Robo* agv = dynamic_cast<Robo*>(agvObj.get())) {
+    for (auto& agvObj : AGVManager::GetInstance().m_AGVs) 
+    {
+        if (Robo* agv = dynamic_cast<Robo*>(agvObj.get())) 
+        {
             agv->UpdateWorkTimer(_deltaTime, m_TotalElapsedServerTime);
         }
     }
@@ -1058,11 +1433,15 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
     }
 }
 
+================================================================================
+END FILE: Server/NetworkManagerServer.cpp
 
-===== END FILE: Server/NetworkManagerServer.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/NetworkManagerServer.hpp =====
 
+================================================================================
+BEGIN FILE: Server/NetworkManagerServer.hpp
+================================================================================
 #pragma once
 #include "Object.hpp"
 #include "TCPSocket.hpp"
@@ -1122,11 +1501,15 @@ public:
     float GetTotalElapsedServerTime()const{return m_TotalElapsedServerTime;}
 };
 
+================================================================================
+END FILE: Server/NetworkManagerServer.hpp
 
-===== END FILE: Server/NetworkManagerServer.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ReplicationManagerServer.cpp =====
 
+================================================================================
+BEGIN FILE: Server/ReplicationManagerServer.cpp
+================================================================================
 #include "ReplicationManagerServer.hpp"
 #include "MemoryStream.hpp"
 #include "NetworkManagerServer.hpp"
@@ -1200,11 +1583,15 @@ void ReplicationManagerServer::Write(OutputMemoryStream& _outStream)
     }
     m_ObjectToRemove.clear();
 }
+================================================================================
+END FILE: Server/ReplicationManagerServer.cpp
 
-===== END FILE: Server/ReplicationManagerServer.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ReplicationManagerServer.hpp =====
 
+================================================================================
+BEGIN FILE: Server/ReplicationManagerServer.hpp
+================================================================================
 #pragma once
 #include <unordered_map>
 #include "header.hpp"
@@ -1234,19 +1621,27 @@ private:
 
     void Write(OutputMemoryStream& _outStream);
 };
+================================================================================
+END FILE: Server/ReplicationManagerServer.hpp
 
-===== END FILE: Server/ReplicationManagerServer.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RoboServer.cpp =====
 
+================================================================================
+BEGIN FILE: Server/RoboServer.cpp
+================================================================================
 #include "RoboServer.hpp"
 //
 RoboServer::~RoboServer(){}
+================================================================================
+END FILE: Server/RoboServer.cpp
 
-===== END FILE: Server/RoboServer.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RoboServer.hpp =====
 
+================================================================================
+BEGIN FILE: Server/RoboServer.hpp
+================================================================================
 #pragma once
 
 #include "Robo.hpp"
@@ -1261,11 +1656,15 @@ public:
 public:
     static ObjectPtr StaticCreate(){return std::make_shared<RoboServer>();}
 };
+================================================================================
+END FILE: Server/RoboServer.hpp
 
-===== END FILE: Server/RoboServer.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RobotManager.hpp =====
 
+================================================================================
+BEGIN FILE: Server/RobotManager.hpp
+================================================================================
 #pragma once
 #include <unordered_map>
 #include <memory>
@@ -1329,11 +1728,15 @@ public:
     }
 };
 
+================================================================================
+END FILE: Server/RobotManager.hpp
 
-===== END FILE: Server/RobotManager.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RobotSession.cpp =====
 
+================================================================================
+BEGIN FILE: Server/RobotSession.cpp
+================================================================================
 #include "RobotSession.hpp"
 #include <iostream>
 
@@ -1484,11 +1887,15 @@ void RobotSession::SendRobotPacket(RobotProtocol::PacketID packetID, uint32_t ag
     m_TCPSession->SendPacket(bodyStream);
 }
 
+================================================================================
+END FILE: Server/RobotSession.cpp
 
-===== END FILE: Server/RobotSession.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RobotSession.hpp =====
 
+================================================================================
+BEGIN FILE: Server/RobotSession.hpp
+================================================================================
 #pragma once
 #include "IRobotController.hpp"
 #include "PacketSerializer.hpp"
@@ -1530,11 +1937,15 @@ private:
 
 using RobotSessionPtr = std::shared_ptr<RobotSession>;
 
+================================================================================
+END FILE: Server/RobotSession.hpp
 
-===== END FILE: Server/RobotSession.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RoutePlanner.cpp =====
 
+================================================================================
+BEGIN FILE: Server/RoutePlanner.cpp
+================================================================================
 #include "RoutePlanner.hpp"
 #include "AGVManager.hpp"
 #include "PathFinder.hpp"
@@ -1837,11 +2248,15 @@ void RoutePlanner::FinishRoute(Robo* agv, RoutePlan& plan, const RobotEvent& _e)
     }
 }
 
+================================================================================
+END FILE: Server/RoutePlanner.cpp
 
-===== END FILE: Server/RoutePlanner.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/RoutePlanner.hpp =====
 
+================================================================================
+BEGIN FILE: Server/RoutePlanner.hpp
+================================================================================
 #pragma once
 #include <vector>
 #include <unordered_map>
@@ -1915,11 +2330,15 @@ private:
     void FinishRoute(Robo* agv, RoutePlan& plan, const RobotEvent& _e);
 };
 
+================================================================================
+END FILE: Server/RoutePlanner.hpp
 
-===== END FILE: Server/RoutePlanner.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/ServerMain.cpp =====
 
+================================================================================
+BEGIN FILE: Server/ServerMain.cpp
+================================================================================
 #include <cassert>
 #include <iostream>
 #include "SocketAddressFactory.hpp"
@@ -2046,11 +2465,15 @@ int main(void)
     return 0;
 }
 
+================================================================================
+END FILE: Server/ServerMain.cpp
 
-===== END FILE: Server/ServerMain.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/TaskManager.cpp =====
 
+================================================================================
+BEGIN FILE: Server/TaskManager.cpp
+================================================================================
 #include "TaskManager.hpp"
 #include "DispatchManager.hpp"
 #include "RoutePlanner.hpp"
@@ -2121,9 +2544,8 @@ void TaskManager::OnRobotLoadCompleted(const RobotEvent& _e)
     if(!agv) return;    
 
     if (unloadNodeID == -1)
-    {
-        // 하차지가 날 때까지 대기실에 번호표(agvID)만 뽑고 갓길(집)로 피신!
-        m_WaitingAGVs.push(_e.agvID); // 🌟 uint32_t만 푸시
+    {        
+        m_WaitingAGVs.push(_e.agvID); // 
 
         if (agv->GetToNodeID() != agv->GetHomeNode() && agv->GetMissionPurpose() != MissionPurpose::HOME)
         {            
@@ -2145,11 +2567,15 @@ void TaskManager::OnRobotUnloadCompleted(const RobotEvent& _e)
     // 내가 하차를 끝냈으니 자리가 났다! 번호표 뽑고 기다리던 인원들 깨우기!
     ProcessNextDispatch();
 }
+================================================================================
+END FILE: Server/TaskManager.cpp
 
-===== END FILE: Server/TaskManager.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/TaskManager.hpp =====
 
+================================================================================
+BEGIN FILE: Server/TaskManager.hpp
+================================================================================
 #pragma once
 #include "Event.hpp"
 #include <queue>
@@ -2169,76 +2595,24 @@ public:
     void OnRobotLoadCompleted(const RobotEvent& _e);
     void OnRobotUnloadCompleted(const RobotEvent& _e);    
 };
+================================================================================
+END FILE: Server/TaskManager.hpp
 
-===== END FILE: Server/TaskManager.hpp =====
+================================================================================
 
-===== BEGIN FILE: Server/UnityRobotController.cpp =====
 
+================================================================================
+BEGIN FILE: Server/UnityRobotController.cpp
+================================================================================
 #include "UnityRobotController.hpp"
-#include "Map.hpp"
-#include "BezierFollower.hpp"
-#include "AGVKinematics.hpp"
-#include <iostream>
-#include <algorithm>
-#include <cmath>
-
-const float NODE_RELEASE_OFFSET = 1.1f;
-const float DESTINATION_STOP_OFFSET = 1.2f;
-const float EXECUTION_BLOCK_TIMEOUT = 1.0f;
-const uint32_t EXECUTION_BLOCK_ATTEMPTS = 12;
-
-static float GetLinkDistance(const CachedLink& cache)
-{
-    if (cache.link.m_Type == 1 && cache.link.m_Dist > 0.0f)
-        return cache.link.m_Dist;
-
-    const float dx = cache.toNode.m_PosX - cache.fromNode.m_PosX;
-    const float dz = cache.toNode.m_PosZ - cache.fromNode.m_PosZ;
-    float dist = std::sqrt(dx * dx + dz * dz);
-    return (dist > 0.0f) ? dist : 1.0f;
-}
-
-static float ClampRatio(float value, float minValue, float maxValue)
-{
-    return std::max(minValue, std::min(value, maxValue));
-}
-
-static void StepHeadingTowards(float& heading, float& angularVelocity, float targetHeading, float dt)
-{
-    const float headingError = AGVKinematics::NormalizeAngle(targetHeading - heading);
-    const float targetAngularVelocity = std::clamp(
-        headingError * AGVKinematics::HEADING_KP,
-        -AGVKinematics::MAX_ANGULAR_SPEED,
-        AGVKinematics::MAX_ANGULAR_SPEED
-    );
-
-    angularVelocity = AGVKinematics::MoveAngularVelocityTowards(angularVelocity, targetAngularVelocity, dt);
-
-    const float step = angularVelocity * dt;
-    if (std::abs(step) >= std::abs(headingError))
-    {
-        heading = targetHeading;
-        angularVelocity = 0.0f;
-        return;
-    }
-
-    heading = AGVKinematics::NormalizeAngle(heading + step);
-}
 
 UnityRobotController::UnityRobotController()
-    : m_CurrentLinkIndex(0), m_LinkProgress(0.0f), m_DistanceOnLink(0.0f)
-    , m_CurrentVelocity(0.0f), m_CurrentAngularVelocity(0.0f)
-    , m_IsMovingLink(false), m_ActualStartTime(0.0f)
-    , m_OverTime(0.0f), m_HasReleasedFromNode(false)
-    , m_X(0.0f), m_Z(0.0f), m_Heading(0.0f) {}
+{
+}
 
 UnityRobotController::UnityRobotController(uint32_t agvID, float x, float z, float heading)
-    : UnityRobotController()
+    : m_Simulator(agvID, x, z, heading)
 {
-    m_CurrentRoute.agvID = agvID;
-    m_X = x;
-    m_Z = z;
-    m_Heading = heading;
 }
 
 UnityRobotController::~UnityRobotController() {}
@@ -2246,84 +2620,26 @@ UnityRobotController::~UnityRobotController() {}
 void UnityRobotController::FollowRoute(const RoutePacket& _routePacket)
 {   
     while(!m_EventQueue.empty()) { m_EventQueue.pop(); } 
-
-    m_CurrentRoute = _routePacket;
-    m_CurrentLinkIndex = 0;
-    m_LinkProgress = 0.0f;
-    m_DistanceOnLink = 0.0f;
-    m_CurrentVelocity = 0.0f;
-    m_CurrentAngularVelocity = 0.0f;
-    m_CachedLinks.clear();
-    
-    m_OverTime = 0.0f;
-    m_IsMovingLink = false;
-    m_ActualStartTime = 0.0f;
-    m_HasReleasedFromNode = false; 
-    m_ExecutionWaitTime = 0.0f;
-    m_ExecutionWaitAttempts = 0;
-    m_BlockEventSent = false;
-
-    if (_routePacket.nodes.empty()) return;
-
-    MapManager& map = MapManager::GetInstance();
-    const MapNode startNode = map.GetMapNode(_routePacket.nodes.front().nodeID);
-    m_X = startNode.m_PosX;
-    m_Z = startNode.m_PosZ;
-
-    if (_routePacket.nodes.size() < 2) return;
-
-    const size_t linkCount = _routePacket.nodes.size() - 1;
-    m_CachedLinks.reserve(linkCount);
-    for (size_t i = 0; i < linkCount; i++)
-    {
-        uint32_t fromID = _routePacket.nodes[i].nodeID;
-        uint32_t toID   = _routePacket.nodes[i+1].nodeID;
-        float depTime   = _routePacket.nodes[i].departureTime;
-        float arrTime   = _routePacket.nodes[i+1].arrivalTime;
-
-        MapLink link = map.FindLink(fromID, toID);
-        MapNode from = map.GetMapNode(fromID);
-        MapNode to   = map.GetMapNode(toID);
-
-        m_CachedLinks.push_back({ link, from, to, depTime, arrTime });
-    }
+    m_Simulator.LoadRoute(_routePacket);
 }
 
 void UnityRobotController::CancelRoute()
 {
-    m_CachedLinks.clear();
-    m_IsMovingLink = false;
-    m_LinkProgress = 0.0f;
-    m_DistanceOnLink = 0.0f;
-    m_CurrentVelocity = 0.0f;
-    m_CurrentAngularVelocity = 0.0f;
-    m_OverTime = 0.0f;
-    m_ExecutionWaitTime = 0.0f;
-    m_ExecutionWaitAttempts = 0;
-    m_BlockEventSent = false;
+    m_Simulator.CancelRoute();
     while(!m_EventQueue.empty()) { m_EventQueue.pop(); }
 }
 
 StatusPacket UnityRobotController::GetStatus()
 {
-    StatusPacket p;
-    p.agvID = m_CurrentRoute.agvID;
-    if(m_CurrentLinkIndex < m_CachedLinks.size()) p.currentLinkID = m_CachedLinks[m_CurrentLinkIndex].link.m_Id;
-    else p.currentLinkID = 0; 
-    
-    p.progress = m_LinkProgress;
-    p.x = m_X; 
-    p.z = m_Z; 
-    p.heading = m_Heading; 
-    p.velocity = m_CurrentVelocity; p.battery = 100.0f; 
-    return p;
+    return m_Simulator.GetStatus();
 }
 
-bool UnityRobotController::HasEvent() const { return !m_EventQueue.empty(); }
+bool UnityRobotController::HasEvent() const { return !m_EventQueue.empty() || m_Simulator.HasEvent(); }
 
 ControllerEvent UnityRobotController::PopEvent()
 {
-    if(m_EventQueue.empty()) return ControllerEvent{ControllerEventType::NONE, 0};
+    DrainSimulatorEvents();
+    if(m_EventQueue.empty()) return ControllerEvent{ControllerEventType::NONE, 0, 0};
     ControllerEvent event = m_EventQueue.front();
     m_EventQueue.pop();
     return event;
@@ -2331,199 +2647,54 @@ ControllerEvent UnityRobotController::PopEvent()
 
 void UnityRobotController::Update(float dt, float serverTime)
 {   
-    if (m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size()) return; 
+    MovementCallbacks callbacks;
+    callbacks.tryOccupyEdge = m_TryOccupyEdgeCallback;
+    callbacks.onNodeLeave = m_NodeLeaveCallback;
+    callbacks.canEnterNode = m_CanEnterNodeCallback;
+    callbacks.isNodeFree = m_IsNodeFreeCallback;
 
-    const CachedLink& cache = m_CachedLinks[m_CurrentLinkIndex];
-    const float linkDist = GetLinkDistance(cache);
-    const float travelDuration = AGVKinematics::EstimateStopToStopTravelTime(linkDist);
-    
-    // ==========================================
-    // 1. 대기 및 출발 결심 
-    // ==========================================
-    if (!m_IsMovingLink)
+    m_Simulator.Update(dt, serverTime, callbacks);
+    DrainSimulatorEvents();
+}
+
+void UnityRobotController::DrainSimulatorEvents()
+{
+    while (m_Simulator.HasEvent())
     {
-        if (serverTime < cache.departureTime) return; 
-
-        const float startTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, 0.0f);
-        const float startHeadingError = std::abs(AGVKinematics::NormalizeAngle(startTargetHeading - m_Heading));
-        const float turnDuration = AGVKinematics::EstimateTurnInPlaceTime(startHeadingError);
-        float dynamicExpectedArrival = serverTime + std::max(travelDuration + turnDuration, 0.01f);
-
-        if (m_TryOccupyEdgeCallback && !m_TryOccupyEdgeCallback(cache.fromNode.m_Id, cache.toNode.m_Id, serverTime, dynamicExpectedArrival))
+        MovementEvent movementEvent = m_Simulator.PopEvent();
+        switch (movementEvent.type)
         {
-            m_ExecutionWaitTime += dt;
-            ++m_ExecutionWaitAttempts;
-            if (!m_BlockEventSent && 
-                (m_ExecutionWaitTime >= EXECUTION_BLOCK_TIMEOUT || m_ExecutionWaitAttempts >= EXECUTION_BLOCK_ATTEMPTS))
-            {
-                m_EventQueue.push({ ControllerEventType::EXECUTION_BLOCKED, cache.fromNode.m_Id, cache.toNode.m_Id });
-                m_BlockEventSent = true;
-                std::cout << "[BLOCKED EVENT] AGV " << m_CurrentRoute.agvID
-                          << " stuck before " << cache.fromNode.m_Id << "->" << cache.toNode.m_Id << "\n";
-            }
-            return; 
+        case MovementEventType::ARRIVED:
+            m_EventQueue.push({ ControllerEventType::ARRIVED, movementEvent.nodeID, movementEvent.relatedNodeID });
+            break;
+        case MovementEventType::EXECUTION_BLOCKED:
+            m_EventQueue.push({ ControllerEventType::EXECUTION_BLOCKED, movementEvent.nodeID, movementEvent.relatedNodeID });
+            break;
+        case MovementEventType::NONE:
+            break;
         }
-
-        m_IsMovingLink = true;
-        m_HasReleasedFromNode = false; 
-        m_ExecutionWaitTime = 0.0f;
-        m_ExecutionWaitAttempts = 0;
-        m_BlockEventSent = false;
-
-        m_ActualStartTime = serverTime;
-        m_DistanceOnLink = 0.0f;
-        m_LinkProgress = 0.0f;
-        m_CurrentVelocity = 0.0f;
-        m_CurrentAngularVelocity = 0.0f;
-        m_OverTime = 0.0f; 
-    }
-    
-    // ==========================================
-    // 2. 속도 기반 링크 진행
-    // ==========================================
-    const float destinationHoldProgress = ClampRatio(1.0f - (DESTINATION_STOP_OFFSET / linkDist), 0.25f, 0.90f);
-    const float destinationHoldDistance = destinationHoldProgress * linkDist;
-    const bool shouldHoldBeforeDestination = m_IsNodeFreeCallback && !m_IsNodeFreeCallback(cache.toNode.m_Id);
-    const float currentTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-    const float headingError = std::abs(AGVKinematics::NormalizeAngle(currentTargetHeading - m_Heading));
-    const float headingSpeedScale = AGVKinematics::HeadingSpeedScale(headingError);
-
-    float targetDistance = shouldHoldBeforeDestination ? destinationHoldDistance : linkDist;
-    if (targetDistance < m_DistanceOnLink)
-        targetDistance = m_DistanceOnLink;
-
-    const float remainingDistance = std::max(0.0f, targetDistance - m_DistanceOnLink);
-    const float stopLimitedSpeed = AGVKinematics::StopLimitedSpeed(remainingDistance);
-    const float targetVelocity = std::min(AGVKinematics::MAX_SPEED, stopLimitedSpeed) * headingSpeedScale;
-
-    const float prevVelocity = m_CurrentVelocity;
-    m_CurrentVelocity = AGVKinematics::MoveVelocityTowards(m_CurrentVelocity, targetVelocity, dt);
-
-    float moveDistance = (prevVelocity + m_CurrentVelocity) * 0.5f * dt;
-    if (moveDistance >= remainingDistance)
-    {
-        moveDistance = remainingDistance;
-        m_CurrentVelocity = 0.0f;
-    }
-
-    m_DistanceOnLink += moveDistance;
-    m_LinkProgress = ClampRatio(m_DistanceOnLink / linkDist, 0.0f, 1.0f);
-
-    if (m_IsMovingLink && !m_HasReleasedFromNode)
-    {
-        float dynamicReleaseRatio = ClampRatio(NODE_RELEASE_OFFSET / linkDist, 0.20f, 0.70f);
-
-        if (m_LinkProgress >= dynamicReleaseRatio)
-        {
-            if (m_NodeLeaveCallback) m_NodeLeaveCallback(cache.fromNode.m_Id);
-            m_HasReleasedFromNode = true;
-        }
-    }
-
-    Vector2 pos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-    m_X = pos.x;
-    m_Z = pos.z;
-
-    const float targetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-    StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, targetHeading, dt);
-
-    if (shouldHoldBeforeDestination && m_DistanceOnLink >= destinationHoldDistance - 0.001f)
-    {
-        m_LinkProgress = destinationHoldProgress;
-        m_DistanceOnLink = destinationHoldDistance;
-        m_CurrentVelocity = 0.0f;
-        Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-        m_X = holdPos.x;
-        m_Z = holdPos.z;
-        const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
-        StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
-        return;
-    }
-
-    // ==========================================
-    // 3. 1프레임 도착 판정 (1프레임 지연 부여)
-    // ==========================================
-    if (m_LinkProgress >= 1.0f)
-    {
-        if (m_CanEnterNodeCallback && !m_CanEnterNodeCallback(cache.toNode.m_Id))
-        {
-            m_LinkProgress = destinationHoldProgress;
-            m_DistanceOnLink = destinationHoldDistance;
-            m_CurrentVelocity = 0.0f;
-            Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
-            m_X = holdPos.x;
-            m_Z = holdPos.z;
-            const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
-            StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
-            return;
-        }
-
-        m_X = cache.toNode.m_PosX;
-        m_Z = cache.toNode.m_PosZ;
-        m_CurrentVelocity = 0.0f;
-        m_CurrentAngularVelocity = 0.0f;
-        m_DistanceOnLink = linkDist;
-        m_OverTime = 0.0f; 
-
-        m_EventQueue.push({ ControllerEventType::ARRIVED, cache.toNode.m_Id });
-        
-        m_CurrentLinkIndex++;
-        m_IsMovingLink = false; 
-        m_DistanceOnLink = 0.0f;
-        m_LinkProgress = 0.0f;
-
-        if (m_CurrentLinkIndex >= m_CachedLinks.size()) 
-        {
-            m_LinkProgress = 0.0f;
-            m_OverTime = 0.0f; 
-        }
-        return; 
     }
 }
 
+================================================================================
+END FILE: Server/UnityRobotController.cpp
 
-===== END FILE: Server/UnityRobotController.cpp =====
+================================================================================
 
-===== BEGIN FILE: Server/UnityRobotController.hpp =====
 
+================================================================================
+BEGIN FILE: Server/UnityRobotController.hpp
+================================================================================
 #pragma once
 #include "IRobotController.hpp"
+#include "MovementSimulator.hpp"
 #include <queue>
 #include <functional> 
-#include "Map.hpp"
-
-struct CachedLink 
-{
-    MapLink link;
-    MapNode fromNode;
-    MapNode toNode;
-    float departureTime; 
-    float arrivalTime;   
-};
 
 class UnityRobotController : public IRobotController
 {   
 private:
-    RoutePacket m_CurrentRoute;
-    size_t m_CurrentLinkIndex; 
-    float m_LinkProgress;
-    float m_DistanceOnLink = 0.0f;
-    float m_CurrentVelocity = 0.0f;
-    float m_CurrentAngularVelocity = 0.0f;
-    
-    bool m_IsMovingLink = false;      
-    float m_ActualStartTime = 0.0f;   
-    float m_OverTime = 0.0f;
-    bool m_HasReleasedFromNode = false; // 🌟 오타 및 멤버 변수 일치 완료
-    float m_ExecutionWaitTime = 0.0f;
-    uint32_t m_ExecutionWaitAttempts = 0;
-    bool m_BlockEventSent = false;
-
-    float m_X = 0.0f;
-    float m_Z = 0.0f;
-    float m_Heading = 0.0f;
-
-    std::vector<CachedLink> m_CachedLinks;
+    MovementSimulator m_Simulator;
     std::queue<ControllerEvent> m_EventQueue;
     
     std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
@@ -2548,13 +2719,20 @@ public:
     virtual void SetNodeLeaveCallback(std::function<void(uint32_t)> callback) override { m_NodeLeaveCallback = callback; }
     virtual void SetCanEnterNodeCallback(std::function<bool(uint32_t)> callback) override { m_CanEnterNodeCallback = callback; }
     virtual void SetIsNodeFreeCallback(std::function<bool(uint32_t)> callback) override { m_IsNodeFreeCallback = callback; }
+
+private:
+    void DrainSimulatorEvents();
 };
 
+================================================================================
+END FILE: Server/UnityRobotController.hpp
 
-===== END FILE: Server/UnityRobotController.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/AGVKinematics.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/AGVKinematics.hpp
+================================================================================
 #pragma once
 
 #include <algorithm>
@@ -2663,11 +2841,15 @@ namespace AGVKinematics
     }
 }
 
+================================================================================
+END FILE: Shared/AGVKinematics.hpp
 
-===== END FILE: Shared/AGVKinematics.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/AGVManager.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/AGVManager.cpp
+================================================================================
 #include "AGVManager.hpp"
 
 AGVManager::AGVManager()
@@ -2687,11 +2869,15 @@ Robo* AGVManager::FindAGV(uint32_t _agvID)
         }
     }
 }
+================================================================================
+END FILE: Shared/AGVManager.cpp
 
-===== END FILE: Shared/AGVManager.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/AGVManager.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/AGVManager.hpp
+================================================================================
 #pragma once
 #include <vector>
 #include "Object.hpp"
@@ -2711,11 +2897,15 @@ public:
     std::vector<ObjectPtr> m_AGVs;    
     Robo* FindAGV(uint32_t _agvID);
 };
+================================================================================
+END FILE: Shared/AGVManager.hpp
 
-===== END FILE: Shared/AGVManager.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/BezierFollower.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/BezierFollower.hpp
+================================================================================
 #pragma once
 #include "Map.hpp"
 #include <cmath>
@@ -2785,11 +2975,15 @@ public:
     }
 };
 
+================================================================================
+END FILE: Shared/BezierFollower.hpp
 
-===== END FILE: Shared/BezierFollower.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/CMakeLists.txt =====
 
+================================================================================
+BEGIN FILE: Shared/CMakeLists.txt
+================================================================================
 set(CMAKE_BUILD_TYPE Debug)
 
 add_library(Shared STATIC
@@ -2800,6 +2994,7 @@ add_library(Shared STATIC
     SocketAddressFactory.cpp                 
     TCPSession.cpp
     PacketSerializer.cpp
+    MovementSimulator.cpp
     Object.cpp
     Robo.cpp
     LinkingContext.cpp
@@ -2818,18 +3013,26 @@ target_include_directories(Shared PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+================================================================================
+END FILE: Shared/CMakeLists.txt
 
-===== END FILE: Shared/CMakeLists.txt =====
+================================================================================
 
-===== BEGIN FILE: Shared/DispatchManager.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/DispatchManager.cpp
+================================================================================
 #include "DispatchManager.hpp"
 
+================================================================================
+END FILE: Shared/DispatchManager.cpp
 
-===== END FILE: Shared/DispatchManager.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/DispatchManager.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/DispatchManager.hpp
+================================================================================
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -3004,17 +3207,25 @@ public:
         return availableNodes[randomIndex];
     }
 };
+================================================================================
+END FILE: Shared/DispatchManager.hpp
 
-===== END FILE: Shared/DispatchManager.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Event.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/Event.cpp
+================================================================================
 #include "Event.hpp"
+================================================================================
+END FILE: Shared/Event.cpp
 
-===== END FILE: Shared/Event.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Event.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/Event.hpp
+================================================================================
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -3089,11 +3300,15 @@ public:
     }  
 };
 
+================================================================================
+END FILE: Shared/Event.hpp
 
-===== END FILE: Shared/Event.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/LinkingContext.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/LinkingContext.cpp
+================================================================================
 #include "LinkingContext.hpp"
 #include "header.hpp"
 #include <assert.h>
@@ -3141,11 +3356,15 @@ void LinkingContext::RemoveObject(ObjectPtr _inObject)
     m_ObjectToNetworkId.erase(_inObject);
     m_NetworkIdToObject.erase(networkID);    
 }
+================================================================================
+END FILE: Shared/LinkingContext.cpp
 
-===== END FILE: Shared/LinkingContext.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/LinkingContext.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/LinkingContext.hpp
+================================================================================
 #pragma once
 #include <stdint.h>
 #include <unordered_map>
@@ -3170,11 +3389,15 @@ public:
     uint32_t GenerateNewNextNeworkID(){return ++m_NextNetworkID;}
     std::unordered_map<uint32_t,ObjectPtr> GetAllObjects(){return m_NetworkIdToObject;}
 };
+================================================================================
+END FILE: Shared/LinkingContext.hpp
 
-===== END FILE: Shared/LinkingContext.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Map.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/Map.cpp
+================================================================================
 #include "Map.hpp"
 #include "Map.hpp"
 #include <fstream>
@@ -3190,7 +3413,22 @@ void MapManager::Init()
 {
    std::cout << "[디버그] 현재 실행 작업 디렉터리: " 
               << std::filesystem::current_path() << std::endl;    
-    std::ifstream file("../../Shared/MapData.json"); 
+    const std::vector<std::filesystem::path> mapPathCandidates = {
+        "Shared/MapData.json",
+        "../Shared/MapData.json",
+        "../../Shared/MapData.json",
+        "../../../Shared/MapData.json"
+    };
+
+    std::ifstream file;
+    for (const auto& path : mapPathCandidates)
+    {
+        file.open(path);
+        if (file.is_open())
+            break;
+        file.clear();
+    }
+
     if (!file.is_open())
     {
         std::cerr << "[에러] MapData.json 파일을 열 수 없습니다" << std::endl;
@@ -3273,10 +3511,15 @@ MapLink& MapManager::FindLink(uint32_t _fromNodeID,uint32_t _toNodeID)
     return error_link; // 이제 안전하게 참조를 반환합니다.
 }
 
-===== END FILE: Shared/Map.cpp =====
+================================================================================
+END FILE: Shared/Map.cpp
 
-===== BEGIN FILE: Shared/Map.hpp =====
+================================================================================
 
+
+================================================================================
+BEGIN FILE: Shared/Map.hpp
+================================================================================
 #pragma once
 #include <cstdint>
 #include <vector>
@@ -3344,11 +3587,15 @@ public:
     }
     MapLink& FindLink(uint32_t _fromNodeID,uint32_t _toNodeID);
 };
+================================================================================
+END FILE: Shared/Map.hpp
 
-===== END FILE: Shared/Map.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/MapData.json =====
 
+================================================================================
+BEGIN FILE: Shared/MapData.json
+================================================================================
 {
     "nodes": [
         {
@@ -6615,11 +6862,15 @@ public:
         }
     ]
 }
+================================================================================
+END FILE: Shared/MapData.json
 
-===== END FILE: Shared/MapData.json =====
+================================================================================
 
-===== BEGIN FILE: Shared/MemoryStream.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/MemoryStream.cpp
+================================================================================
 #include "MemoryStream.hpp"
 #include <iostream>
 #include <algorithm>
@@ -6793,11 +7044,15 @@ void InputMemoryStream::Read(std::vector<MapLink> _outData)
         Read(_outData[i].m_ToNodeID);        
     }
 }
+================================================================================
+END FILE: Shared/MemoryStream.cpp
 
-===== END FILE: Shared/MemoryStream.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/MemoryStream.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/MemoryStream.hpp
+================================================================================
 #pragma once
 #include "header.hpp"
 #include <vector>
@@ -6866,11 +7121,408 @@ public:
 public:
     uint32_t GetRemainDataSize(){return m_Capacity-m_Head;}    
 };
+================================================================================
+END FILE: Shared/MemoryStream.hpp
 
-===== END FILE: Shared/MemoryStream.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Object.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/MovementSimulator.cpp
+================================================================================
+#include "MovementSimulator.hpp"
+#include "AGVKinematics.hpp"
+#include "BezierFollower.hpp"
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+
+namespace
+{
+    constexpr float NODE_RELEASE_OFFSET = 1.1f;
+    constexpr float DESTINATION_STOP_OFFSET = 1.2f;
+    constexpr float EXECUTION_BLOCK_TIMEOUT = 1.0f;
+    constexpr uint32_t EXECUTION_BLOCK_ATTEMPTS = 12;
+
+    float GetLinkDistance(const MovementCachedLink& cache)
+    {
+        if (cache.link.m_Type == 1 && cache.link.m_Dist > 0.0f)
+            return cache.link.m_Dist;
+
+        const float dx = cache.toNode.m_PosX - cache.fromNode.m_PosX;
+        const float dz = cache.toNode.m_PosZ - cache.fromNode.m_PosZ;
+        float dist = std::sqrt(dx * dx + dz * dz);
+        return (dist > 0.0f) ? dist : 1.0f;
+    }
+
+    float ClampRatio(float value, float minValue, float maxValue)
+    {
+        return std::max(minValue, std::min(value, maxValue));
+    }
+
+    void StepHeadingTowards(float& heading, float& angularVelocity, float targetHeading, float dt)
+    {
+        const float headingError = AGVKinematics::NormalizeAngle(targetHeading - heading);
+        const float targetAngularVelocity = std::clamp(
+            headingError * AGVKinematics::HEADING_KP,
+            -AGVKinematics::MAX_ANGULAR_SPEED,
+            AGVKinematics::MAX_ANGULAR_SPEED
+        );
+
+        angularVelocity = AGVKinematics::MoveAngularVelocityTowards(angularVelocity, targetAngularVelocity, dt);
+
+        const float step = angularVelocity * dt;
+        if (std::abs(step) >= std::abs(headingError))
+        {
+            heading = targetHeading;
+            angularVelocity = 0.0f;
+            return;
+        }
+
+        heading = AGVKinematics::NormalizeAngle(heading + step);
+    }
+}
+
+MovementSimulator::MovementSimulator(uint32_t agvID, float x, float z, float heading)
+{
+    m_CurrentRoute.agvID = agvID;
+    m_X = x;
+    m_Z = z;
+    m_Heading = heading;
+}
+
+void MovementSimulator::LoadRoute(const RoutePacket& routePacket)
+{
+    while (!m_EventQueue.empty()) { m_EventQueue.pop(); }
+
+    m_CurrentRoute = routePacket;
+    m_CurrentLinkIndex = 0;
+    m_LinkProgress = 0.0f;
+    m_DistanceOnLink = 0.0f;
+    m_CurrentVelocity = 0.0f;
+    m_CurrentAngularVelocity = 0.0f;
+    m_CachedLinks.clear();
+
+    m_OverTime = 0.0f;
+    m_IsMovingLink = false;
+    m_ActualStartTime = 0.0f;
+    m_HasReleasedFromNode = false;
+    m_ExecutionWaitTime = 0.0f;
+    m_ExecutionWaitAttempts = 0;
+    m_BlockEventSent = false;
+
+    if (routePacket.nodes.empty()) return;
+
+    MapManager& map = MapManager::GetInstance();
+    const MapNode startNode = map.GetMapNode(routePacket.nodes.front().nodeID);
+    m_X = startNode.m_PosX;
+    m_Z = startNode.m_PosZ;
+
+    if (routePacket.nodes.size() < 2) return;
+
+    const size_t linkCount = routePacket.nodes.size() - 1;
+    m_CachedLinks.reserve(linkCount);
+    for (size_t i = 0; i < linkCount; i++)
+    {
+        uint32_t fromID = routePacket.nodes[i].nodeID;
+        uint32_t toID = routePacket.nodes[i + 1].nodeID;
+        float depTime = routePacket.nodes[i].departureTime;
+        float arrTime = routePacket.nodes[i + 1].arrivalTime;
+
+        MapLink link = map.FindLink(fromID, toID);
+        MapNode from = map.GetMapNode(fromID);
+        MapNode to = map.GetMapNode(toID);
+
+        m_CachedLinks.push_back({ link, from, to, depTime, arrTime });
+    }
+}
+
+void MovementSimulator::CancelRoute()
+{
+    m_CachedLinks.clear();
+    m_IsMovingLink = false;
+    m_LinkProgress = 0.0f;
+    m_DistanceOnLink = 0.0f;
+    m_CurrentVelocity = 0.0f;
+    m_CurrentAngularVelocity = 0.0f;
+    m_OverTime = 0.0f;
+    m_ExecutionWaitTime = 0.0f;
+    m_ExecutionWaitAttempts = 0;
+    m_BlockEventSent = false;
+    while (!m_EventQueue.empty()) { m_EventQueue.pop(); }
+}
+
+StatusPacket MovementSimulator::GetStatus() const
+{
+    StatusPacket p;
+    p.agvID = m_CurrentRoute.agvID;
+    if (m_CurrentLinkIndex < m_CachedLinks.size()) p.currentLinkID = m_CachedLinks[m_CurrentLinkIndex].link.m_Id;
+    else p.currentLinkID = 0;
+
+    p.progress = m_LinkProgress;
+    p.x = m_X;
+    p.z = m_Z;
+    p.heading = m_Heading;
+    p.velocity = m_CurrentVelocity;
+    p.battery = 100.0f;
+    return p;
+}
+
+bool MovementSimulator::HasEvent() const
+{
+    return !m_EventQueue.empty();
+}
+
+MovementEvent MovementSimulator::PopEvent()
+{
+    if (m_EventQueue.empty()) return MovementEvent{ MovementEventType::NONE, 0, 0 };
+    MovementEvent event = m_EventQueue.front();
+    m_EventQueue.pop();
+    return event;
+}
+
+void MovementSimulator::Update(float dt, float serverTime, const MovementCallbacks& callbacks)
+{
+    if (m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size()) return;
+
+    const MovementCachedLink& cache = m_CachedLinks[m_CurrentLinkIndex];
+    const float linkDist = GetLinkDistance(cache);
+    const float travelDuration = AGVKinematics::EstimateStopToStopTravelTime(linkDist);
+
+    if (!m_IsMovingLink)
+    {
+        if (serverTime < cache.departureTime) return;
+
+        const float startTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, 0.0f);
+        const float startHeadingError = std::abs(AGVKinematics::NormalizeAngle(startTargetHeading - m_Heading));
+        const float turnDuration = AGVKinematics::EstimateTurnInPlaceTime(startHeadingError);
+        float dynamicExpectedArrival = serverTime + std::max(travelDuration + turnDuration, 0.01f);
+
+        if (callbacks.tryOccupyEdge && !callbacks.tryOccupyEdge(cache.fromNode.m_Id, cache.toNode.m_Id, serverTime, dynamicExpectedArrival))
+        {
+            m_ExecutionWaitTime += dt;
+            ++m_ExecutionWaitAttempts;
+            if (!m_BlockEventSent &&
+                (m_ExecutionWaitTime >= EXECUTION_BLOCK_TIMEOUT || m_ExecutionWaitAttempts >= EXECUTION_BLOCK_ATTEMPTS))
+            {
+                m_EventQueue.push({ MovementEventType::EXECUTION_BLOCKED, cache.fromNode.m_Id, cache.toNode.m_Id });
+                m_BlockEventSent = true;
+                std::cout << "[BLOCKED EVENT] AGV " << m_CurrentRoute.agvID
+                          << " stuck before " << cache.fromNode.m_Id << "->" << cache.toNode.m_Id << "\n";
+            }
+            return;
+        }
+
+        m_IsMovingLink = true;
+        m_HasReleasedFromNode = false;
+        m_ExecutionWaitTime = 0.0f;
+        m_ExecutionWaitAttempts = 0;
+        m_BlockEventSent = false;
+
+        m_ActualStartTime = serverTime;
+        m_DistanceOnLink = 0.0f;
+        m_LinkProgress = 0.0f;
+        m_CurrentVelocity = 0.0f;
+        m_CurrentAngularVelocity = 0.0f;
+        m_OverTime = 0.0f;
+    }
+
+    const float destinationHoldProgress = ClampRatio(1.0f - (DESTINATION_STOP_OFFSET / linkDist), 0.25f, 0.90f);
+    const float destinationHoldDistance = destinationHoldProgress * linkDist;
+    const bool shouldHoldBeforeDestination = callbacks.isNodeFree && !callbacks.isNodeFree(cache.toNode.m_Id);
+    const float currentTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    const float headingError = std::abs(AGVKinematics::NormalizeAngle(currentTargetHeading - m_Heading));
+    const float headingSpeedScale = AGVKinematics::HeadingSpeedScale(headingError);
+
+    float targetDistance = shouldHoldBeforeDestination ? destinationHoldDistance : linkDist;
+    if (targetDistance < m_DistanceOnLink)
+        targetDistance = m_DistanceOnLink;
+
+    const float remainingDistance = std::max(0.0f, targetDistance - m_DistanceOnLink);
+    const float stopLimitedSpeed = AGVKinematics::StopLimitedSpeed(remainingDistance);
+    const float targetVelocity = std::min(AGVKinematics::MAX_SPEED, stopLimitedSpeed) * headingSpeedScale;
+
+    const float prevVelocity = m_CurrentVelocity;
+    m_CurrentVelocity = AGVKinematics::MoveVelocityTowards(m_CurrentVelocity, targetVelocity, dt);
+
+    float moveDistance = (prevVelocity + m_CurrentVelocity) * 0.5f * dt;
+    if (moveDistance >= remainingDistance)
+    {
+        moveDistance = remainingDistance;
+        m_CurrentVelocity = 0.0f;
+    }
+
+    m_DistanceOnLink += moveDistance;
+    m_LinkProgress = ClampRatio(m_DistanceOnLink / linkDist, 0.0f, 1.0f);
+
+    if (m_IsMovingLink && !m_HasReleasedFromNode)
+    {
+        float dynamicReleaseRatio = ClampRatio(NODE_RELEASE_OFFSET / linkDist, 0.20f, 0.70f);
+
+        if (m_LinkProgress >= dynamicReleaseRatio)
+        {
+            if (callbacks.onNodeLeave) callbacks.onNodeLeave(cache.fromNode.m_Id);
+            m_HasReleasedFromNode = true;
+        }
+    }
+
+    Vector2 pos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    m_X = pos.x;
+    m_Z = pos.z;
+
+    const float targetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+    StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, targetHeading, dt);
+
+    if (shouldHoldBeforeDestination && m_DistanceOnLink >= destinationHoldDistance - 0.001f)
+    {
+        m_LinkProgress = destinationHoldProgress;
+        m_DistanceOnLink = destinationHoldDistance;
+        m_CurrentVelocity = 0.0f;
+        Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+        m_X = holdPos.x;
+        m_Z = holdPos.z;
+        const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, m_LinkProgress);
+        StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
+        return;
+    }
+
+    if (m_LinkProgress >= 1.0f)
+    {
+        if (callbacks.canEnterNode && !callbacks.canEnterNode(cache.toNode.m_Id))
+        {
+            m_LinkProgress = destinationHoldProgress;
+            m_DistanceOnLink = destinationHoldDistance;
+            m_CurrentVelocity = 0.0f;
+            Vector2 holdPos = BezierFollower::Evaluate(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+            m_X = holdPos.x;
+            m_Z = holdPos.z;
+            const float holdHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, destinationHoldProgress);
+            StepHeadingTowards(m_Heading, m_CurrentAngularVelocity, holdHeading, dt);
+            return;
+        }
+
+        m_X = cache.toNode.m_PosX;
+        m_Z = cache.toNode.m_PosZ;
+        m_CurrentVelocity = 0.0f;
+        m_CurrentAngularVelocity = 0.0f;
+        m_DistanceOnLink = linkDist;
+        m_OverTime = 0.0f;
+
+        m_EventQueue.push({ MovementEventType::ARRIVED, cache.toNode.m_Id, 0 });
+
+        m_CurrentLinkIndex++;
+        m_IsMovingLink = false;
+        m_DistanceOnLink = 0.0f;
+        m_LinkProgress = 0.0f;
+
+        if (m_CurrentLinkIndex >= m_CachedLinks.size())
+        {
+            m_LinkProgress = 0.0f;
+            m_OverTime = 0.0f;
+        }
+        return;
+    }
+}
+
+================================================================================
+END FILE: Shared/MovementSimulator.cpp
+
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Shared/MovementSimulator.hpp
+================================================================================
+#pragma once
+#include "Map.hpp"
+#include "SharedPackets.hpp"
+#include <cstdint>
+#include <functional>
+#include <queue>
+#include <vector>
+
+struct MovementCachedLink
+{
+    MapLink link;
+    MapNode fromNode;
+    MapNode toNode;
+    float departureTime;
+    float arrivalTime;
+};
+
+enum class MovementEventType : uint8_t
+{
+    NONE = 0,
+    ARRIVED,
+    EXECUTION_BLOCKED
+};
+
+struct MovementEvent
+{
+    MovementEventType type = MovementEventType::NONE;
+    uint32_t nodeID = 0;
+    uint32_t relatedNodeID = 0;
+};
+
+struct MovementCallbacks
+{
+    std::function<bool(uint32_t, uint32_t, float, float)> tryOccupyEdge;
+    std::function<void(uint32_t)> onNodeLeave;
+    std::function<bool(uint32_t)> canEnterNode;
+    std::function<bool(uint32_t)> isNodeFree;
+};
+
+class MovementSimulator
+{
+private:
+    RoutePacket m_CurrentRoute;
+    size_t m_CurrentLinkIndex = 0;
+    float m_LinkProgress = 0.0f;
+    float m_DistanceOnLink = 0.0f;
+    float m_CurrentVelocity = 0.0f;
+    float m_CurrentAngularVelocity = 0.0f;
+
+    bool m_IsMovingLink = false;
+    float m_ActualStartTime = 0.0f;
+    float m_OverTime = 0.0f;
+    bool m_HasReleasedFromNode = false;
+    float m_ExecutionWaitTime = 0.0f;
+    uint32_t m_ExecutionWaitAttempts = 0;
+    bool m_BlockEventSent = false;
+
+    float m_X = 0.0f;
+    float m_Z = 0.0f;
+    float m_Heading = 0.0f;
+
+    std::vector<MovementCachedLink> m_CachedLinks;
+    std::queue<MovementEvent> m_EventQueue;
+
+public:
+    MovementSimulator() = default;
+    MovementSimulator(uint32_t agvID, float x, float z, float heading = 0.0f);
+
+    void LoadRoute(const RoutePacket& routePacket);
+    void CancelRoute();
+    void Update(float dt, float serverTime, const MovementCallbacks& callbacks = {});
+
+    StatusPacket GetStatus() const;
+    bool HasEvent() const;
+    MovementEvent PopEvent();
+
+    bool HasRoute() const { return !m_CachedLinks.empty(); }
+    bool IsRouteComplete() const { return m_CachedLinks.empty() || m_CurrentLinkIndex >= m_CachedLinks.size(); }
+    uint32_t GetAgvID() const { return m_CurrentRoute.agvID; }
+};
+
+================================================================================
+END FILE: Shared/MovementSimulator.hpp
+
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Shared/Object.cpp
+================================================================================
 #include "Object.hpp"
 #include "MemoryStream.hpp"
 
@@ -6903,11 +7555,15 @@ void Object::Read(InputMemoryStream& _outStream)
     // _outStream.Read(m_Rotation.w);
     _outStream.Read(m_HeadingAngle);
 }
+================================================================================
+END FILE: Shared/Object.cpp
 
-===== END FILE: Shared/Object.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Object.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/Object.hpp
+================================================================================
 #pragma once
 #include <iostream>
 #include <cstring>
@@ -6963,11 +7619,15 @@ public:
 };
 
 typedef std::shared_ptr<Object> ObjectPtr;
+================================================================================
+END FILE: Shared/Object.hpp
 
-===== END FILE: Shared/Object.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/ObjectRegistry.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/ObjectRegistry.cpp
+================================================================================
 #include "ObjectRegistry.hpp"
 #include <cassert>
 
@@ -7004,11 +7664,15 @@ ObjectPtr ObjectRegistry::CreateObject(uint32_t _inClassName)
 
     return obj;
 }
+================================================================================
+END FILE: Shared/ObjectRegistry.cpp
 
-===== END FILE: Shared/ObjectRegistry.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/ObjectRegistry.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/ObjectRegistry.hpp
+================================================================================
 #pragma once
 #include <unordered_map>
 #include <memory>
@@ -7034,11 +7698,15 @@ public:
     // }
     ObjectPtr CreateObject(uint32_t _inClassName);
 };
+================================================================================
+END FILE: Shared/ObjectRegistry.hpp
 
-===== END FILE: Shared/ObjectRegistry.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/OccupancyProvider.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/OccupancyProvider.hpp
+================================================================================
 #pragma once
 #include <unordered_map>
 #include <cstdint>
@@ -7136,11 +7804,15 @@ public:
         std::cout << log << "\n";
     }
 };
+================================================================================
+END FILE: Shared/OccupancyProvider.hpp
 
-===== END FILE: Shared/OccupancyProvider.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/PacketSerializer.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/PacketSerializer.cpp
+================================================================================
 #include "PacketSerializer.hpp"
 #include <cstring>
 
@@ -7376,11 +8048,15 @@ namespace RobotProtocol
     }
 }
 
+================================================================================
+END FILE: Shared/PacketSerializer.cpp
 
-===== END FILE: Shared/PacketSerializer.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/PacketSerializer.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/PacketSerializer.hpp
+================================================================================
 #pragma once
 #include "MemoryStream.hpp"
 #include "Protocol.hpp"
@@ -7423,11 +8099,15 @@ namespace RobotProtocol
     bool ReadTimePayload(InputMemoryStream& inStream, TimePayload& outPayload);
 }
 
+================================================================================
+END FILE: Shared/PacketSerializer.hpp
 
-===== END FILE: Shared/PacketSerializer.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/PathFinder.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/PathFinder.cpp
+================================================================================
 #include "PathFinder.hpp"
 #include "Map.hpp"
 #include <queue>
@@ -7648,11 +8328,15 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
     return finalPath;
 }
 
+================================================================================
+END FILE: Shared/PathFinder.cpp
 
-===== END FILE: Shared/PathFinder.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/PathFinder.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/PathFinder.hpp
+================================================================================
 #pragma once
 #include <vector>
 #include <memory>
@@ -7701,11 +8385,15 @@ public:
     // _windowSize: 예약 장부를 보며 정밀 탐색할 최대 스텝 수 (논문 권장 16)
     std::vector<PathStep> FindPath(uint32_t _startNodeID, uint32_t _targetNodeID, uint32_t _agvID, float _startTime, float _windowTimeLimit,RRAStar& _rraEngine);
 };
+================================================================================
+END FILE: Shared/PathFinder.hpp
 
-===== END FILE: Shared/PathFinder.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Protocol.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/Protocol.hpp
+================================================================================
 #pragma once
 #include <cstdint>
 
@@ -7825,11 +8513,15 @@ namespace RobotProtocol
     };
 }
 
+================================================================================
+END FILE: Shared/Protocol.hpp
 
-===== END FILE: Shared/Protocol.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/RRAstar.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/RRAstar.cpp
+================================================================================
 #include "RRAstar.hpp"
 #include "Map.hpp" // MapManager, MapNode, MapLink 등이 있다고 가정
 #include <cmath>
@@ -7925,11 +8617,15 @@ float RRAStar::CalculateHeuristic(uint32_t _fromNode, uint32_t _toNode)
     // 유클리드 거리 (대각선 이동이 가능하면 유클리드, 상하좌우만 가능하면 맨해튼 사용)
     return std::sqrt(std::pow(from.m_PosX - to.m_PosX, 2) + std::pow(from.m_PosZ - to.m_PosZ, 2));
 }
+================================================================================
+END FILE: Shared/RRAstar.cpp
 
-===== END FILE: Shared/RRAstar.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/RRAstar.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/RRAstar.hpp
+================================================================================
 #pragma once
 #include <vector>
 #include <unordered_map>
@@ -7975,17 +8671,25 @@ private:
     // 방문 완료된 노드들의 g값 (진짜 남은 거리) 저장소 (Closed List & Cache)
     std::unordered_map<uint32_t, float> m_ClosedList;
 };
+================================================================================
+END FILE: Shared/RRAstar.hpp
 
-===== END FILE: Shared/RRAstar.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/ReservationTable.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/ReservationTable.cpp
+================================================================================
 #include "ReservationTable.hpp"
+================================================================================
+END FILE: Shared/ReservationTable.cpp
 
-===== END FILE: Shared/ReservationTable.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/ReservationTable.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/ReservationTable.hpp
+================================================================================
 // #pragma once
 // #include <unordered_map>
 // #include <vector>
@@ -8285,11 +8989,15 @@ public:
     }
 };
 
+================================================================================
+END FILE: Shared/ReservationTable.hpp
 
-===== END FILE: Shared/ReservationTable.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Robo.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/Robo.cpp
+================================================================================
 #include "Robo.hpp"
 #include "header.hpp"
 #include <iostream>
@@ -8476,11 +9184,15 @@ void Robo::UpdateWorkTimer(float dt, float currentServerTime)
         }
 }
 
+================================================================================
+END FILE: Shared/Robo.cpp
 
-===== END FILE: Shared/Robo.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/Robo.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/Robo.hpp
+================================================================================
 #pragma once
 #include "Object.hpp"
 #include <vector>
@@ -8585,11 +9297,15 @@ public:
     AGVState GetState() const { return m_State; }        
     MissionPurpose GetMissionPurpose() const { return m_Purpose; }
 };
+================================================================================
+END FILE: Shared/Robo.hpp
 
-===== END FILE: Shared/Robo.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SharedPackets.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/SharedPackets.hpp
+================================================================================
 #pragma once
 #include "MemoryStream.hpp"
 #include <vector>
@@ -8704,11 +9420,15 @@ struct CancelRoutePacket
     void Deserialize(InputMemoryStream& in) { in.Read(agvID); }
 };
 
+================================================================================
+END FILE: Shared/SharedPackets.hpp
 
-===== END FILE: Shared/SharedPackets.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketAddress.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketAddress.cpp
+================================================================================
 #include "SocketAddress.hpp"
 
 SocketAddress::SocketAddress(uint32_t _inAddress,uint16_t _inPort)
@@ -8742,11 +9462,15 @@ std::string SocketAddress::ToString()
     std::string result=dstBuffer;
     return result;
 }
+================================================================================
+END FILE: Shared/SocketAddress.cpp
 
-===== END FILE: Shared/SocketAddress.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketAddress.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketAddress.hpp
+================================================================================
 #pragma once
 #include "header.hpp"
 #include <memory>
@@ -8771,18 +9495,26 @@ private:
 };
 
 using SocketAddressPtr = std::shared_ptr<SocketAddress>;
+================================================================================
+END FILE: Shared/SocketAddress.hpp
 
-===== END FILE: Shared/SocketAddress.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketAddressFactory.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketAddressFactory.cpp
+================================================================================
 #include "SocketAddress.hpp"
 
+================================================================================
+END FILE: Shared/SocketAddressFactory.cpp
 
-===== END FILE: Shared/SocketAddressFactory.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketAddressFactory.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketAddressFactory.hpp
+================================================================================
 #pragma once
 #include "SocketAddress.hpp"
 #include <string>
@@ -8826,11 +9558,15 @@ public:
         return toRet;
     }
 };
+================================================================================
+END FILE: Shared/SocketAddressFactory.hpp
 
-===== END FILE: Shared/SocketAddressFactory.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketUtil.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketUtil.cpp
+================================================================================
 #include "SocketUtil.hpp"
 
 fd_set* SocketUtil::FileSetFromVector(fd_set& _outSet,const std::vector<TCPSocketPtr>* _inTCPSockets,int& _ioNaxNfds)
@@ -8888,11 +9624,15 @@ int SocketUtil::Select(const std::vector<TCPSocketPtr>* _inReadSet,std::vector<T
     }
     return to_Ret;
 }
+================================================================================
+END FILE: Shared/SocketUtil.cpp
 
-===== END FILE: Shared/SocketUtil.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/SocketUtil.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/SocketUtil.hpp
+================================================================================
 #pragma once
 #include "header.hpp"
 #include "TCPSocket.hpp"
@@ -8918,11 +9658,15 @@ private:
     static fd_set* FileSetFromVector (fd_set& _outSet,const std::vector<TCPSocketPtr>* _inTCPSockets,int& _ioNaxNfds);
     static void FileVectorFromSet (std::vector<TCPSocketPtr>*_outSockets,const std::vector<TCPSocketPtr>* _inSockets,const fd_set& _inSet);
 };
+================================================================================
+END FILE: Shared/SocketUtil.hpp
 
-===== END FILE: Shared/SocketUtil.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/TCPSession.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/TCPSession.cpp
+================================================================================
 #include "TCPSession.hpp"
 #include "MemoryStream.hpp"
 
@@ -8982,11 +9726,15 @@ void TCPSession::SendPacket(OutputMemoryStream& _inStream)
     m_Socket->Send(finalStream.GetBuffer(),finalStream.GetLength());
 }
 
+================================================================================
+END FILE: Shared/TCPSession.cpp
 
-===== END FILE: Shared/TCPSession.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/TCPSession.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/TCPSession.hpp
+================================================================================
 #pragma once
 #include "TCPSocket.hpp"
 #include <vector>
@@ -9012,11 +9760,15 @@ public:
 };
 
 using TCPSessionPtr= std::shared_ptr<TCPSession>;
+================================================================================
+END FILE: Shared/TCPSession.hpp
 
-===== END FILE: Shared/TCPSession.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/TCPSocket.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/TCPSocket.cpp
+================================================================================
 #include "TCPSocket.hpp"
 #include "header.hpp"
 #include "SocketAddress.hpp"
@@ -9131,11 +9883,15 @@ bool TCPSocket::SetNonBlockingMode(bool _shouldBeNonBlocking)
     int result = fcntl(m_Socket, F_SETFL, flags);
     return (result != -1);
  }
+================================================================================
+END FILE: Shared/TCPSocket.cpp
 
-===== END FILE: Shared/TCPSocket.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/TCPSocket.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/TCPSocket.hpp
+================================================================================
 #pragma once
 #include "header.hpp"
 #include <memory>
@@ -9161,11 +9917,15 @@ private:
 public:
     SOCKET GetSocket()const{return m_Socket;}
 };
+================================================================================
+END FILE: Shared/TCPSocket.hpp
 
-===== END FILE: Shared/TCPSocket.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/WarehouseManager.cpp =====
 
+================================================================================
+BEGIN FILE: Shared/WarehouseManager.cpp
+================================================================================
 #include "WarehouseManager.hpp"
 #include <iostream>
 #include <vector>
@@ -9207,11 +9967,15 @@ void WarehouseManager::ConsumeStock(uint32_t _nodeID)
         std::cout << "[창고] " << _nodeID << "번 창고 재고 감소. 남은 수량: " << m_ActualStock[_nodeID] << std::endl;
     }
 }
+================================================================================
+END FILE: Shared/WarehouseManager.cpp
 
-===== END FILE: Shared/WarehouseManager.cpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/WarehouseManager.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/WarehouseManager.hpp
+================================================================================
 #pragma once
 #include <unordered_map>
 #include <cstdint>
@@ -9238,11 +10002,15 @@ private:
     std::unordered_map<uint32_t, int> m_ActualStock;    
     std::unordered_map<uint32_t, int> m_ReservedStock;  // 로봇들이 가지러 오고 있어서 선점된 재고
 };
+================================================================================
+END FILE: Shared/WarehouseManager.hpp
 
-===== END FILE: Shared/WarehouseManager.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/header.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/header.hpp
+================================================================================
 #pragma once
 #include <sys/socket.h>
 #include <unistd.h>
@@ -9295,11 +10063,15 @@ enum ClassID: uint32_t
     OBJ_AGV=1001    
 };
 
+================================================================================
+END FILE: Shared/header.hpp
 
-===== END FILE: Shared/header.hpp =====
+================================================================================
 
-===== BEGIN FILE: Shared/json.hpp =====
 
+================================================================================
+BEGIN FILE: Shared/json.hpp
+================================================================================
 /*
     __ _____ _____ _____
  __|  |   __|     |   | |  JSON for Modern C++
@@ -32176,5 +32948,7 @@ inline nlohmann::json::json_pointer operator "" _json_pointer(const char* s, std
 
 #endif  // INCLUDE_NLOHMANN_JSON_HPP_
 
+================================================================================
+END FILE: Shared/json.hpp
 
-===== END FILE: Shared/json.hpp =====
+================================================================================
