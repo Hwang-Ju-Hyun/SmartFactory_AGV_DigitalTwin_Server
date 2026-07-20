@@ -39,8 +39,8 @@ int main(void)
         timeval timeoutValue;
         timeoutValue.tv_sec = 0;
         timeoutValue.tv_usec = 3333; // 33.3ms
-        int toRet=SocketUtil::Select(&readBlockSockets,&readAbleSockets,nullptr,nullptr,nullptr,nullptr,&timeoutValue);
         
+        int toRet=SocketUtil::Select(&readBlockSockets,&readAbleSockets,nullptr,nullptr,nullptr,nullptr,&timeoutValue);
         if(toRet<0)
             continue;            
         

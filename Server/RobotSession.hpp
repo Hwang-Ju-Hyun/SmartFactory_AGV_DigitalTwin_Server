@@ -28,6 +28,7 @@ public:
     void SendCancelRoute(uint32_t agvID);
     void SendPong(uint32_t timestampMs);
 
+    void PrimeStatus(float x, float z, float heading);
     StatusPacket GetStatus() const;
     bool HasEvent() const;
     ControllerEvent PopEvent();

@@ -92,6 +92,6 @@ public:
         else if (hasEdge) log += "EDGE 전용 점유 (링크 순항 상태)";
         else log += "RELEASED (완전 해제)";
         
-        std::cout << log << "\n";
+        //std::cout << log << "\n";
     }
 };

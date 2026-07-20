@@ -39,6 +39,44 @@ void RoutePlanner::Update(float _deltaTime, float _serverTime)
     }
 }
 
+bool RoutePlanner::ResendCurrentRouteToController(uint32_t _agvID)
+{
+    auto planIt = m_MasterPlans.find(_agvID);
+    if (planIt == m_MasterPlans.end())
+        return false;
+
+    const RoutePlan& plan = planIt->second;
+    if (plan.steps.size() < 2)
+        return false;
+
+    size_t startIndex = 0;
+    if (plan.currentStepIndex > 0)
+        startIndex = plan.currentStepIndex - 1;
+
+    if (startIndex >= plan.steps.size())
+        startIndex = plan.steps.size() - 1;
+
+    std::vector<RouteNodeTime> routeNodes;
+    routeNodes.reserve(plan.steps.size() - startIndex);
+    for (size_t i = startIndex; i < plan.steps.size(); ++i)
+    {
+        const PathStep& step = plan.steps[i];
+        routeNodes.push_back({ step.nodeID, step.arrivalTime, step.departureTime });
+    }
+
+    if (routeNodes.size() < 2)
+        return false;
+
+    IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
+    if (!controller)
+        return false;
+
+    controller->FollowRoute({ _agvID, routeNodes });
+    std::cout << "[RoutePlanner] Resent active route to controller. AGV " << _agvID
+              << " nodes=" << routeNodes.size() << "\n";
+    return true;
+}
+
 void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, uint32_t _blockedNodeID, float _serverTime)
 {
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
@@ -78,8 +116,8 @@ void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, 
     }
 
     m_PendingRoutes.push_back({ _agvID, targetNodeID, purpose, 0.1f });
-    std::cout << "[REPLAN] AGV " << _agvID << " execution blocked at node " << _currentNodeID
-              << " toward " << _blockedNodeID << ", route cancelled\n";
+    // std::cout << "[REPLAN] AGV " << _agvID << " execution blocked at node " << _currentNodeID
+    //           << " toward " << _blockedNodeID << ", route cancelled\n";
 }
 
 bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<PathStep>& _path, uint32_t _finalTargetID, float _serverTime)
@@ -258,7 +296,7 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 
 void RoutePlanner::UpdateRobotPosition(Robo* agv, RoutePlan& plan, const RobotEvent& _e) {
     agv->SetCurrentNodeID(_e.currentNodeID);
-    // 🌟 쪼개진 모듈로 갱신 요청
+    //  쪼개진 모듈로 갱신 요청
     OccupancyProvider::GetInstance().OccupyNode(_e.agvID, _e.currentNodeID);
     plan.currentStepIndex++; 
 }

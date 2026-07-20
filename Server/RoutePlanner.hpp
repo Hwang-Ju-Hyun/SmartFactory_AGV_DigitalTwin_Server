@@ -44,6 +44,7 @@ public:
     void CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose);
     void Update(float _deltaTime, float _serverTime); 
     void OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, uint32_t _blockedNodeID, float _serverTime);
+    bool ResendCurrentRouteToController(uint32_t _agvID);
     
     void ClearRRAEngines() { m_RRAEngines.clear(); }
 private:

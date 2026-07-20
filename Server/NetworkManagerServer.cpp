@@ -138,6 +138,10 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
     const bool agvOK = agvObject && agvObject->GetClassID() == ClassID::OBJ_AGV;
 
     RobotSessionPtr robotSession = std::make_shared<RobotSession>(_proxy->GetSession(), assignedAgvID);
+    if (Robo* agv = dynamic_cast<Robo*>(agvObject.get()))
+    {
+        robotSession->PrimeStatus(agv->GetPosX(), agv->GetPosZ(), agv->GetHeadingAngle());
+    }
 
     if (!versionOK)
     {
@@ -174,6 +178,11 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
     std::cout << "[RobotProtocol] Robot client connected. agvID=" << assignedAgvID
               << " clientType=" << static_cast<int>(hello.clientType)
               << " sequence=" << _header.sequence << "\n";
+
+    if (!RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
+    {
+        std::cout << "[RoutePlanner] No active route to resend for AGV " << assignedAgvID << "\n";
+    }
 }
 
 RobotSessionPtr NetworkManagerServer::FindRobotSession(ClientProxy* _proxy, uint32_t _agvID)
@@ -293,9 +302,9 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
     StartSimulation();
 }
 
-//#define _TESTCASE0
+#define _TESTCASE0
 //#define _TESTCASE1
-#define _TESTCASE2
+//#define _TESTCASE2
 //#define _TESTCASE3
 //#define _TESTCASE4
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)

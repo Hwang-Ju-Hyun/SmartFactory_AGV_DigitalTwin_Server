@@ -1,5 +1,58 @@
 #include "RobotSession.hpp"
+#include "BezierFollower.hpp"
+#include "Map.hpp"
+#include <algorithm>
+#include <cmath>
 #include <iostream>
+
+namespace
+{
+    constexpr float kCoordinateEpsilon = 0.001f;
+
+    bool TryGetMapNode(uint32_t nodeID, MapNode& outNode)
+    {
+        if (nodeID == 0)
+            return false;
+
+        const auto nodes = MapManager::GetInstance().GetNodes();
+        auto it = nodes.find(nodeID);
+        if (it == nodes.end())
+            return false;
+
+        outNode = it->second;
+        return true;
+    }
+
+    bool TryApplyNodeBasedPose(const RobotProtocol::StatusPayload& payload, StatusPacket& status)
+    {
+        MapNode currentNode;
+        if (!TryGetMapNode(payload.currentNodeID, currentNode))
+            return false;
+
+        MapNode targetNode;
+        if (TryGetMapNode(payload.currentLinkID, targetNode))
+        {
+            MapLink link = MapManager::GetInstance().FindLink(payload.currentNodeID, payload.currentLinkID);
+            const float progress = std::max(0.0f, std::min(payload.progress, 1.0f));
+            Vector2 position = BezierFollower::Evaluate(currentNode, targetNode, link, progress);
+
+            status.x = position.x;
+            status.z = position.z;
+            status.heading = BezierFollower::Heading(currentNode, targetNode, link, progress);
+            return true;
+        }
+
+        status.x = currentNode.m_PosX;
+        status.z = currentNode.m_PosZ;
+        status.heading = payload.heading;
+        return true;
+    }
+
+    bool HasExplicitPayloadPosition(const RobotProtocol::StatusPayload& payload)
+    {
+        return std::abs(payload.x) > kCoordinateEpsilon || std::abs(payload.z) > kCoordinateEpsilon;
+    }
+}
 
 RobotSession::RobotSession(TCPSessionPtr session, uint32_t agvID)
     : m_TCPSession(session)
@@ -27,11 +80,17 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
         m_LastStatus.agvID = header.agvID;
         m_LastStatus.currentLinkID = payload.currentLinkID;
         m_LastStatus.progress = payload.progress;
-        m_LastStatus.x = payload.x;
-        m_LastStatus.z = payload.z;
-        m_LastStatus.heading = payload.heading;
         m_LastStatus.velocity = payload.velocity;
         m_LastStatus.battery = payload.battery;
+
+        const bool usedNodeBasedPose = TryApplyNodeBasedPose(payload, m_LastStatus);
+        if (!usedNodeBasedPose && (!m_HasStatus || HasExplicitPayloadPosition(payload)))
+        {
+            m_LastStatus.x = payload.x;
+            m_LastStatus.z = payload.z;
+            m_LastStatus.heading = payload.heading;
+        }
+
         m_HasStatus = true;
         break;
     }
@@ -93,6 +152,10 @@ void RobotSession::SendRoute(const RoutePacket& routePacket)
     OutputMemoryStream payloadStream;
     RobotProtocol::WriteRouteCommandPayload(payloadStream, payload);
     SendRobotPacket(RobotProtocol::PacketID::ROUTE_COMMAND, routePacket.agvID, payloadStream);
+
+    std::cout << "[RobotProtocol] Send ROUTE_COMMAND agvID=" << routePacket.agvID
+              << " routeID=" << payload.routeID
+              << " nodes=" << payload.nodes.size() << "\n";
 }
 
 void RobotSession::SendCancelRoute(uint32_t agvID)
@@ -109,6 +172,16 @@ void RobotSession::SendPong(uint32_t timestampMs)
     OutputMemoryStream payloadStream;
     RobotProtocol::WriteTimePayload(payloadStream, payload);
     SendRobotPacket(RobotProtocol::PacketID::PONG, m_AgvID, payloadStream);
+}
+
+void RobotSession::PrimeStatus(float x, float z, float heading)
+{
+    m_LastStatus.x = x;
+    m_LastStatus.z = z;
+    m_LastStatus.heading = heading;
+    m_LastStatus.agvID = m_AgvID;
+    m_LastStatus.battery = 100.0f;
+    m_HasStatus = true;
 }
 
 StatusPacket RobotSession::GetStatus() const

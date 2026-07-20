@@ -250,8 +250,8 @@ public:
     bool TryOccupyEdgeForExecution(uint32_t agvID, uint32_t fromNode, uint32_t toNode, float serverTime, float expectedArrivalTime)
     {
         constexpr float EXECUTION_CLEARANCE_TIME = 0.6f;
-        std::cout << "[TRY EXEC] AGV " << agvID
-          << " " << fromNode << " -> " << toNode << std::endl;
+        // std::cout << "[TRY EXEC] AGV " << agvID
+        //   << " " << fromNode << " -> " << toNode << std::endl;
 
         uint64_t edgeKey = MakeEdgeKey(fromNode, toNode);        
         auto& occ = OccupancyProvider::GetInstance();
@@ -264,11 +264,11 @@ public:
 
         // 1단계: 실시간 물리 상태 검사. 링크 점유는 즉시 충돌 영역이므로 출발 전에 막는다.
         if (occ.IsEdgeOccupiedByOther(edgeKey, agvID)) {
-            std::cout << "[EXEC WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 실시간 주행차량 존재 (by AGV " << occ.GetEdgeOccupant(edgeKey) << ")\n";
+            //std::cout << "[EXEC WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 실시간 주행차량 존재 (by AGV " << occ.GetEdgeOccupant(edgeKey) << ")\n";
             return false;
         }
         if (occ.IsNodeOccupiedByOther(toNode, agvID)) {
-            std::cout << "[EXEC WAIT] AGV " << agvID << " : 노드 " << toNode << " 실제 점유 존재 (by AGV " << occ.GetNodeOccupant(toNode) << ")\n";
+            //std::cout << "[EXEC WAIT] AGV " << agvID << " : 노드 " << toNode << " 실제 점유 존재 (by AGV " << occ.GetNodeOccupant(toNode) << ")\n";
             return false;
         }
         
@@ -276,12 +276,12 @@ public:
         // 목적지 노드는 지금부터 도착 전까지 비어있을 필요가 없고, 도착 시각 이후만 안전하면 된다.
         if (!IsEdgeFree(fromNode, toNode, serverTime, edgeCheckEnd, agvID)) 
         {
-            std::cout << "[PLAN WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 시공간 계획 테이블 선점 확인\n";
+            //std::cout << "[PLAN WAIT] AGV " << agvID << " : 링크 " << fromNode << "->" << toNode << " 시공간 계획 테이블 선점 확인\n";
             return false;
         }
         if (!IsNodeFree(toNode, arrivalCheckStart, arrivalCheckEnd, agvID)) 
         {
-            std::cout << "[PLAN WAIT] AGV " << agvID << " : 노드 " << toNode << " 도착 시간창 선점 확인\n";
+            //std::cout << "[PLAN WAIT] AGV " << agvID << " : 노드 " << toNode << " 도착 시간창 선점 확인\n";
             return false;
         }
 

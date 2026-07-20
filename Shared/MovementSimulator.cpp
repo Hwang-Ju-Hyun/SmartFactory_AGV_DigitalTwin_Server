@@ -175,8 +175,8 @@ void MovementSimulator::Update(float dt, float serverTime, const MovementCallbac
             {
                 m_EventQueue.push({ MovementEventType::EXECUTION_BLOCKED, cache.fromNode.m_Id, cache.toNode.m_Id });
                 m_BlockEventSent = true;
-                std::cout << "[BLOCKED EVENT] AGV " << m_CurrentRoute.agvID
-                          << " stuck before " << cache.fromNode.m_Id << "->" << cache.toNode.m_Id << "\n";
+                // std::cout << "[BLOCKED EVENT] AGV " << m_CurrentRoute.agvID
+                //           << " stuck before " << cache.fromNode.m_Id << "->" << cache.toNode.m_Id << "\n";
             }
             return;
         }
