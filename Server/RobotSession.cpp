@@ -1,7 +1,6 @@
 #include "RobotSession.hpp"
 #include "BezierFollower.hpp"
 #include "Map.hpp"
-#include <algorithm>
 #include <cmath>
 #include <iostream>
 

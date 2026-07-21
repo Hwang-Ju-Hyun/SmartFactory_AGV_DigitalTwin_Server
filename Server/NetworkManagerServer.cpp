@@ -29,6 +29,7 @@ std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 uint32_t NetworkManagerServer::nextSessionID=1;
 
 NetworkManagerServer::NetworkManagerServer()
+    : m_TotalElapsedServerTime(0.0f)
 {
     m_LinkingContext = new LinkingContext;
 }
@@ -38,6 +39,8 @@ void NetworkManagerServer::StaticInit()
     sInstance.reset(new NetworkManagerServer());    
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
     srand((unsigned int)time(NULL));
+    sInstance->CreateSimulationWorld();
+    sInstance->StartSimulation();
 }
 
 void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream& _inStream) 
@@ -299,7 +302,9 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
 
 void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMemoryStream& _instream)
 { 
-    StartSimulation();
+    (void)_proxy;
+    (void)_instream;
+    std::cout << "[서버] Unity viewer object ready\n";
 }
 
 #define _TESTCASE0
@@ -307,57 +312,39 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
 //#define _TESTCASE2
 //#define _TESTCASE3
 //#define _TESTCASE4
-void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
+
+void NetworkManagerServer::CreateSimulationWorld()
 {
+    if (m_IsWorldCreated)
+        return;
+
     #ifdef _TESTCASE0
     int spawnCount = 4;
-    ObjectPtr mainRobo = nullptr;
-    TaskManager::GetInsance();
-    RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();        
     uint32_t initNodes[4] = {1,2,3,4}; 
 
     #elifdef _TESTCASE1
     int spawnCount = 22;
-    ObjectPtr mainRobo = nullptr;
-    TaskManager::GetInsance();
-    RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();        
     uint32_t initNodes[22] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22}; 
 
     #elifdef _TESTCASE2    
     int spawnCount = 22;
     //int spawnCount = 12;
-    ObjectPtr mainRobo = nullptr;
-
-    TaskManager::GetInsance();
-    RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();        
 
     uint32_t initNodes[22] = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41}; 
     //uint32_t initNodes[12] = {75,65,76,73,66,74,68,67,69,70,71,72};
     #elifdef _TESTCASE3  
     
     int spawnCount = 5;
-
-    ObjectPtr mainRobo = nullptr;
-
-    TaskManager::GetInsance();
-    RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();        
-
     uint32_t initNodes[5] = {1, 2, 3, 4, 5};
     
     #elifdef _TESTCASE4
     int spawnCount = 2;
-    ObjectPtr mainRobo = nullptr;
+    uint32_t initNodes[2] = {1,2};
+    #endif
 
     TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();        
-
-    uint32_t initNodes[2] = {1,2};
-    #endif
+    WarehouseManager::GetInstance().Init();
 
     std::vector<Robo*> Robos;
     for(int i = 0; i < spawnCount; i++)
@@ -397,7 +384,17 @@ void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemor
         
         EventManager::GetInstance().Publish(startEvent); 
     }
-   
+
+    m_IsWorldCreated = true;
+    std::cout << "[서버] Server-authoritative world created. AGV count=" << spawnCount << "\n";
+}
+
+void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)
+{
+    (void)_proxy;
+    (void)_instream;
+    m_IsMapReady = true;
+    std::cout << "[서버] Unity viewer map ready\n";
 }
 
 static bool a=true;
