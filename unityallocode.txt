@@ -1,0 +1,1848 @@
+
+================================================================================
+BEGIN FILE: Unity/Assets/EKstudio/LowPoly Factory Machine Pack Demo/Scripts/OpenLinkOnButtonClick.cs
+================================================================================
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using System.Collections;
+
+namespace MyGameNamespace
+{
+    public class OpenLinkOnButtonClick : MonoBehaviour, IPointerClickHandler
+    {
+
+        
+        public string linkURL;
+
+       
+        public void OnPointerClick(PointerEventData eventData)
+        {
+           
+            Application.OpenURL(linkURL);
+        }
+    }
+}
+
+================================================================================
+END FILE: Unity/Assets/EKstudio/LowPoly Factory Machine Pack Demo/Scripts/OpenLinkOnButtonClick.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Editor/MapCurveBuilder.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.Splines;
+using Unity.Mathematics;
+
+public class MapCurveBuilder : Editor
+{
+    // 단축키: Ctrl + Shift + C (Curve)
+    [MenuItem("MapEditor/Create Curve Link %w")]
+    public static void CreateCurveLink()
+    {
+        // 1. 선택한 오브젝트 검사
+        GameObject[] selected = Selection.gameObjects;
+        if (selected.Length != 2)
+        {
+            Debug.LogWarning("곡선 링크를 만들려면 MapNode 2개를 선택해야 합니다!");
+            return;
+        }
+
+        MapNode nodeA = selected[0].GetComponent<MapNode>();
+        MapNode nodeB = selected[1].GetComponent<MapNode>();
+
+        if (nodeA == null || nodeB == null)
+        {
+            Debug.LogWarning("선택한 오브젝트에 MapNode 컴포넌트가 없습니다!");
+            return;
+        }
+
+        //2. 양방향 링크(A->B, B->A) 2개를 동시에 생성!
+        GameObject link1 = CreateSingleCurve(nodeA, nodeB);
+        GameObject link2 = CreateSingleCurve(nodeB, nodeA);
+
+        // 3. 에디터 편의: 방금 생성된 2개의 양방향 링크를 한 번에 선택 상태로 만듦
+        Selection.objects = new UnityEngine.Object[] { link1, link2 };
+
+        Debug.Log($"양방향 곡선 링크 2개 생성 완료: {nodeA.nodeID} -> {nodeB.nodeID}");
+    }
+
+    //링크 1개를 생성하고 스플라인을 세팅해주는 전용 함수
+    private static GameObject CreateSingleCurve(MapNode from, MapNode to)
+    {
+        // 1. 오브젝트 생성 및 컴포넌트 부착
+        GameObject linkGO = new GameObject($"CurveLink_{from.name}_to_{to.name}");
+        linkGO.transform.position = from.transform.position; // 시작 위치를 From 노드에 맞춤
+
+        MapLink mapLink = linkGO.AddComponent<MapLink>();
+        mapLink.fromNode = from;
+        mapLink.toNode = to;
+        mapLink.isCurve = true;
+
+        SplineContainer splineContainer = linkGO.AddComponent<SplineContainer>();
+        mapLink.attachedSpline = splineContainer;
+
+        // 2. 스플라인 데이터 설정
+        Spline spline = splineContainer.Spline;
+        spline.Clear();
+
+        Vector3 localStart = Vector3.zero;
+        Vector3 localEnd = linkGO.transform.InverseTransformPoint(to.transform.position);
+
+        Vector3 dir = (localEnd - localStart).normalized;
+        float dist = Vector3.Distance(localStart, localEnd);
+
+        // 3. BezierKnot 구조체 생성 및 자석(Tangent) 세팅
+        BezierKnot startKnot = new BezierKnot();
+        startKnot.Position = new float3(localStart.x, localStart.y, localStart.z);
+        startKnot.TangentOut = new float3(dir.x * dist * 0.4f, 0f, dir.z * dist * 0.4f);
+        startKnot.TangentIn = float3.zero;
+
+        BezierKnot endKnot = new BezierKnot();
+        endKnot.Position = new float3(localEnd.x, localEnd.y, localEnd.z);
+        endKnot.TangentIn = new float3(-dir.x * dist * 0.4f, 0f, -dir.z * dist * 0.4f);
+        endKnot.TangentOut = float3.zero;
+
+        // 4. 모드는 반드시 Broken으로 추가
+        spline.Add(startKnot, TangentMode.Broken);
+        spline.Add(endKnot, TangentMode.Broken);
+
+        // 실행 취소(Ctrl+Z) 기록 남기기
+        Undo.RegisterCreatedObjectUndo(linkGO, "Create Curve Link");
+
+        return linkGO;
+    }
+}
+#endif
+================================================================================
+END FILE: Unity/Assets/Editor/MapCurveBuilder.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/LinkAutoAssign.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+using System.Collections.Generic;
+
+public class LinkAutoAssign : MonoBehaviour
+{
+    [MenuItem("AGV Tools/Auto Assign Link")]
+    public static void AssignLink()
+    {
+        MapNode[] allNodes = FindObjectsOfType<MapNode>();
+        if (allNodes.Length == 0)
+        {
+            Debug.LogError("연결할 수 있는 노드가 없습니다.");
+            return;
+        }
+
+        GameObject linkRoot = GameObject.Find("Links_AutoGenerated");
+        if (linkRoot == null)
+        {
+            linkRoot = new GameObject("Links_AutoGenerated");
+        }
+
+        int createdCount = 0;
+        
+        for (int i = 0; i < allNodes.Length; i++)
+        {
+            for (int j = 0; j < allNodes.Length; j++)
+            {
+                if (i == j) 
+                    continue; 
+
+                MapNode cur_node = allNodes[i];
+                MapNode next_node = allNodes[j];
+
+                Vector3 curPos = cur_node.transform.position;
+                Vector3 nextPos = next_node.transform.position;
+                                
+                float distX = Mathf.Abs(curPos.x-nextPos.x);
+                float distZ = Mathf.Abs(curPos.z- nextPos.z);
+
+                bool isAlignedX = Mathf.Abs(curPos.x - nextPos.x) < 2.5f;
+                bool isAlignedZ = Mathf.Abs(curPos.z - nextPos.z) < 1.0f;
+                
+                if(distX < 5f&&distZ<3f&&( isAlignedX || isAlignedZ))
+                { 
+                    string linkName = $"Link_{cur_node.nodeID}_to_{next_node.nodeID}";
+
+
+                    if (GameObject.Find(linkName) != null) 
+                        continue;
+                    
+                    GameObject linkObj = new GameObject(linkName);
+                    linkObj.transform.SetParent(linkRoot.transform);
+
+
+                    linkObj.transform.position = (curPos + nextPos) / 2.0f;
+
+                    MapLink link = linkObj.AddComponent<MapLink>();
+                    
+                    link.fromNode = cur_node;
+                    link.toNode = next_node;                                        
+
+                    // 유니티 Undo(Ctrl+Z) 기록에 남기기
+                    Undo.RegisterCreatedObjectUndo(linkObj, "Auto Create Link");
+
+                    createdCount++;
+                }
+            }
+        }
+
+        Debug.Log($" 단방향 링크 자동 생성 완료! 총 {createdCount}개의 링크가 생성되었습니다.");
+    }
+}
+#endif
+================================================================================
+END FILE: Unity/Assets/Resources/LinkAutoAssign.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/LinkAutoAssignID.cs
+================================================================================
+/*#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+using System.Collections.Generic;
+public class LinkAutoAssignID:MonoBehaviour
+{
+    [MenuItem("AGV Tools/Auto Assign Link IDs")]
+    public static void AssignLinkIDs()
+    {
+        MapLink[] allLinks = FindObjectsOfType<MapLink>();
+        if (allLinks.Length == 0)
+        {
+            Debug.LogWarning(" 씬에 MapLink(LInk_Prefab)가 하나도 없습니다.");
+            return;
+        }
+
+        foreach (MapLink link in allLinks)
+        {
+            link.from
+        }
+    }
+};
+#endif*/
+================================================================================
+END FILE: Unity/Assets/Resources/LinkAutoAssignID.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/MapExporter.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+using System.IO;
+using System.Collections.Generic;
+using UnityEngine.Splines; // 스플라인 사용을 위해 추가
+
+[System.Serializable]
+public class NodeData { public int id; public float x; public float z; }
+
+[System.Serializable]
+public class LinkData
+{
+    public int from;
+    public int to;
+    public byte type; //0 = straight 1 = curve
+    public float dist;
+    public float cx1;
+    public float cz1;
+    public float cx2;
+    public float cz2;
+}
+
+[System.Serializable]
+public class MapData
+{
+    public List<NodeData> nodes = new List<NodeData>();
+    public List<LinkData> links = new List<LinkData>();
+}
+
+public class MapExporter : MonoBehaviour
+{
+    [MenuItem("AGV Tools/Export Map to JSON")]
+    public static void ExportJSON()
+    {
+        MapData mapData = new MapData();
+
+        // 1. 노드 수집        
+        MapNode[] allNodes = FindObjectsOfType<MapNode>();
+        foreach (MapNode node in allNodes)
+        {
+            NodeData nData = new NodeData();
+            // 참고: 가지고 계신 MapNode 스크립트의 변수명에 맞게 조절하세요 (nodeID -> m_Id 등)
+            nData.id = node.nodeID;
+            nData.x = Mathf.Round(node.transform.position.x * 100f) / 100f;
+            nData.z = Mathf.Round(node.transform.position.z * 100f) / 100f;
+            mapData.nodes.Add(nData);
+        }
+
+        // 2. 링크 수집 (직선/곡선 데이터 분리)
+        MapLink[] allLinks = FindObjectsOfType<MapLink>();
+        foreach (MapLink link in allLinks)
+        {
+            if (link.fromNode == null || link.toNode == null)
+            {
+                Debug.LogWarning($"[경고] 비어있는 링크가 있습니다: {link.gameObject.name}");
+                continue;
+            }
+
+            LinkData lData = new LinkData();
+            lData.from = link.fromNode.nodeID;
+            lData.to = link.toNode.nodeID;
+            lData.dist = Mathf.Round(link.GetLinkLength() * 100f) / 100f; // 소수점 둘째 자리까지
+
+            if (link.isCurve && link.attachedSpline != null)
+            {
+                lData.type =1;
+
+                var spline = link.attachedSpline.Spline;
+                var knot0 = spline[0];
+                var knot1 = spline[1];
+
+                //핵심: 유니티의 로컬 Tangent 값에 자신의 Position을 더한 뒤, 월드 좌표로 변환!
+                Vector3 p1World = link.attachedSpline.transform.TransformPoint((Vector3)(knot0.Position + knot0.TangentOut));
+                Vector3 p2World = link.attachedSpline.transform.TransformPoint((Vector3)(knot1.Position + knot1.TangentIn));
+
+                lData.cx1 = Mathf.Round(p1World.x * 100f) / 100f;
+                lData.cz1 = Mathf.Round(p1World.z * 100f) / 100f;
+                lData.cx2 = Mathf.Round(p2World.x * 100f) / 100f;
+                lData.cz2 = Mathf.Round(p2World.z * 100f) / 100f;
+            }
+            else
+            {
+                lData.type = 0;
+                lData.cx1 = 0; lData.cz1 = 0;
+                lData.cx2 = 0; lData.cz2 = 0;
+            }
+
+            mapData.links.Add(lData);
+        }
+
+        // 3. JSON 변환 및 저장
+        string jsonOutput = JsonUtility.ToJson(mapData, true);
+        string filePath = Application.dataPath + "/MapData.json";
+        File.WriteAllText(filePath, jsonOutput);
+
+        Debug.Log($"맵 JSON 파일 생성 완료! 경로: {filePath}");
+        AssetDatabase.Refresh();
+    }
+}
+#endif
+================================================================================
+END FILE: Unity/Assets/Resources/MapExporter.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/MapIdAssigner.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+using System.Collections.Generic;
+
+public class MapIdAssigner : MonoBehaviour
+{
+    // 유니티 상단 메뉴에 자동으로 ID를 먹여주는 버튼을 만듭니다.
+    [MenuItem("AGV Tools/Auto Assign Node IDs")]
+    public static void AssignIDs()
+    {
+        // 1. 씬에 배치된 모든 MapNode 컴포넌트를 싹 긁어옵니다.
+        MapNode[] allNodes = FindObjectsOfType<MapNode>();
+        if (allNodes.Length == 0)
+        {
+            Debug.LogWarning(" 씬에 MapNode(Node_Prefab)가 하나도 없습니다.");
+            return;
+        }
+
+        // 2. 리스트로 옮긴 뒤, 맵 안에서의 '물리적 위치'를 기준으로 정렬합니다.
+        List<MapNode> nodeList = new List<MapNode>(allNodes);
+
+        nodeList.Sort((a, b) =>
+        {
+            // 디버깅하기 가장 좋게 [아래쪽(Z 마이너스) -> 위쪽(Z 플러스)] 순서로 정렬하되,
+            // 같은 라인에 있다면 [왼쪽(X 마이너스) -> 오른쪽(X 플러스)] 순서로 1번부터 번호를 매깁니다.
+            if (Mathf.Abs(a.transform.position.z - b.transform.position.z) > 0.1f)
+            {
+                return a.transform.position.z.CompareTo(b.transform.position.z);
+            }
+            return a.transform.position.x.CompareTo(b.transform.position.x);
+        });                
+
+        // 3. 정렬된 순서대로 ID를 1번부터 쭈욱 부여합니다.
+        int currentID = 1;
+        foreach (MapNode node in nodeList)
+        {
+            // 매우 중요: 유니티 Undo 시스템에 등록합니다. 
+            // 혹시라도 번호 매기기가 맘에 안 들면 Ctrl + Z로 한 방에 되돌릴 수 있게 해줍니다.
+            Undo.RecordObject(node, "Auto Assign Node ID");
+            Undo.RecordObject(node.gameObject, "Auto Rename Node");
+
+            // 고유 ID 입력
+            node.nodeID = currentID;
+
+            // 계층 구조 창(Hierarchy)에서 보기 좋게 이름도 세 자릿수로 정렬 (Node_001, Node_015 등)
+            node.gameObject.name = $"Node_{currentID:D3}";
+
+            currentID++;
+        }
+
+        MapLink[] allLinks= FindObjectsByType<MapLink>();
+
+        foreach (MapLink link in allLinks)
+        {
+            // 인스펙터에서 from/to 노드가 연결되어 있는지 확인
+            if (link.fromNode == null || link.toNode == null)
+            {
+                Debug.LogWarning($"{link.gameObject.name}에 연결된 Node 레퍼런스가 누락되었습니다. 인스펙터를 확인해주세요.");
+                continue;
+            }
+
+            Undo.RecordObject(link.gameObject, "Auto Rename Link");            
+            link.gameObject.name = $"Link_{link.fromNode.nodeID:D3}_to_{link.toNode.nodeID:D3}";
+        }
+
+        // 4. 씬에 변경 사항이 생겼음을 유니티 엔진에 알려서 저장 상태로 만듭니다.
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+
+        Debug.Log($" 작업 완료! 총 {nodeList.Count}개의 노드에 1번부터 ID가 순차적으로 자동 부여되었습니다.");
+    }
+}
+#endif
+================================================================================
+END FILE: Unity/Assets/Resources/MapIdAssigner.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/MapLink.cs
+================================================================================
+using UnityEngine;
+using UnityEngine.Splines;
+
+public class MapLink : MonoBehaviour
+{
+    [Header("단방향 연결 (From -> To)")]
+    public MapNode fromNode;
+    public MapNode toNode;
+
+    [Header("곡선(Curve) 설정")]
+    public bool isCurve;
+    public SplineContainer attachedSpline;
+
+    
+    public float GetLinkLength()
+    {
+        if (isCurve && attachedSpline != null)
+        {
+            return attachedSpline.CalculateLength();
+        }
+        else if (fromNode != null && toNode != null)
+        {
+            return Vector3.Distance(fromNode.transform.position, toNode.transform.position);
+        }
+        return 0f;
+    }
+
+    private void OnDrawGizmos()
+    {
+        if (fromNode == null || toNode == null) return;
+
+        Vector3 startPos = fromNode.transform.position;
+        Vector3 endPos = toNode.transform.position;
+
+        Gizmos.color = isCurve ? Color.green : Color.yellow;
+
+        // 1. 곡선 모드일 때
+        if (isCurve && attachedSpline != null)
+        {
+            // 스플라인 선은 유니티가 그려주니, 우리는 끝점에 도착 방향 화살표만 그려줍니다!
+            Vector3 localTangent = (Vector3)attachedSpline.EvaluateTangent(1f);
+            Vector3 localDirection = localTangent.normalized;
+            Vector3 worldDirection = attachedSpline.transform.TransformDirection(localDirection);
+
+            Vector3 arrowPos = endPos - worldDirection * 0.6f;
+            DrawArrow(arrowPos, worldDirection);
+        }
+        // 2. 직선 모드일 때
+        else
+        {
+            Gizmos.DrawLine(startPos, endPos);
+            Vector3 direction = (endPos - startPos).normalized;
+            Vector3 arrowPos = endPos - direction * 0.6f;
+            DrawArrow(arrowPos, direction);
+        }
+    }
+
+    private void DrawArrow(Vector3 position, Vector3 direction)
+    {
+        if (direction == Vector3.zero) return;
+
+        Vector3 right = Quaternion.LookRotation(direction) * Quaternion.Euler(0, 180 + 25, 0) * Vector3.forward;
+        Vector3 left = Quaternion.LookRotation(direction) * Quaternion.Euler(0, 180 - 25, 0) * Vector3.forward;
+
+        Gizmos.DrawRay(position, right * 0.5f);
+        Gizmos.DrawRay(position, left * 0.5f);
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Resources/MapLink.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/MapNode.cs
+================================================================================
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class MapNode : MonoBehaviour
+{
+    [Header("노드 고유 ID")]
+    public int nodeID;
+    
+    private void OnDrawGizmos()
+    {
+        //Gizmos.color = Color.cyan;
+        //Gizmos.DrawWireSphere(transform.position, 0.4f);
+
+#if UNITY_EDITOR
+        // 씬 뷰에서 노드 위에 파란색으로 ID를 띄워줌
+        UnityEditor.Handles.Label(transform.position + Vector3.up * 0.6f, "[ " + nodeID + " ]");        
+#endif
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Resources/MapNode.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/NodeValid.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+using System.Collections.Generic;
+using System.Linq;
+public class NodeValid : MonoBehaviour
+{
+    [MenuItem("AGV Tools/Node Valid")]
+    public static void NodeValidation()
+    {
+        MapNode[] allNodes = FindObjectsOfType<MapNode>();
+        if (allNodes.Length == 0)
+        {
+            Debug.LogError("노드가 존재하지 않습니다.");
+            return;
+        }
+        List<GameObject> duplicatedObjects = new List<GameObject>();
+        for (int i = 0; i < allNodes.Length; i++)
+        {
+            for (int j = i+1; j < allNodes.Length; j++)
+            {                
+                MapNode curNode = allNodes[i];
+                MapNode nextNode=allNodes[j];
+
+                float distance = Vector3.Distance(curNode.transform.position, nextNode.transform.position);
+                
+                if (distance < 0.5f)
+                {                    
+                    MeshRenderer renderer = nextNode.GetComponent<MeshRenderer>();
+                    if (renderer != null)
+                    {
+                        // GPU에 던질 프로퍼티 블록 생성
+                        MaterialPropertyBlock propBlock = new MaterialPropertyBlock();
+                        renderer.GetPropertyBlock(propBlock);
+
+                        // 빨간색 지정
+                        propBlock.SetColor("_Color", Color.red);
+
+                        // 해당 렌더러에만 덮어쓰기
+                        renderer.SetPropertyBlock(propBlock);
+
+                        Debug.LogError($"겹친 노드 발견 ID: {curNode.nodeID} ...", nextNode.gameObject);
+                    }                    
+                    if (!nextNode.name.StartsWith("[DUP]"))
+                    {
+                        Undo.RecordObject(nextNode.gameObject, "Rename Duplicate Node");
+                        nextNode.name = "[DUP] " + nextNode.name;
+                    }
+
+                    // 선택 리스트에 추가 (나중에 지우기 편하게)
+                    if (!duplicatedObjects.Contains(nextNode.gameObject))
+                    {
+                        duplicatedObjects.Add(nextNode.gameObject);
+                    }
+                }
+            }
+        }
+        // 4. 결과 처리
+        if (duplicatedObjects.Count > 0)
+        {
+            // 하이에라키 창에서 겹친 노드들을 일제히 '선택 상태'로 만듦
+            Selection.objects = duplicatedObjects.ToArray();
+
+            EditorUtility.DisplayDialog("노드 검사 결과",
+                $"총 {duplicatedObjects.Count}개의 중복(겹침) 노드를 발견\n","확인");
+        }
+        else
+        {
+            EditorUtility.DisplayDialog("노드 검사 결과", "겹친 노드가 하나도 없습니다.", "확인");
+        }
+    }
+}
+
+#endif
+================================================================================
+END FILE: Unity/Assets/Resources/NodeValid.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Resources/QuickLinkAssign.cs
+================================================================================
+#if UNITY_EDITOR
+using UnityEngine;
+using UnityEditor;
+
+public class QuickLinker : MonoBehaviour
+{
+    // 단축키: Ctrl + L
+    [MenuItem("AGV Tools/단축키 연결/단방향 링크 만들기 (From -> To) %l")]
+    public static void CreateOneWayLink()
+    {
+        if (Selection.gameObjects.Length != 2)
+        {
+            Debug.LogWarning(" 링크를 연결할 노드를 '딱 2개'만 선택해주세요!");
+            return;
+        }
+
+        // 유니티에서 Selection.activeGameObject는 '가장 마지막'에 클릭한 오브젝트입니다.
+        // 즉 먼저 누른 게 From, 나중에 누른 게 To가 됨
+        GameObject toObj = Selection.activeGameObject;
+        GameObject fromObj = (Selection.gameObjects[0] == toObj) ? Selection.gameObjects[1] : Selection.gameObjects[0];
+
+        MapNode fromNode = fromObj.GetComponent<MapNode>();
+        MapNode toNode = toObj.GetComponent<MapNode>();
+
+        if (fromNode == null || toNode == null)
+        {
+            Debug.LogWarning("선택한 오브젝트가 MapNode가 아닙니다!");
+            return;
+        }
+
+        CreateLink(fromNode, toNode);
+    }
+
+    // 단축키: Ctrl + Shift + L (양방향을 한 번에 만들고 싶을 때)
+    [MenuItem("AGV Tools/단축키 연결/양방향 링크 만들기 %q")]
+    public static void CreateTwoWayLink()
+    {
+        if (Selection.gameObjects.Length != 2) return;
+
+        GameObject toObj = Selection.activeGameObject;
+        GameObject fromObj = (Selection.gameObjects[0] == toObj) ? Selection.gameObjects[1] : Selection.gameObjects[0];
+
+        MapNode fromNode = fromObj.GetComponent<MapNode>();
+        MapNode toNode = toObj.GetComponent<MapNode>();
+
+        if (fromNode != null && toNode != null)
+        {
+            CreateLink(fromNode, toNode);
+            CreateLink(toNode, fromNode); // 반대 방향도 추가
+        }
+    }
+
+    // 단축키: Ctrl + R (방향을 실수로 반대로 이었을 때 휙 뒤집기)
+    [MenuItem("AGV Tools/단축키 연결/선택한 링크 방향 뒤집기 %r")]
+    public static void ReverseLink()
+    {
+        bool changed = false;
+        foreach (GameObject obj in Selection.gameObjects)
+        {
+            MapLink link = obj.GetComponent<MapLink>();
+            if (link != null)
+            {
+                Undo.RecordObject(link, "Reverse Link Direction");
+                MapNode temp = link.fromNode;
+                link.fromNode = link.toNode;
+                link.toNode = temp;
+                changed = true;
+            }
+        }
+
+        if (changed) Debug.Log(" 링크 방향을 뒤집었습니다!");
+    }
+
+    // 실제 링크 오브젝트를 생성하는 내부 함수
+    private static void CreateLink(MapNode from, MapNode to)
+    {
+        string linkName = $"Link_{from.nodeID}_to_{to.nodeID}";
+
+        if (GameObject.Find(linkName) != null)
+        {
+            Debug.Log($"[알림] {linkName} 은 이미 존재합니다.");
+            return;
+        }
+
+        GameObject linkRoot = GameObject.Find("Links_Manual");
+        if (linkRoot == null)
+        {
+            linkRoot = new GameObject("Links_Manual");
+        }
+
+        GameObject linkObj = new GameObject(linkName);
+        linkObj.transform.SetParent(linkRoot.transform);
+        linkObj.transform.position = (from.transform.position + to.transform.position) / 2.0f;
+
+        MapLink linkData = linkObj.AddComponent<MapLink>();
+        linkData.fromNode = from;
+        linkData.toNode = to;
+
+        Undo.RegisterCreatedObjectUndo(linkObj, "Create Quick Link");
+        Debug.Log($" {linkName} 생성 완료!");
+    }
+}
+#endif
+================================================================================
+END FILE: Unity/Assets/Resources/QuickLinkAssign.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/AGV.cs
+================================================================================
+using System;
+using UnityEngine;
+
+public class AGV : Object
+{
+   
+    private void Awake()
+    {
+        m_ClassID = (UInt32)CLASS_ID.OBJ_AGV;
+
+    }
+    public override UInt32 GetClassID() { return m_ClassID; }
+    public static AGV Create()
+    {
+        return new AGV();
+    }
+    public override void Read(InputMemoryStream _inStream)
+    {
+        m_PosX = _inStream.ReadFloat();
+        m_PosY = _inStream.ReadFloat();
+
+        //float qx = _inStream.ReadFloat();
+        //float qy = _inStream.ReadFloat();
+        //float qz= _inStream.ReadFloat();
+        //float qw= _inStream.ReadFloat();
+
+        //Quaternion quaternion = new Quaternion(qx, qy, qz, qw);
+        //m_Rot= quaternion;
+
+        m_HeadingAngle= _inStream.ReadFloat();
+
+    }
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.gameObject.GetComponentInChildren<Object>().GetClassID() == (UInt32)CLASS_ID.OBJ_AGV)
+        {
+            Debug.Log("OnCollisionEnter " + collision.gameObject.name);
+        }
+        
+    }
+
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/AGV.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Map.cs
+================================================================================
+using NUnit.Framework;
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+public class Node
+{
+    public UInt32 m_Id;
+    public float m_PosX;
+    public float m_PosY;
+    public byte type;
+};
+
+public class Link
+{
+    public UInt32 m_Id;
+    public UInt32 m_FromNodeID;
+    public UInt32 m_ToNodeID;
+    public byte m_Type;
+    public float m_CX1;
+    public float m_CZ1; 
+    public float m_CX2;
+    public float m_CZ2; 
+};
+
+public class Map : MonoBehaviour
+{
+    public static Map Instance { get; set; }
+    private void Awake()
+    {
+        if (Instance == null)
+        {            
+            Instance = this;
+        }
+    }
+
+    public Dictionary<UInt32,Node> m_Nodes { get; set; }
+    public List<Link> m_Links {  get; set; }
+    
+    void Start()
+    {
+        
+    }
+    
+    void Update()
+    {
+        
+    }
+}
+
+================================================================================
+END FILE: Unity/Assets/Scenes/Map.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/LinkingContext.cs
+================================================================================
+using System;
+using System.Collections.Generic;
+using UnityEditor.PackageManager;
+using UnityEngine;
+
+public class LinkingContext
+{
+    private Dictionary<UInt32, Object> m_NewtorkIDToObjectDictionaty;
+    public LinkingContext()
+    {
+        m_NewtorkIDToObjectDictionaty= new Dictionary<UInt32, Object>();
+    }
+    public Object GetObject(UInt32 _networkID)
+    {
+        if(!m_NewtorkIDToObjectDictionaty.ContainsKey(_networkID))
+        {            
+            return null;
+        }
+        return m_NewtorkIDToObjectDictionaty[_networkID];
+    }
+    public void AddObject(UInt32 _networkID,Object _obj)
+    {
+        if (m_NewtorkIDToObjectDictionaty.ContainsKey(_networkID))
+        {
+            Debug.LogError($"[LinkingContext] 에 해당 ({_networkID})는 이미 존재합니다 삽입할 수 없습니다!");
+            return;
+        }
+        m_NewtorkIDToObjectDictionaty.Add(_networkID, _obj);
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/LinkingContext.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/MemoryStream.cs
+================================================================================
+using System;
+using System.Collections.Generic;
+using System.Text;
+using Unity.AppUI.UI;
+using Unity.Mathematics;
+using Unity.VisualScripting;
+using UnityEngine;
+using UnityEngine.Experimental.AI;
+using static UnityEditor.Experimental.GraphView.Port;
+
+public class OutputMemoryStream
+{
+    private byte[] m_Buffer;
+    private int m_Head;
+    private UInt32 m_Capacity;
+    public int GetLength() { return m_Head; }
+    public byte[] GetBuffer()
+    {
+        byte[] actualBuffer = new byte[m_Head];
+        Array.Copy(m_Buffer, 0, actualBuffer, 0, m_Head);
+        return actualBuffer;
+    }
+
+    public OutputMemoryStream(UInt32 _initCapacity=1024)
+    {
+        m_Head = 0;
+        m_Capacity = _initCapacity;
+        m_Buffer= new byte[m_Capacity];
+    }
+
+    private void ReallocBuffer(UInt32 _newLength)
+    {
+        byte[] newBuffer=new byte[_newLength];
+
+        Array.Copy(m_Buffer, 0, newBuffer, 0,m_Head);
+
+        m_Buffer = newBuffer;
+    }
+    public void Write(byte[] _data,int _inByteCount)
+    {
+        int resultHead = m_Head + _inByteCount;
+
+        if(m_Capacity < resultHead)
+        {
+            UInt32 newCapacity= (UInt32)Math.Max(m_Capacity * 2, resultHead);
+            ReallocBuffer(newCapacity);
+        }
+
+        Array.Copy(_data,0,m_Buffer,m_Head,_inByteCount);
+
+        m_Head = resultHead;
+    }
+    public void WriteByte(byte _data)
+    {
+        byte[] singleByte = new byte[1];
+        singleByte[0] = _data;
+        Write(singleByte, 1);
+    }    
+    public void WriteShort(short _data)
+    {
+        byte[] bytes = BitConverter.GetBytes(_data);
+        Write(bytes, sizeof(short));
+    }
+
+    public void WriteFloat(float _data)
+    {
+        byte[] bytes=BitConverter.GetBytes(_data);
+        Write(bytes,sizeof(float));
+    }
+
+    public void WriteUInt32(UInt32 _data)
+    {
+        byte[] bytes= BitConverter.GetBytes(_data);
+        Write(bytes, sizeof(UInt32));
+    }
+    public void WriteInt(int _data)
+    {
+        byte[] bytes = BitConverter.GetBytes(_data);        
+        Write(bytes, sizeof(int));
+    }
+    public void WriteString(string _data)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(_data);
+        
+        WriteShort((short)bytes.Length);
+        Write(bytes, bytes.Length);
+    }   
+}
+public class InputMemoryStream
+{
+    private byte[] m_Buffer;
+    private int m_Head;
+    private UInt32 m_Capacity;
+
+    public InputMemoryStream(byte[] _buffer)
+    {
+        m_Buffer = _buffer;
+    }    
+    
+    public byte ReadByte()
+    {
+        byte val = m_Buffer[m_Head];
+        m_Head += 1;
+        return val;
+    }
+    public short ReadShort()
+    {
+        short val = BitConverter.ToInt16(m_Buffer, m_Head);
+        m_Head += 2;
+        return val;
+    }
+    public uint ReadUInt32()
+    {        
+        UInt32 val = BitConverter.ToUInt32(m_Buffer, m_Head);     
+        m_Head += 4;
+        return val;
+    }
+    
+    public int ReadInt32()
+    {
+        int val = BitConverter.ToInt32(m_Buffer, m_Head);
+        m_Head += 4;
+        return val;
+    }
+
+    public float ReadFloat()
+    {
+        float val =BitConverter.ToSingle(m_Buffer, m_Head);
+        m_Head += 4;
+        return val;
+    }
+
+    public string ReadString(int _length)
+    {
+        string val = Encoding.UTF8.GetString(m_Buffer, m_Head, _length);
+        m_Head += _length;
+        return val;
+    }
+
+    public Dictionary<UInt32,Node> ReadNodes()
+    {
+        Dictionary<UInt32, Node> nodes =new Dictionary<UInt32, Node>();
+        
+        UInt32 length = ReadUInt32();        
+
+        for(int i=0;i<length;i++)
+        {
+            UInt32 id = ReadUInt32();
+            float PosX = ReadFloat();
+            float PosY = ReadFloat();
+            byte type = ReadByte();
+            
+            Node node = new Node();
+            node.m_Id = id;
+            node.m_PosX = PosX;
+            node.m_PosY = PosY;
+            node.type = type;
+
+            nodes.Add(id, node);
+        }
+        
+        return nodes;
+    }
+
+    public List<Link> ReadLinks()
+    {        
+        List<Link> links = new List<Link>();
+        UInt32 length = ReadUInt32();
+        for (int i = 0; i < length; i++)
+        {
+            UInt32 id = ReadUInt32();
+            UInt32 FromNodeID = ReadUInt32();
+            UInt32 ToNodeID = ReadUInt32();
+
+            byte type = ReadByte();
+
+            float cx1 = ReadFloat();
+            float cz1 = ReadFloat();
+            float cx2 = ReadFloat();
+            float cz2 = ReadFloat();
+
+            Link link = new Link();
+            link.m_Id = id;
+            link.m_FromNodeID = FromNodeID;
+            link.m_ToNodeID = ToNodeID;
+
+            link.m_Type = type; //바이트 그대로 대입
+            link.m_CX1 = cx1;
+            link.m_CZ1 = cz1;
+            link.m_CX2 = cx2;
+            link.m_CZ2 = cz2;
+
+            links.Add(link);
+        }
+
+        return links;
+    }
+}
+
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/MemoryStream.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/NetworkClient.cs
+================================================================================
+using UnityEngine;
+using System.Threading;
+
+public class NetworkClient : MonoBehaviour
+{
+    
+    private void Awake()
+    {                
+    }
+    
+    private void Update()
+    {     
+    }
+
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/NetworkClient.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/NetworkEvent.cs
+================================================================================
+using UnityEngine;
+using System;
+using NUnit.Framework;
+using System.Collections.Generic;
+
+public interface INetworkEvent
+{
+    void Excute();
+}
+
+public class NetworkMapBuildEvent:INetworkEvent
+{    
+    private Dictionary<UInt32,Node> m_Nodes;
+    private List<Link> m_Links;
+    public NetworkMapBuildEvent(Dictionary<UInt32, Node> nodes, List<Link> links)
+    {
+        m_Nodes = nodes;
+        m_Links = links;
+    }
+    public void Excute()
+    {
+        RenderManager.Instance.MapBuild(m_Nodes, m_Links);
+    }
+}
+
+public class NetworkSpawnEvent:INetworkEvent
+{
+    private UInt32 m_networkID, m_classID;
+    public NetworkSpawnEvent(UInt32 _networkID,UInt32 _classID)
+    {
+        m_networkID = _networkID;
+        m_classID = _classID;
+    }
+
+    public void Excute() 
+    {                   
+        RenderManager.Instance.OnNetworkObjectCreated(m_networkID, m_classID);
+        
+    }
+}
+
+//todo: 미완성
+public class NetworkUpdateEvent : INetworkEvent
+{
+    private UInt32 m_networkID;
+    private Vector2 m_position;
+    Quaternion m_rotation;
+    private float m_headingAngle;
+    public NetworkUpdateEvent(UInt32 _networkID, Vector2 _position, Quaternion _quat)
+    {
+        m_networkID = _networkID;
+        m_position = _position;
+        m_rotation = _quat;
+    }
+    public NetworkUpdateEvent(UInt32 _networkID, Vector2 _position, float _headingAngle)
+    {
+        m_networkID = _networkID;
+        m_position = _position;
+        m_headingAngle= _headingAngle;
+    }
+
+    public void Excute()
+    {
+        RenderManager.Instance.UpdateObjectPosition(m_networkID, m_position, m_headingAngle);
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/NetworkEvent.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/NetworkManagerClient.cs
+================================================================================
+using System;
+using System.Collections.Generic;
+using System.Net.Sockets;
+using System.Threading;
+using UnityEngine;
+public enum PACKET_TYPE : byte
+{    
+    PT_REPLICATION = 0,
+    PT_MAZE_DATA=1,
+    PT_HELLO = 2,
+    PT_READY_MAP = 4,
+    PT_READY_OBJECT = 5,
+
+
+
+    PT_ROUTE = 10,          // (서버->로봇) "이 노드들을 순서대로 거쳐서 가라"
+    PT_CANCEL_ROUTE = 11,   // (서버->로봇) "경로 폐기! 그 자리에 정지해라"
+    PT_ARRIVED = 12,        // (로봇->서버) "다음 노드에 무사히 도착했습니다"
+    PT_STATUS = 13,         // (로봇->서버) "현재 X, Z, 각도, 속도, 배터리 상태 보고"
+    PT_ERROR = 14,          // (로봇->서버) "모터 고장 / 충돌 감지"
+    PT_HEARTBEAT = 15       // (로봇->서버) "나 아직 살아있음 (1초 주기)"     
+}
+
+public enum REPLICATION_ACTION:byte
+{
+    RT_CREATE=0,
+    RT_UPDATE=1,
+    RT_DESTORY=2,
+    MAX
+}
+
+public enum CLASS_ID:UInt32
+{
+    OBJ_DEFAULT = 1000,
+    OBJ_AGV = 1001
+}
+
+public class NetworkManagerClient : MonoBehaviour
+{
+    private TCPSession m_Session;
+    private Thread m_ReceiveThread = null;
+
+
+    private TcpClient m_Client;
+    public LinkingContext m_LinkingContext { get; set; }
+    private Queue<INetworkEvent> m_NetworkEventQueue = new Queue<INetworkEvent>();
+    private readonly object m_Lock = new object();
+
+
+    private int m_SpawnedObjectCount     = 0;
+    private const int TARGET_SPAWN_COUNT = 4;
+
+    public static NetworkManagerClient Instance { get; private set; }    
+    private void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+        }
+    }
+
+    private void Start()
+    {
+        m_Session= ConnectTOServer();
+        OutputMemoryStream outStream = new OutputMemoryStream();
+        
+        WriteNSendHelloPacket(outStream);        
+
+        m_ReceiveThread = new Thread(m_Session.ProcessIncomingData);
+        m_ReceiveThread.Start();
+    }
+
+
+    private void Update()
+    {        
+        lock(m_Lock)
+        {
+            while (m_NetworkEventQueue.Count > 0)
+            {
+                INetworkEvent eve = m_NetworkEventQueue.Dequeue();
+                eve.Excute();
+            }
+        }        
+    }
+    public TCPSession ConnectTOServer()
+    {
+        m_Client = new TcpClient();
+        m_Client.Connect("127.0.0.1", 6666);
+
+        TCPSession serverSession = new TCPSession(m_Client);
+        serverSession.onPacketReceived = (inStream) => { this.ProcessPacket(inStream); };
+
+        m_LinkingContext = new LinkingContext();
+
+        ObjectRegistry.StaticInit();
+        ObjectRegistry.Instance.RegistCreateFunction((UInt32)CLASS_ID.OBJ_AGV, AGV.Create);
+
+        return serverSession;
+    }
+    public void ProcessPacket(InputMemoryStream _inStream)
+    {
+        PACKET_TYPE packet_type = (PACKET_TYPE)_inStream.ReadByte();
+        switch (packet_type)
+        {
+            case PACKET_TYPE.PT_HELLO:
+                {
+                    HandleHelloPacket_Recv(_inStream);
+                    break;
+                }
+            case PACKET_TYPE.PT_MAZE_DATA:
+                {
+                    HandleMapDataPacket_Recv(_inStream);
+                    break;
+                }
+            case PACKET_TYPE.PT_REPLICATION:
+                {
+                    HandleReplicatePacket_Recv(_inStream);
+                    break;
+                }
+            case PACKET_TYPE.PT_ROUTE:
+                {
+                    
+                    break;
+                }
+        }
+    }
+ 
+    public void HandleMapDataPacket_Recv(InputMemoryStream _inStream)
+    {
+        Map.Instance.m_Nodes=_inStream.ReadNodes();
+        Map.Instance.m_Links=_inStream.ReadLinks();
+        
+        lock (m_Lock)
+        {
+            NetworkMapBuildEvent nbe = new NetworkMapBuildEvent(Map.Instance.m_Nodes, Map.Instance.m_Links);
+            m_NetworkEventQueue.Enqueue(nbe);
+        }        
+    }
+
+    public void HandleHelloPacket_Recv(InputMemoryStream _inStream)
+    {
+        Debug.Log($"<color=cyan> Hello packet</color>을 서버에게서 받았습니다!");        
+        UInt32 sessionID = _inStream.ReadUInt32();        
+        Debug.Log($"<color=green>Session ID :</color>" + sessionID);        
+    }    
+
+    public void HandleReplicatePacket_Recv(InputMemoryStream _inStream)
+    {
+        UInt32 commandCount = _inStream.ReadUInt32();
+        for(int i=0;i<commandCount;i++)
+        {
+            UInt32 networkID = _inStream.ReadUInt32();
+            REPLICATION_ACTION action = (REPLICATION_ACTION)_inStream.ReadByte();
+            switch(action)
+            {
+                case REPLICATION_ACTION.RT_CREATE:
+                    {
+                        UInt32 classID = _inStream.ReadUInt32();
+
+                        Object obj = ObjectRegistry.Instance.CreateObject(classID);                        
+                        m_LinkingContext.AddObject(networkID, obj);
+
+                        obj.Read(_inStream);
+
+                        lock(m_Lock)
+                        {                            
+                            NetworkSpawnEvent nse = new NetworkSpawnEvent(networkID, classID);
+                            m_NetworkEventQueue.Enqueue(nse);
+                        }
+
+                        break;
+                    }
+                case REPLICATION_ACTION.RT_UPDATE:
+                    {                         
+                        Object obj = m_LinkingContext.GetObject(networkID);
+                        obj.Read(_inStream);
+                        
+
+                        Vector2 pos = new Vector2(obj.m_PosX, obj.m_PosY);
+                        //Quaternion rot = obj.m_Rot;
+                        float headingAngle = obj.m_HeadingAngle;
+
+                        lock (m_Lock)
+                        {
+                            NetworkUpdateEvent nue = new NetworkUpdateEvent(networkID, pos, headingAngle);
+                            m_NetworkEventQueue.Enqueue(nue);
+                        }
+
+                        break;
+                    }
+            }
+        }
+    }
+
+    public void CheckAndSendReadyObject()
+    {
+        m_SpawnedObjectCount++;
+
+        if (m_SpawnedObjectCount >= TARGET_SPAWN_COUNT)
+        {
+            OutputMemoryStream outStream = new OutputMemoryStream();
+            WriteNSendReadyObjectPacket(outStream);            
+        }
+    }
+
+    public void WriteNSendHelloPacket(OutputMemoryStream _inStream)
+    {
+        byte packet_type = (byte)PACKET_TYPE.PT_HELLO;
+        _inStream.WriteByte(packet_type);
+        m_Session.SendPacket(_inStream);
+    }
+    public void WriteNSendReadyMapPacket(OutputMemoryStream _inStream)
+    {
+        byte packet_type = (byte)PACKET_TYPE.PT_READY_MAP;
+        _inStream.WriteByte(packet_type);
+        m_Session.SendPacket(_inStream);
+    }
+    public void WriteNSendReadyObjectPacket(OutputMemoryStream _inStream)
+    {
+        byte packet_type = (byte)PACKET_TYPE.PT_READY_OBJECT;
+        _inStream.WriteByte(packet_type);
+        m_Session.SendPacket(_inStream);
+    }
+}
+
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/NetworkManagerClient.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/SharedPacket.cs
+================================================================================
+using System;
+using System.Collections.Generic;
+public struct RouteNodeTime
+{
+    public UInt32 nodeID;
+    public float arrivalTime;
+    public float departureTime;
+};
+
+public struct RoutePacket
+{
+    public UInt32 agvID;
+    public List<RouteNodeTime> nodes;
+
+    public void Serialize(OutputMemoryStream outStream)
+    {
+        outStream.WriteUInt32(agvID);
+        outStream.WriteShort((short)nodes.Count);
+        foreach (RouteNodeTime n in nodes)
+        {
+            outStream.WriteUInt32(n.nodeID);
+            outStream.WriteFloat(n.arrivalTime);
+            outStream.WriteFloat((float)n.departureTime);
+        }
+    }
+
+    public void Deserialize(InputMemoryStream inStream)
+    {
+        agvID = inStream.ReadUInt32();
+        short count = inStream.ReadShort();
+        nodes = new List<RouteNodeTime>();
+
+        for (int i = 0; i < count; i++)
+        {
+            RouteNodeTime n = new RouteNodeTime();
+            n.nodeID = inStream.ReadUInt32();
+            n.arrivalTime = inStream.ReadFloat();
+            n.departureTime = inStream.ReadFloat();
+            nodes.Add(n);
+        }
+    }
+}
+
+// 2. 도착 보고 패킷 (PT_ARRIVED)
+public struct ArrivedPacket
+{
+    public UInt32 agvID;
+    public UInt32 currentNodeID;
+
+    public void Serialize(OutputMemoryStream outStream)
+    {
+        outStream.WriteUInt32(agvID);
+        outStream.WriteUInt32(currentNodeID);
+    }
+
+    public void Deserialize(InputMemoryStream inStream)
+    {
+        agvID = inStream.ReadUInt32();
+        currentNodeID = inStream.ReadUInt32();
+    }
+}
+
+// 3. 상태 보고 패킷 (PT_STATUS)
+public struct StatusPacket
+{
+    public UInt32 agvID;
+    public UInt32 currentLinkID;
+    public float progress;
+    public float x;
+    public float z;
+    public float heading;
+    public float velocity;
+    public float battery;
+
+    public void Serialize(OutputMemoryStream outStream)
+    {
+        outStream.WriteUInt32(agvID);
+        outStream.WriteUInt32(currentLinkID);
+        outStream.WriteFloat(progress);
+        outStream.WriteFloat(x);
+        outStream.WriteFloat(z);
+        outStream.WriteFloat(heading);
+        outStream.WriteFloat(velocity);
+        outStream.WriteFloat(battery);
+    }
+
+    public void Deserialize(InputMemoryStream inStream)
+    {
+        agvID = inStream.ReadUInt32();
+        currentLinkID = inStream.ReadUInt32();
+        progress = inStream.ReadFloat();
+        x = inStream.ReadFloat();
+        z = inStream.ReadFloat();
+        heading = inStream.ReadFloat();
+        velocity = inStream.ReadFloat();
+        battery = inStream.ReadFloat();
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/SharedPacket.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Network/TCPSession.cs
+================================================================================
+using System;
+using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using UnityEngine;
+
+public class TCPSession
+{
+    private TcpClient m_tcpClient;
+    private NetworkStream m_Stream;
+    private byte[] m_SizeBuffer=new byte[2];
+
+    public Action<InputMemoryStream> onPacketReceived;
+
+    public TCPSession(TcpClient tcpClient)
+    {
+        m_tcpClient = tcpClient;
+        m_Stream=tcpClient.GetStream();
+    }
+    public void ProcessIncomingData()
+    {
+        bool isConnected = m_tcpClient.Connected;
+        if (isConnected)
+        {
+            while (true)
+            {
+                try
+                {
+                    //1. 패킷 사이즈
+                    int headerReader = 0;
+                    while (headerReader < 2)
+                    {
+                        int read = m_Stream.Read(m_SizeBuffer,headerReader,2 - headerReader);
+                        headerReader+= read;
+                    }
+                    
+                    ushort packetSize = BitConverter.ToUInt16(m_SizeBuffer, 0);
+
+                    //2. 패킷 바디
+                    byte[] bodyBuffer = new byte[packetSize - 2];
+                    int totalRead = 0;
+                    while (totalRead < bodyBuffer.Length)
+                    {
+                        int bytesRead = m_Stream.Read(bodyBuffer, totalRead, bodyBuffer.Length - totalRead);
+                        totalRead += bytesRead;
+                    }
+
+                    //다모였으면
+                    if (totalRead == bodyBuffer.Length)
+                    {
+                        InputMemoryStream inputStream = new InputMemoryStream(bodyBuffer);
+
+                        onPacketReceived?.Invoke(inputStream);
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.Log(e);
+                    break;
+                }
+            }
+        }
+        else
+        {
+            Debug.Log($"<color=red> 서버 접속 실패</color>");
+        }        
+    }
+
+    public void SendPacket(OutputMemoryStream _inStream)
+    {
+        short packet_size = (short)(sizeof(short)+_inStream.GetLength());
+
+        OutputMemoryStream finalOutStream = new OutputMemoryStream();
+        finalOutStream.WriteShort(packet_size);
+        finalOutStream.Write(_inStream.GetBuffer(), _inStream.GetLength());
+
+        m_Stream.Write(finalOutStream.GetBuffer(),0,finalOutStream.GetLength());
+    }
+}
+================================================================================
+END FILE: Unity/Assets/Scenes/Network/TCPSession.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/Object.cs
+================================================================================
+using System;
+using UnityEngine;
+
+public abstract class Object : MonoBehaviour
+{
+    public float m_PosX { get; set; }
+    public float m_PosY { get; set; }
+
+    public Quaternion m_Rot { get; set; } 
+    public float m_HeadingAngle {  get; set; }
+
+    Vector2 m_Position { get; set; }
+
+    protected UInt32 m_ClassID = (UInt32)CLASS_ID.OBJ_DEFAULT;
+    public virtual UInt32 GetClassID() { return m_ClassID; }
+    
+    public abstract void Read(InputMemoryStream _inStream);
+    
+}
+
+================================================================================
+END FILE: Unity/Assets/Scenes/Object.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/ObjectRegistry.cs
+================================================================================
+using UnityEngine;
+using System;
+using System.Collections.Generic;
+
+public class ObjectRegistry
+{
+    public static ObjectRegistry Instance { get; private set; }
+
+    public static void StaticInit()
+    {
+        Instance = new ObjectRegistry();
+    }
+    private Dictionary<UInt32, Func<Object>> m_NameToObjectCreationFuncMap;
+    private ObjectRegistry()
+    {
+        m_NameToObjectCreationFuncMap = new Dictionary<UInt32, Func<Object>>();
+    }
+    
+    public void RegistCreateFunction(UInt32 _objClassName, Func<Object> _createFunc)
+    {
+        if (m_NameToObjectCreationFuncMap.ContainsKey(_objClassName))
+        {
+            Debug.LogError($"[ObjectRegistry] 이미 등록된 ClassID 입니다: {_objClassName}");
+            return;
+        }
+        m_NameToObjectCreationFuncMap.Add(_objClassName, _createFunc);
+    }
+    public Object CreateObject(UInt32 _objClassName)
+    {        
+        if (!m_NameToObjectCreationFuncMap.ContainsKey(_objClassName))
+        {
+            Debug.LogError($"[ObjectRegistry] 등록되지 않은 ClassID({_objClassName})를 생성하려고 합니다.");
+            return null;
+        }
+        Func<Object> createFunc = m_NameToObjectCreationFuncMap[_objClassName];
+
+        return createFunc.Invoke();
+    }
+}
+
+================================================================================
+END FILE: Unity/Assets/Scenes/ObjectRegistry.cs
+================================================================================
+
+
+================================================================================
+BEGIN FILE: Unity/Assets/Scenes/RenderManager.cs
+================================================================================
+using UnityEngine;
+using System.Collections.Generic;
+using System;
+
+public class RenderManager:MonoBehaviour
+{
+    private Dictionary<UInt32, GameObject> m_NetworkIDToGameObjectMap;
+    public static RenderManager Instance { get; private set; }
+    
+    public GameObject agvPrefab;
+    public GameObject defaultPrefab;
+    public GameObject nodePrefab;
+    public GameObject linkPrefab;    
+    public void Awake()
+    {
+        if (Instance == null)
+        {
+            Instance = this;
+            m_NetworkIDToGameObjectMap = new Dictionary<UInt32, GameObject>();
+
+            agvPrefab = Resources.Load<GameObject>("AGV_Prefab");
+            defaultPrefab= Resources.Load<GameObject>("Default_Prefab");
+            nodePrefab = Resources.Load<GameObject>("Node_Prefab");            
+            linkPrefab = Resources.Load<GameObject>("Link_Prefab");
+            if (agvPrefab == null || defaultPrefab == null|| nodePrefab==null||linkPrefab==null)
+            {
+                Debug.LogError("[RenderManager] Resources 폴더에서 프리팹을 로드하는 데 실패");
+            }
+        }
+    }
+    public void OnNetworkObjectCreated(UInt32 _networkID, UInt32 _classIDObject)
+    {
+        if (m_NetworkIDToGameObjectMap.ContainsKey(_networkID))
+        {
+            Debug.LogError($"[RenderManager] 이미 존재하는 NetworkID 입니다: {_networkID}");
+            return;
+        }
+        GameObject targetPrefab = defaultPrefab;
+        if (_classIDObject == (UInt32)CLASS_ID.OBJ_AGV)
+        {
+            targetPrefab = agvPrefab;
+        }
+        if (targetPrefab == null)
+        {
+            Debug.LogError($"[RenderManager] ClassID({_classIDObject})에 대응하는 프리팹이 등록되지 않았습니다.");
+            return;
+        }
+
+        GameObject Representaion_3D = Instantiate(targetPrefab, Vector3.zero, Quaternion.identity);
+        Representaion_3D.name = $"3D_NetObj_[{_networkID}]";
+        m_NetworkIDToGameObjectMap.Add(_networkID, Representaion_3D);
+
+        Material m = Representaion_3D.GetComponent<MeshRenderer>().material;
+        m.color = GetColorByID(_networkID);
+    }
+    public void UpdateObjectPosition(UInt32 _networkID, Vector2 _position,Quaternion _rot)
+    { 
+        if(m_NetworkIDToGameObjectMap.ContainsKey(_networkID))
+        {
+            m_NetworkIDToGameObjectMap[_networkID].transform.position = new Vector3(_position.x, 0.0f, _position.y);
+            m_NetworkIDToGameObjectMap[_networkID].transform.rotation = _rot;
+        }
+    }
+    public void UpdateObjectPosition(UInt32 _networkID, Vector2 _position, float _rot)
+    {
+        if (m_NetworkIDToGameObjectMap.ContainsKey(_networkID))
+        {
+            m_NetworkIDToGameObjectMap[_networkID].transform.position = new Vector3(_position.x, 0.0f, _position.y);
+            float angleDeg = _rot * Mathf.Rad2Deg;
+            angleDeg = -(angleDeg) + 90f;
+            Quaternion targetRot = Quaternion.Euler(0f, angleDeg, 0f);
+            m_NetworkIDToGameObjectMap[_networkID].transform.rotation = targetRot;
+        }
+    }
+
+    public void MapBuild(Dictionary<UInt32, Node> _nodes,List<Link> _links)
+    {        
+        foreach (Node node in _nodes.Values)
+        {
+            Vector3 nodePos = new Vector3(node.m_PosX, 0.05f, node.m_PosY);
+            GameObject nodeObj = Instantiate(nodePrefab, nodePos, Quaternion.identity);
+            nodeObj.name = $"Node_[{node.m_Id}]_Type_{node.type}";
+            MapNode mapNode = nodeObj.GetComponent<MapNode>();
+            if (mapNode != null)
+            {
+                mapNode.nodeID = (int)node.m_Id; 
+            }
+            Material m = nodeObj.GetComponent<MeshRenderer>().material;           
+        }
+
+        // 2. 링크 생성 (직선과 곡선 분기 처리 완벽 적용!)
+        foreach (Link link in _links)
+        {
+            Node fromNode = _nodes[link.m_FromNodeID];
+            Node toNode = _nodes[link.m_ToNodeID];
+
+            // Y축을 0.05f로 띄워서 바닥에 파묻히지 않게 함
+            Vector3 startPos = new Vector3(fromNode.m_PosX, 0.05f, fromNode.m_PosY);
+            Vector3 endPos = new Vector3(toNode.m_PosX, 0.05f, toNode.m_PosY);
+
+            GameObject linkObj = Instantiate(linkPrefab, startPos, Quaternion.identity);
+            LineRenderer lr = linkObj.GetComponent<LineRenderer>();
+
+            //월드 좌표계 사용 강제 설정 (곡선 그리기 훨씬 편해집니다)
+            lr.useWorldSpace = true;
+
+            //곡선일 때와 직선일 때를 나눠서 선을 그립니다.
+            if (link.m_Type == 1)
+            {
+                int resolution = 20; // 선을 20조각으로 쪼개서 부드럽게 만듦
+                lr.positionCount = resolution + 1;
+
+                // C++ 서버에서 받은 제어점 데이터 
+                // (주의: 서버의 Z값이 유니티 2D 탑뷰상 Y로 들어오고 있다면 m_CZ1을 Y자리에 넣으세요)
+                Vector3 p0 = startPos;
+                Vector3 p1 = new Vector3(link.m_CX1, 0.05f, link.m_CZ1);
+                Vector3 p2 = new Vector3(link.m_CX2, 0.05f, link.m_CZ2);
+                Vector3 p3 = endPos;
+
+                Debug.DrawLine(p0, p1, Color.red, 10f);  // 출발점 -> 제어점1 (빨간선)
+                Debug.DrawLine(p3, p2, Color.blue, 10f); // 도착점 -> 제어점2 (파란선)
+
+                for (int i = 0; i <= resolution; i++)
+                {
+                    float t = i / (float)resolution;
+                    float u = 1.0f - t;
+
+                    float tt = t * t;
+                    float uu = u * u;
+                    float uuu = uu * u;
+                    float ttt = tt * t;
+
+                    // 3차 베지어 위치 계산 (C++ 서버와 100% 동일한 공식)
+                    Vector3 pos = (uuu * p0) +
+                                  (3f * uu * t * p1) +
+                                  (3f * u * tt * p2) +
+                                  (ttt * p3);
+
+                    lr.SetPosition(i, pos);
+                }
+            }
+            else // 직선 모드
+            {
+                lr.positionCount = 2;
+                lr.SetPosition(0, startPos);
+                lr.SetPosition(1, endPos);
+            }
+        }
+    }
+    public Color GetColorByID(UInt32 networkID)
+    {
+        UnityEngine.Random.State oldState = UnityEngine.Random.state;
+
+        // 2. 네트워크 ID를 시드 값으로 설정합니다. 
+        // (이렇게 하면 이 ID는 항상 같은 난수 패턴을 가집니다)
+        UnityEngine.Random.InitState((int)networkID);
+
+        Color randomColor = UnityEngine.Random.ColorHSV(0f, 1f, 0.8f, 1f, 0.8f, 1f);
+
+        UnityEngine.Random.state = oldState;
+
+        return randomColor;
+    }
+}
+
+
+
+================================================================================
+END FILE: Unity/Assets/Scenes/RenderManager.cs
+================================================================================

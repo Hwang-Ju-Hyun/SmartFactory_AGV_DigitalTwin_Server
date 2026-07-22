@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Unity Server Replication Flow</title>
+  <desc id="desc">Server owns object state, sends replication commands over TCP, and Unity creates or updates visual objects by network ID.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .server { fill: #ecfdf5; stroke: #059669; }
+      .unity { fill: #eff6ff; stroke: #2563eb; }
+      .tcp { fill: #f5f3ff; stroke: #7c3aed; }
+      .state { fill: #fefce8; stroke: #ca8a04; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .h { font: 700 20px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 400 15px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #64748b; }
+      .label { font: 700 13px Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 2.3; fill: none; marker-end: url(#arrow); }
+      .arrow2 { stroke: #334155; stroke-width: 2.3; fill: none; marker-end: url(#arrow); stroke-dasharray: 7 6; }
+      .pill { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="760"/>
+  <text class="title" x="54" y="58">Server to Unity Replication</text>
+  <text class="subtitle" x="54" y="86">Unity does not own the AGV state. It reconstructs a visual copy of the server-owned world.</text>
+
+  <rect class="panel server" x="54" y="145" width="350" height="420" rx="12"/>
+  <text class="h" x="92" y="190">C++ Server</text>
+  <text class="small" x="92" y="216">authoritative world</text>
+  <rect class="pill" x="96" y="250" width="260" height="42" rx="8"/>
+  <text class="label" x="121" y="276">Object: Robo / AGV state</text>
+  <rect class="pill" x="96" y="314" width="260" height="42" rx="8"/>
+  <text class="label" x="121" y="340">LinkingContext: NetworkID</text>
+  <rect class="pill" x="96" y="378" width="260" height="42" rx="8"/>
+  <text class="label" x="121" y="404">ReplicationManagerServer</text>
+  <rect class="pill" x="96" y="442" width="260" height="42" rx="8"/>
+  <text class="label" x="121" y="468">OutputMemoryStream</text>
+
+  <rect class="panel tcp" x="478" y="218" width="244" height="272" rx="12"/>
+  <text class="h" x="572" y="260">TCP</text>
+  <text class="small" x="529" y="286">size-first binary frame</text>
+  <rect class="pill" x="512" y="322" width="176" height="34" rx="17"/>
+  <text class="small" x="548" y="344">UPT_HELLO</text>
+  <rect class="pill" x="512" y="372" width="176" height="34" rx="17"/>
+  <text class="small" x="537" y="394">UPT_MAZE_DATA</text>
+  <rect class="pill" x="512" y="422" width="176" height="34" rx="17"/>
+  <text class="small" x="530" y="444">UPT_REPLICATION</text>
+
+  <rect class="panel unity" x="796" y="145" width="350" height="420" rx="12"/>
+  <text class="h" x="834" y="190">Unity Client</text>
+  <text class="small" x="834" y="216">digital twin viewer</text>
+  <rect class="pill" x="838" y="250" width="260" height="42" rx="8"/>
+  <text class="label" x="863" y="276">NetworkManagerClient</text>
+  <rect class="pill" x="838" y="314" width="260" height="42" rx="8"/>
+  <text class="label" x="863" y="340">ObjectRegistry: classID</text>
+  <rect class="pill" x="838" y="378" width="260" height="42" rx="8"/>
+  <text class="label" x="863" y="404">LinkingContext: NetworkID</text>
+  <rect class="pill" x="838" y="442" width="260" height="42" rx="8"/>
+  <text class="label" x="863" y="468">RenderManager: GameObject</text>
+
+  <path class="arrow" d="M 356 463 C 420 463 424 354 478 354"/>
+  <path class="arrow" d="M 722 354 C 764 354 766 271 838 271"/>
+  <path class="arrow2" d="M 838 463 C 764 615 428 615 356 463"/>
+  <text class="label" x="486" y="603">Unity renders and sends user/client messages, but server remains the source of truth.</text>
+
+  <rect class="panel state" x="306" y="635" width="588" height="60" rx="10"/>
+  <text class="txt" x="338" y="670">Replication packet = commandCount + [networkID, action, classID?, serialized object state]</text>
+</svg>

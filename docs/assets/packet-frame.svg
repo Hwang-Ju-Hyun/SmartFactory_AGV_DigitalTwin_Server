@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">RobotProtocol TCP Frame Format</title>
+  <desc id="desc">RobotProtocol uses a size-first binary frame. The packet size comes first because TCP is a byte stream.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .box { stroke: #1e293b; stroke-width: 2; }
+      .size { fill: #fee2e2; }
+      .id { fill: #dbeafe; }
+      .agv { fill: #dcfce7; }
+      .seq { fill: #fef3c7; }
+      .payload { fill: #ede9fe; }
+      .h { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 400 14px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #64748b; }
+      .label { font: 700 13px Arial, sans-serif; fill: #475569; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="620"/>
+  <text class="title" x="54" y="58">RobotProtocol Frame Format</text>
+  <text class="subtitle" x="54" y="86">A fixed header lets Server, ESP32, and FakeRobot parse the same TCP byte stream safely.</text>
+
+  <text class="label" x="80" y="154">byte offset</text>
+  <text class="small" x="190" y="154">0</text>
+  <text class="small" x="318" y="154">2</text>
+  <text class="small" x="446" y="154">4</text>
+  <text class="small" x="650" y="154">8</text>
+  <text class="small" x="854" y="154">12</text>
+
+  <rect class="box size" x="180" y="180" width="130" height="112"/>
+  <rect class="box id" x="310" y="180" width="130" height="112"/>
+  <rect class="box agv" x="440" y="180" width="210" height="112"/>
+  <rect class="box seq" x="650" y="180" width="210" height="112"/>
+  <rect class="box payload" x="860" y="180" width="260" height="112"/>
+
+  <text class="h" x="202" y="224">packetSize</text>
+  <text class="small" x="225" y="252">uint16</text>
+  <text class="small" x="218" y="273">2 bytes</text>
+
+  <text class="h" x="338" y="224">packetID</text>
+  <text class="small" x="356" y="252">uint16</text>
+  <text class="small" x="348" y="273">2 bytes</text>
+
+  <text class="h" x="515" y="224">agvID</text>
+  <text class="small" x="528" y="252">uint32</text>
+  <text class="small" x="519" y="273">4 bytes</text>
+
+  <text class="h" x="715" y="224">sequence</text>
+  <text class="small" x="738" y="252">uint32</text>
+  <text class="small" x="729" y="273">4 bytes</text>
+
+  <text class="h" x="945" y="224">payload</text>
+  <text class="small" x="936" y="252">packet-specific</text>
+  <text class="small" x="946" y="273">N bytes</text>
+
+  <path class="arrow" d="M 245 320 C 245 354 245 370 245 392"/>
+  <rect class="panel" x="82" y="402" width="326" height="106" rx="10"/>
+  <text class="h" x="116" y="438">Why size comes first</text>
+  <text class="txt" x="116" y="468">TCP does not preserve message boundaries.</text>
+  <text class="txt" x="116" y="492">Read 2 bytes first, then read the rest.</text>
+
+  <rect class="panel" x="462" y="402" width="304" height="106" rx="10"/>
+  <text class="h" x="496" y="438">Body header</text>
+  <text class="txt" x="496" y="468">packetID + agvID + sequence</text>
+  <text class="txt" x="496" y="492">is common to every robot packet.</text>
+
+  <rect class="panel" x="820" y="402" width="300" height="106" rx="10"/>
+  <text class="h" x="854" y="438">Payload</text>
+  <text class="txt" x="854" y="468">HELLO, ROUTE, STATUS, ARRIVED</text>
+  <text class="txt" x="854" y="492">share the same framing rule.</text>
+
+  <text class="small" x="180" y="342">Full frame size includes the 2-byte packetSize field itself.</text>
+</svg>

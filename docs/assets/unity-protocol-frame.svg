@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">Unity Legacy Protocol Frame Format</title>
+  <desc id="desc">Unity legacy protocol uses the same size-first TCP frame. The body starts with a one byte UnityPacketType, followed by packet-specific payload. Replication payload contains command count and repeated object commands.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .box { stroke: #1e293b; stroke-width: 2; }
+      .size { fill: #fee2e2; }
+      .type { fill: #dbeafe; }
+      .payload { fill: #ede9fe; }
+      .rep { fill: #dcfce7; }
+      .cmd { fill: #fef3c7; }
+      .obj { fill: #fff7ed; }
+      .h { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 400 14px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #64748b; }
+      .label { font: 700 13px Arial, sans-serif; fill: #475569; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="660"/>
+  <text class="title" x="54" y="58">Unity Legacy Protocol Frame Format</text>
+  <text class="subtitle" x="54" y="86">Server and Unity use the same size-first TCP framing, but the body starts with a 1-byte UnityPacketType.</text>
+
+  <text class="label" x="80" y="154">byte offset</text>
+  <text class="small" x="190" y="154">0</text>
+  <text class="small" x="318" y="154">2</text>
+  <text class="small" x="482" y="154">3</text>
+
+  <rect class="box size" x="180" y="180" width="130" height="112"/>
+  <rect class="box type" x="310" y="180" width="170" height="112"/>
+  <rect class="box payload" x="480" y="180" width="640" height="112"/>
+
+  <text class="h" x="202" y="224">packetSize</text>
+  <text class="small" x="225" y="252">uint16</text>
+  <text class="small" x="218" y="273">2 bytes</text>
+
+  <text class="h" x="336" y="224">packetType</text>
+  <text class="small" x="369" y="252">uint8</text>
+  <text class="small" x="354" y="273">1 byte</text>
+
+  <text class="h" x="744" y="224">payload</text>
+  <text class="small" x="704" y="252">HELLO, MAP, READY, REPLICATION</text>
+  <text class="small" x="748" y="273">packet-specific</text>
+
+  <text class="small" x="180" y="342">Full frame size includes packetSize itself. TCPSession strips these 2 bytes before NetworkManagerServer reads packetType.</text>
+
+  <path class="arrow" d="M 800 318 C 800 348 800 366 800 388"/>
+  <rect class="panel" x="82" y="410" width="326" height="118" rx="10"/>
+  <text class="h" x="116" y="446">Why size comes first</text>
+  <text class="txt" x="116" y="476">TCP is a byte stream, not a packet stream.</text>
+  <text class="txt" x="116" y="500">Read 2 bytes first, then wait until</text>
+  <text class="txt" x="116" y="522">the full Unity packet is buffered.</text>
+
+  <rect class="panel" x="462" y="410" width="304" height="118" rx="10"/>
+  <text class="h" x="496" y="446">UnityPacketType</text>
+  <text class="txt" x="496" y="476">UPT_HELLO, UPT_MAZE_DATA,</text>
+  <text class="txt" x="496" y="500">UPT_READY_MAP, UPT_READY_OBJECT,</text>
+  <text class="txt" x="496" y="522">UPT_REPLICATION.</text>
+
+  <rect class="panel" x="820" y="410" width="300" height="118" rx="10"/>
+  <text class="h" x="854" y="446">Replication payload</text>
+  <text class="txt" x="854" y="476">commandCount + repeated commands:</text>
+  <text class="txt" x="854" y="500">networkID, action, classID if create,</text>
+  <text class="txt" x="854" y="522">then serialized object state.</text>
+
+  <text class="label" x="82" y="582">UPT_REPLICATION payload layout</text>
+  <rect class="box rep" x="286" y="560" width="170" height="56"/>
+  <rect class="box cmd" x="456" y="560" width="170" height="56"/>
+  <rect class="box cmd" x="626" y="560" width="140" height="56"/>
+  <rect class="box obj" x="766" y="560" width="170" height="56"/>
+  <rect class="box payload" x="936" y="560" width="184" height="56"/>
+
+  <text class="small" x="322" y="592">commandCount</text>
+  <text class="small" x="500" y="592">networkID</text>
+  <text class="small" x="676" y="592">action</text>
+  <text class="small" x="812" y="592">classID if create</text>
+  <text class="small" x="980" y="592">object state</text>
+</svg>

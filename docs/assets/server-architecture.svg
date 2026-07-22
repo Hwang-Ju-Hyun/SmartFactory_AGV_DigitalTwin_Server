@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820" role="img" aria-labelledby="title desc">
+  <title id="title">AGV Server Architecture</title>
+  <desc id="desc">Linux TCP server architecture with select loop, TCPSession, ClientProxy, NetworkManagerServer, world logic, Unity replication, and RobotProtocol.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .linux { fill: #f1f5f9; stroke: #64748b; }
+      .net { fill: #eff6ff; stroke: #2563eb; }
+      .proxy { fill: #f5f3ff; stroke: #7c3aed; }
+      .world { fill: #ecfdf5; stroke: #059669; }
+      .out { fill: #fff7ed; stroke: #f97316; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .h { font: 700 19px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 400 14px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .label { font: 700 12px Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .arrow2 { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); stroke-dasharray: 7 6; }
+      .pill { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.4; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="820"/>
+  <text class="title" x="54" y="58">AGV Server Architecture</text>
+  <text class="subtitle" x="54" y="86">A Linux TCP server separates socket I/O, client session state, world logic, and outgoing protocols.</text>
+
+  <rect class="panel linux" x="54" y="140" width="250" height="510" rx="12"/>
+  <text class="h" x="88" y="184">Linux Server Process</text>
+  <text class="small" x="88" y="210">POSIX socket API</text>
+  <rect class="pill" x="88" y="250" width="182" height="38" rx="8"/>
+  <text class="label" x="122" y="274">Bind 0.0.0.0:6666</text>
+  <rect class="pill" x="88" y="306" width="182" height="38" rx="8"/>
+  <text class="label" x="139" y="330">Listen</text>
+  <rect class="pill" x="88" y="362" width="182" height="38" rx="8"/>
+  <text class="label" x="139" y="386">select()</text>
+  <rect class="pill" x="88" y="418" width="182" height="38" rx="8"/>
+  <text class="label" x="139" y="442">Accept</text>
+  <rect class="pill" x="88" y="474" width="182" height="38" rx="8"/>
+  <text class="label" x="121" y="498">UpdateWorld(dt)</text>
+  <rect class="pill" x="88" y="530" width="182" height="38" rx="8"/>
+  <text class="label" x="105" y="554">SendReplication</text>
+
+  <rect class="panel net" x="370" y="130" width="220" height="230" rx="12"/>
+  <text class="h" x="415" y="174">TCPSession</text>
+  <text class="small" x="410" y="200">byte stream boundary</text>
+  <rect class="pill" x="404" y="232" width="152" height="34" rx="17"/>
+  <text class="small" x="430" y="254">receive buffer</text>
+  <rect class="pill" x="404" y="282" width="152" height="34" rx="17"/>
+  <text class="small" x="421" y="304">packetSize first</text>
+
+  <rect class="panel proxy" x="370" y="430" width="220" height="220" rx="12"/>
+  <text class="h" x="420" y="474">ClientProxy</text>
+  <text class="small" x="412" y="500">server-side client avatar</text>
+  <rect class="pill" x="404" y="532" width="152" height="34" rx="17"/>
+  <text class="small" x="435" y="554">sessionID</text>
+  <rect class="pill" x="404" y="582" width="152" height="34" rx="17"/>
+  <text class="small" x="414" y="604">ReplicationManager</text>
+
+  <rect class="panel world" x="662" y="130" width="300" height="520" rx="12"/>
+  <text class="h" x="710" y="174">NetworkManagerServer</text>
+  <text class="small" x="725" y="200">routing hub for all packets</text>
+  <rect class="pill" x="708" y="238" width="208" height="38" rx="8"/>
+  <text class="label" x="740" y="262">Unity packet branch</text>
+  <rect class="pill" x="708" y="294" width="208" height="38" rx="8"/>
+  <text class="label" x="733" y="318">RobotProtocol branch</text>
+  <rect class="pill" x="708" y="350" width="208" height="38" rx="8"/>
+  <text class="label" x="733" y="374">LinkingContext</text>
+  <rect class="pill" x="708" y="406" width="208" height="38" rx="8"/>
+  <text class="label" x="725" y="430">Task / Event Layer</text>
+  <rect class="pill" x="708" y="462" width="208" height="38" rx="8"/>
+  <text class="label" x="727" y="486">RoutePlanner</text>
+  <rect class="pill" x="708" y="518" width="208" height="38" rx="8"/>
+  <text class="label" x="725" y="542">RobotManager</text>
+  <rect class="pill" x="708" y="574" width="208" height="38" rx="8"/>
+  <text class="label" x="726" y="598">AGV pose sync</text>
+
+  <rect class="panel out" x="1014" y="158" width="130" height="142" rx="12"/>
+  <text class="h" x="1045" y="200">Unity</text>
+  <text class="small" x="1038" y="226">Digital Twin</text>
+  <text class="small" x="1034" y="252">Replication</text>
+
+  <rect class="panel out" x="1014" y="430" width="130" height="142" rx="12"/>
+  <text class="h" x="1038" y="472">ESP32</text>
+  <text class="small" x="1031" y="498">Robot Client</text>
+  <text class="small" x="1034" y="524">RobotProtocol</text>
+
+  <path class="arrow" d="M 270 381 C 325 381 326 245 370 245"/>
+  <text class="small" x="308" y="230">readable socket</text>
+  <path class="arrow" d="M 480 360 L 480 430"/>
+  <text class="small" x="498" y="400">OnPacketReceived</text>
+  <path class="arrow" d="M 590 540 C 640 540 625 390 662 390"/>
+  <text class="small" x="604" y="370">ProcessPacket</text>
+  <path class="arrow" d="M 962 258 L 1014 229"/>
+  <path class="arrow" d="M 962 504 L 1014 501"/>
+  <path class="arrow2" d="M 1014 501 C 930 704 735 702 812 612"/>
+  <text class="small" x="842" y="704">STATUS / ARRIVED become server world events</text>
+
+  <rect class="panel" x="54" y="704" width="1090" height="62" rx="10"/>
+  <text class="txt" x="88" y="741">Current implementation uses select(). epoll is a natural next step if the number of clients grows, but select is enough for the current fleet prototype.</text>
+</svg>

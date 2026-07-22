@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">ESP32 Processing Pipeline</title>
+  <desc id="desc">ESP32 firmware processing pipeline from WiFi and TCP connection to RobotProtocol dispatch, temporary route simulation, and future motor encoder control.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .boot { fill: #eff6ff; stroke: #2563eb; }
+      .protocol { fill: #f5f3ff; stroke: #7c3aed; }
+      .command { fill: #fff7ed; stroke: #f97316; }
+      .runtime { fill: #ecfdf5; stroke: #059669; }
+      .report { fill: #fefce8; stroke: #ca8a04; }
+      .node { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .future { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 7 5; }
+      .decision { fill: #fef3c7; stroke: #d97706; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .h { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .tag { font: 700 12px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .arrow { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke-dasharray: 7 6; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text class="title" x="54" y="58">ESP32 Processing Pipeline</text>
+  <text class="subtitle" x="54" y="86">Current firmware verifies the protocol loop first. Motor and encoder control will replace the temporary progress simulation.</text>
+
+  <rect class="panel boot" x="54" y="142" width="220" height="438" rx="12"/>
+  <text class="h" x="96" y="184">Boot / WiFi</text>
+  <rect class="node" x="88" y="230" width="152" height="40" rx="8"/><text class="tag" x="126" y="255">setup()</text>
+  <rect class="node" x="88" y="296" width="152" height="40" rx="8"/><text class="tag" x="119" y="321">WiFi.begin</text>
+  <rect class="node" x="88" y="362" width="152" height="40" rx="8"/><text class="tag" x="136" y="387">loop()</text>
+  <rect class="decision" x="100" y="428" width="128" height="54" rx="27"/><text class="tag" x="129" y="452">TCP</text><text class="small" x="126" y="470">connected?</text>
+  <path class="arrow" d="M164 270 L164 296"/><path class="arrow" d="M164 336 L164 362"/><path class="arrow" d="M164 402 L164 428"/>
+
+  <rect class="panel protocol" x="344" y="142" width="220" height="438" rx="12"/>
+  <text class="h" x="396" y="184">Protocol</text>
+  <rect class="node" x="378" y="230" width="152" height="40" rx="8"/><text class="tag" x="413" y="255">send HELLO</text>
+  <rect class="node" x="378" y="306" width="152" height="40" rx="8"/><text class="tag" x="411" y="331">readIncoming</text>
+  <rect class="node" x="378" y="382" width="152" height="50" rx="8"/><text class="tag" x="410" y="405">processFrames</text><text class="small" x="415" y="423">packetSize</text>
+  <rect class="decision" x="392" y="472" width="124" height="54" rx="27"/><text class="tag" x="430" y="496">packet</text><text class="small" x="438" y="514">ID</text>
+  <path class="arrow" d="M454 270 L454 306"/><path class="arrow" d="M454 346 L454 382"/><path class="arrow" d="M454 432 L454 472"/>
+
+  <rect class="panel command" x="634" y="122" width="220" height="220" rx="12"/>
+  <text class="h" x="688" y="164">Commands</text>
+  <rect class="node" x="668" y="202" width="152" height="36" rx="8"/><text class="tag" x="704" y="225">HELLO_ACK</text>
+  <rect class="node" x="668" y="254" width="152" height="36" rx="8"/><text class="tag" x="686" y="277">ROUTE_COMMAND</text>
+  <rect class="node" x="668" y="306" width="152" height="36" rx="8"/><text class="tag" x="693" y="329">CANCEL / ESTOP</text>
+
+  <rect class="panel runtime" x="634" y="410" width="220" height="220" rx="12"/>
+  <text class="h" x="686" y="452">Runtime</text>
+  <rect class="node" x="668" y="488" width="152" height="42" rx="8"/><text class="tag" x="686" y="514">RobotStateMachine</text>
+  <rect class="node" x="668" y="554" width="152" height="42" rx="8"/><text class="tag" x="684" y="580">Progress Simulation</text>
+  <rect class="future" x="876" y="488" width="190" height="108" rx="10"/>
+  <text class="tag" x="916" y="518">Future Hardware</text>
+  <text class="small" x="914" y="546">RouteExecutor</text>
+  <text class="small" x="914" y="568">MotionController</text>
+  <text class="small" x="914" y="590">Motor / Encoder</text>
+  <path class="arrow" d="M744 530 L744 554"/>
+
+  <rect class="panel report" x="934" y="142" width="210" height="200" rx="12"/>
+  <text class="h" x="988" y="184">Reports</text>
+  <rect class="node" x="968" y="224" width="142" height="38" rx="8"/><text class="tag" x="1004" y="248">STATUS</text>
+  <rect class="node" x="968" y="282" width="142" height="38" rx="8"/><text class="tag" x="1000" y="306">ARRIVED</text>
+
+  <path class="arrow" d="M228 455 C280 455 302 250 378 250"/>
+  <path class="arrow" d="M516 499 C590 499 594 272 668 272"/>
+  <path class="arrow" d="M744 290 L744 488"/>
+  <path class="arrow" d="M820 575 C900 575 902 243 968 243"/>
+  <path class="arrow" d="M820 575 C900 575 902 301 968 301"/>
+  <path class="arrow dash" d="M820 509 L876 542"/>
+</svg>

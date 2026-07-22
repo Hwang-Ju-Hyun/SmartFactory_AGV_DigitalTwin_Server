@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Server and Robot Responsibility Split</title>
+  <desc id="desc">Server decides the route and reservations. Robot executes local motion, reads sensors, and reports status.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; }
+      .server { fill: #ecfdf5; stroke: #059669; }
+      .robot { fill: #fff7ed; stroke: #f97316; }
+      .proto { fill: #f5f3ff; stroke: #7c3aed; }
+      .bad { fill: #fee2e2; stroke: #ef4444; }
+      .h { font: 700 20px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 400 15px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #64748b; }
+      .tag { font: 700 13px Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .thin { stroke: #94a3b8; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="760"/>
+  <text class="title" x="54" y="58">Why ROUTE_COMMAND, not raw motor commands?</text>
+  <text class="subtitle" x="54" y="86">Fleet-level planning belongs to the server. Hardware-level control belongs to the robot.</text>
+
+  <rect class="panel server" x="58" y="140" width="430" height="410" rx="12"/>
+  <text class="h" x="98" y="182">Server responsibility</text>
+  <text class="small" x="98" y="208">global decisions</text>
+
+  <rect class="panel" x="106" y="242" width="330" height="50" rx="8"/>
+  <text class="tag" x="135" y="273">Task assignment</text>
+  <path class="thin" d="M 271 292 L 271 320"/>
+  <rect class="panel" x="106" y="322" width="330" height="50" rx="8"/>
+  <text class="tag" x="135" y="353">Path finding on warehouse map</text>
+  <path class="thin" d="M 271 372 L 271 400"/>
+  <rect class="panel" x="106" y="402" width="330" height="50" rx="8"/>
+  <text class="tag" x="135" y="433">ReservationTable conflict check</text>
+  <path class="thin" d="M 271 452 L 271 480"/>
+  <rect class="panel" x="106" y="482" width="330" height="50" rx="8"/>
+  <text class="tag" x="135" y="513">ROUTE_COMMAND: node sequence</text>
+
+  <rect class="panel proto" x="532" y="286" width="136" height="116" rx="12"/>
+  <text class="h" x="560" y="329">TCP</text>
+  <text class="tag" x="555" y="355">RobotProtocol</text>
+  <text class="small" x="560" y="380">binary frame</text>
+
+  <path class="arrow" d="M 436 507 C 485 507 501 344 532 344"/>
+
+  <rect class="panel robot" x="714" y="140" width="430" height="410" rx="12"/>
+  <text class="h" x="754" y="182">Robot responsibility</text>
+  <text class="small" x="754" y="208">local execution and safety</text>
+
+  <path class="arrow" d="M 668 344 C 698 344 688 267 714 267"/>
+  <rect class="panel" x="762" y="242" width="330" height="50" rx="8"/>
+  <text class="tag" x="790" y="273">RouteExecutor</text>
+  <path class="thin" d="M 927 292 L 927 320"/>
+  <rect class="panel" x="762" y="322" width="330" height="50" rx="8"/>
+  <text class="tag" x="790" y="353">Encoder / odometry / heading</text>
+  <path class="thin" d="M 927 372 L 927 400"/>
+  <rect class="panel" x="762" y="402" width="330" height="50" rx="8"/>
+  <text class="tag" x="790" y="433">PID / speed correction</text>
+  <path class="thin" d="M 927 452 L 927 480"/>
+  <rect class="panel" x="762" y="482" width="330" height="50" rx="8"/>
+  <text class="tag" x="790" y="513">Motor driver: TB6612FNG</text>
+
+  <path class="arrow" d="M 714 538 C 660 650 530 650 488 538"/>
+  <text class="tag" x="543" y="676">STATUS / ARRIVED / ERROR</text>
+
+  <rect class="panel bad" x="164" y="594" width="872" height="70" rx="10"/>
+  <text class="tag" x="198" y="623">Rejected design for this project</text>
+  <text class="txt" x="198" y="648">Server streams FORWARD / TURN / PWM continuously. This makes WiFi latency and motor differences part of the fleet server problem.</text>
+</svg>

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Server Processing Pipeline</title>
+  <desc id="desc">Layered server packet processing pipeline from TCP bytes to Unity or RobotProtocol branches.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .socket { fill: #eff6ff; stroke: #2563eb; }
+      .router { fill: #f1f5f9; stroke: #64748b; }
+      .robot { fill: #fff7ed; stroke: #f97316; }
+      .unity { fill: #f5f3ff; stroke: #7c3aed; }
+      .node { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .decision { fill: #fef3c7; stroke: #d97706; }
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px Arial, sans-serif; fill: #475569; }
+      .h { font: 700 18px Arial, sans-serif; fill: #0f172a; }
+      .tag { font: 700 12px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .arrow { stroke: #334155; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="720"/>
+  <text class="title" x="54" y="58">Server Processing Pipeline</text>
+  <text class="subtitle" x="54" y="86">TCPSession restores packets. NetworkManagerServer routes them to Unity or RobotProtocol handlers.</text>
+
+  <rect class="panel socket" x="54" y="146" width="260" height="410" rx="12"/>
+  <text class="h" x="100" y="188">Socket Layer</text>
+  <rect class="node" x="96" y="238" width="174" height="44" rx="8"/><text class="tag" x="128" y="265">TCP bytes arrive</text>
+  <rect class="node" x="96" y="316" width="174" height="54" rx="8"/><text class="tag" x="132" y="340">TCPSession</text><text class="small" x="125" y="358">receive buffer</text>
+  <rect class="decision" x="118" y="408" width="130" height="54" rx="27"/><text class="tag" x="130" y="432">packetSize</text><text class="small" x="148" y="450">complete?</text>
+  <rect class="node" x="96" y="492" width="174" height="44" rx="8"/><text class="tag" x="115" y="519">InputMemoryStream</text>
+  <path class="arrow" d="M183 282 L183 316"/><path class="arrow" d="M183 370 L183 408"/><path class="arrow" d="M183 462 L183 492"/>
+
+  <rect class="panel router" x="388" y="220" width="210" height="238" rx="12"/>
+  <text class="h" x="430" y="262">Packet Router</text>
+  <rect class="node" x="422" y="306" width="142" height="44" rx="8"/><text class="tag" x="436" y="333">ProcessPacket</text>
+  <rect class="decision" x="432" y="384" width="122" height="52" rx="26"/><text class="tag" x="454" y="407">Robot</text><text class="small" x="454" y="425">Protocol?</text>
+  <path class="arrow" d="M493 350 L493 384"/>
+
+  <rect class="panel robot" x="686" y="122" width="210" height="260" rx="12"/>
+  <text class="h" x="735" y="164">Robot Branch</text>
+  <rect class="node" x="720" y="204" width="142" height="44" rx="8"/><text class="tag" x="732" y="231">Read Header</text>
+  <rect class="decision" x="730" y="280" width="122" height="48" rx="24"/><text class="tag" x="768" y="310">HELLO?</text>
+  <rect class="node" x="720" y="350" width="142" height="44" rx="8"/><text class="tag" x="733" y="377">RobotSession</text>
+  <path class="arrow" d="M791 248 L791 280"/><path class="arrow" d="M791 328 L791 350"/>
+
+  <rect class="panel unity" x="686" y="438" width="210" height="180" rx="12"/>
+  <text class="h" x="738" y="480">Unity Branch</text>
+  <rect class="node" x="720" y="520" width="142" height="44" rx="8"/><text class="tag" x="742" y="547">Packet Switch</text>
+  <rect class="node" x="720" y="584" width="142" height="44" rx="8"/><text class="tag" x="746" y="611">Replication</text>
+  <path class="arrow" d="M791 564 L791 584"/>
+
+  <path class="arrow" d="M270 514 C340 514 336 328 422 328"/>
+  <path class="arrow" d="M554 410 C614 410 620 226 720 226"/>
+  <path class="arrow" d="M554 410 C620 410 622 542 720 542"/>
+
+  <rect class="panel" x="970" y="260" width="160" height="170" rx="12"/>
+  <text class="h" x="1010" y="302">World</text>
+  <text class="small" x="1008" y="330">status/event</text>
+  <text class="small" x="1008" y="352">route update</text>
+  <text class="small" x="1008" y="374">AGV pose sync</text>
+  <path class="arrow" d="M862 372 C920 372 918 344 970 344"/>
+  <path class="arrow" d="M862 606 C930 606 926 396 970 380"/>
+</svg>
