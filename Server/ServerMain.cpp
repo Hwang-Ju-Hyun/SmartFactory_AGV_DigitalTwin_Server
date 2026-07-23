@@ -64,9 +64,7 @@ int main(void)
                         newSockets.push_back(newClientSock);
                         
                         //hello packet을 똑바로 주고 받으면 session id 0이 아니라 갱신이 됨
-                        NetworkManagerServer::sInstance->OnClientAccepted(newClientSock);
-                        
-                        
+                        NetworkManagerServer::sInstance->OnClientAccepted(newClientSock);                                                
                     }
                 }
                 else

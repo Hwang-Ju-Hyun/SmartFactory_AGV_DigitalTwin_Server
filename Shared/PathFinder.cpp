@@ -70,7 +70,8 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         
         std::string currentKey = GenerateTimeSpaceKey(current->id, current->departureTime);
         
-        if (closedList.find(currentKey) != closedList.end()) continue;
+        if (closedList.find(currentKey) != closedList.end()) 
+            continue;
         closedList[currentKey] = current;
 
         if (current->id == _targetNodeID)
@@ -117,7 +118,8 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
         // ==========================================
         for (const auto& link : links)
         {            
-            if (link.m_FromNodeID != current->id || link.m_IsBlocked) continue;
+            if (link.m_FromNodeID != current->id || link.m_IsBlocked) 
+                continue;
 
             uint32_t neighborID = link.m_ToNodeID;
                         

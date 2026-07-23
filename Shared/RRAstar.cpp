@@ -11,7 +11,7 @@ void RRAStar::Init(uint32_t _goalNodeID)
     m_OpenList = std::priority_queue<RRANode, std::vector<RRANode>, std::greater<RRANode>>();
     m_ClosedList.clear();
 
-    // 출발지가 없으므로 h(휴리스틱)는 0으로 고정! 
+    // 출발지가 없으므로 h(휴리스틱)는 0으로 고정 
     // 이렇게 하면 목적지에서부터 사방으로 퍼져나가는 '다익스트라 캐시'로 작동함
     m_OpenList.push(RRANode(m_GoalNodeID, 0.0f, 0.0f));
 }
@@ -37,7 +37,7 @@ float RRAStar::GetAbstractDistance(uint32_t _nodeID)
         // 방문 완료 처리 (목적지로부터 이 노드까지의 진짜 거리를 확정)
         m_ClosedList[current.id] = current.g;
 
-        // 드디어 우리가 원하던 그 노드의 진짜 거리를 알아냈다!
+        // 드디어 우리가 원하던 그 노드의 진짜 거리를 알아냈다
         if (current.id == _nodeID)
         {
             return current.g;

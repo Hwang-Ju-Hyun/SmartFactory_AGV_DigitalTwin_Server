@@ -33,7 +33,7 @@ private:
     std::unordered_map<uint32_t,ClientProxy*> m_SessionIdToProxyMap;
     std::unordered_map<uint32_t, RobotSessionPtr> m_AgvIdToRobotSessionMap;
     std::unordered_map<ClientProxy*, RobotSessionPtr> m_ProxyToRobotSessionMap;
-    static uint32_t nextSessionID;    
+    static uint32_t nextSessionID;
 private:
     LinkingContext* m_LinkingContext; 
 public: 

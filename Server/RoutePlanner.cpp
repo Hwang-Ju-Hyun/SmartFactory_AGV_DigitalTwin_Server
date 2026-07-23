@@ -282,7 +282,8 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
 {
     uint32_t agvID = _e.agvID;
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(agvID));
-    if (!agv) return;
+    if (!agv) 
+        return;
 
     if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
     RoutePlan& plan = m_MasterPlans[agvID]; 

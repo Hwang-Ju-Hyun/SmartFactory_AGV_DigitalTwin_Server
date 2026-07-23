@@ -2,7 +2,7 @@
 #include <memory>
 #include "TCPSession.hpp"
 #include "ReplicationManagerServer.hpp"
-//네트워크와 완전히 분리된, 오직 서버에만 존재하는 'Object 아바타'입니다.
+//네트워크와 완전히 분리된, 오직 서버에만 존재하는 Object 아바타.
 
 
 class OutputMemoryStream;

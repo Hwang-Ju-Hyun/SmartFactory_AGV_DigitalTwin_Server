@@ -175,41 +175,57 @@ private:
 public:
     static ReservationTable& GetInstance() { static ReservationTable instance; return instance; }
 
-    bool IsNodeFree(uint32_t _nodeID, float _startTime, float _endTime, uint32_t _ignoreAgvID) const {
+    bool IsNodeFree(uint32_t _nodeID, float _startTime, float _endTime, uint32_t _ignoreAgvID) const 
+    {
         auto it = m_NodeReservations.find(_nodeID);
-        if (it == m_NodeReservations.end()) return true;
-        for (const auto& interval : it->second) {
-            if (interval.agvID == _ignoreAgvID) continue; 
-            if (interval.Overlaps(_startTime, _endTime)) return false;
+        if (it == m_NodeReservations.end()) 
+            return true;
+        for (const auto& interval : it->second) 
+        {
+            if (interval.agvID == _ignoreAgvID) 
+                continue; 
+            if (interval.Overlaps(_startTime, _endTime)) 
+                return false;
         }
         return true;
     }
 
-    bool IsEdgeFree(uint32_t _from, uint32_t _to, float _startTime, float _endTime, uint32_t _ignoreAgvID) const {
+    bool IsEdgeFree(uint32_t _from, uint32_t _to, float _startTime, float _endTime, uint32_t _ignoreAgvID) const 
+    {
         uint64_t key = MakeEdgeKey(_from, _to);
         auto it = m_EdgeReservations.find(key);
-        if (it == m_EdgeReservations.end()) return true;
-        for (const auto& interval : it->second) {
-            if (interval.agvID == _ignoreAgvID) continue;
-            if (interval.Overlaps(_startTime, _endTime)) return false;
+        if (it == m_EdgeReservations.end()) 
+            return true;
+        for (const auto& interval : it->second) 
+        {
+            if (interval.agvID == _ignoreAgvID) 
+                continue;
+            if (interval.Overlaps(_startTime, _endTime)) 
+                return false;
         }
         return true;
     }
 
-    void ReserveNode(uint32_t _nodeID, float _startTime, float _endTime, uint32_t _agvID, ReservationType _type = ReservationType::Normal) {
+    void ReserveNode(uint32_t _nodeID, float _startTime, float _endTime, uint32_t _agvID, ReservationType _type = ReservationType::Normal) 
+    {
         auto& intervals = m_NodeReservations[_nodeID];
-        for (const auto& interval : intervals) {
-            if (interval.agvID == _agvID && std::abs(interval.start - _startTime) < 0.001f && interval.type == _type) return;
+        for (const auto& interval : intervals) 
+        {
+            if (interval.agvID == _agvID && std::abs(interval.start - _startTime) < 0.001f && interval.type == _type) 
+                return;
         }
         intervals.push_back({ _startTime, _endTime, _agvID, _type });
         std::sort(intervals.begin(), intervals.end(), [](const TimeInterval& a, const TimeInterval& b) {return a.start < b.start;});
     }
 
-    void ReserveEdge(uint32_t _from, uint32_t _to, float _startTime, float _endTime, uint32_t _agvID, ReservationType _type = ReservationType::Normal) {
+    void ReserveEdge(uint32_t _from, uint32_t _to, float _startTime, float _endTime, uint32_t _agvID, ReservationType _type = ReservationType::Normal) 
+    {
         uint64_t edgeKey = MakeEdgeKey(_from, _to);
         auto& intervals = m_EdgeReservations[edgeKey];
-        for (const auto& interval : intervals) {
-            if (interval.agvID == _agvID && std::abs(interval.start- _startTime) < 0.001f && interval.type == _type) return;
+        for (const auto& interval : intervals) 
+        {
+            if (interval.agvID == _agvID && std::abs(interval.start- _startTime) < 0.001f && interval.type == _type) 
+                return;
         }
         intervals.push_back({ _startTime, _endTime, _agvID, _type });
         std::sort(intervals.begin(), intervals.end(), [](const TimeInterval& a, const TimeInterval& b) {return a.start < b.start;});

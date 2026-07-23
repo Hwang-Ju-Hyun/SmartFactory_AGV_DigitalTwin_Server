@@ -17,12 +17,13 @@ namespace AGVKinematics
 
     inline float EstimateStopToStopTravelTime(float distance)
     {
-        if (distance <= 0.001f) return 0.0f;
+        if (distance <= 0.001f) 
+            return 0.0f;
 
-        const float accelDistance = (MAX_SPEED * MAX_SPEED) / (2.0f * MAX_ACCEL);
-        const float decelDistance = (MAX_SPEED * MAX_SPEED) / (2.0f * MAX_DECEL);
+        const float accelDistance = (MAX_SPEED * MAX_SPEED) / (2.0f * MAX_ACCEL); //최고속도까지 걸리는데 필요한 거리
+        const float decelDistance = (MAX_SPEED * MAX_SPEED) / (2.0f * MAX_DECEL); //최고속도에서 완전정지까지 필요한 거리
 
-        if (accelDistance + decelDistance <= distance)
+        if (accelDistance + decelDistance <= distance) 
         {
             const float cruiseDistance = distance - accelDistance - decelDistance;
             return (MAX_SPEED / MAX_ACCEL) + (cruiseDistance / MAX_SPEED) + (MAX_SPEED / MAX_DECEL);
