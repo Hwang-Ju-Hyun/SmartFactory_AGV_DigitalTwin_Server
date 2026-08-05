@@ -233,13 +233,22 @@ public:
     
     void OverrideFutureReservations(uint32_t _agvID, float _serverTime, float _safetyMargin) {        
         float cutoffTime = _serverTime + _safetyMargin;
-        for (auto mapIt = m_NodeReservations.begin(); mapIt != m_NodeReservations.end(); ) {
-            for (auto it = mapIt->second.begin(); it != mapIt->second.end(); ) {
-                if (it->agvID == _agvID) {
-                    if (it->start > cutoffTime) { it = mapIt->second.erase(it); continue; }
-                    else if (it->start <= cutoffTime && it->end > cutoffTime) {
+        for (auto mapIt = m_NodeReservations.begin(); mapIt != m_NodeReservations.end(); ) 
+        {
+            for (auto it = mapIt->second.begin(); it != mapIt->second.end(); ) 
+            {
+                if (it->agvID == _agvID)
+                {
+                    if (it->start > cutoffTime) 
+                    { 
+                        it = mapIt->second.erase(it); 
+                        continue; 
+                    }
+                    else if (it->start <= cutoffTime && it->end > cutoffTime) 
+                    {
                         it->end = cutoffTime;
-                        if (it->type == ReservationType::Goal) it->type = ReservationType::Normal; 
+                        if (it->type == ReservationType::Goal) 
+                            it->type = ReservationType::Normal; 
                     }
                 }
                 ++it;

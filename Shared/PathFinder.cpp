@@ -134,7 +134,8 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
                 }
                 traceNode = traceNode->parentNode;
             }
-            if (isCycle) continue;
+            if (isCycle) 
+                continue;
 
             // (거리 및 시간 계산 유지)
             auto fromNodeGeo = map.GetMapNode(current->id);
@@ -156,13 +157,16 @@ std::vector<PathStep> PathFinder::FindPath(uint32_t _startNodeID, uint32_t _targ
             float leaveTime = enterTime + travelTime;
             std::string neighborKey = GenerateTimeSpaceKey(neighborID, leaveTime);
 
-            if (closedList.find(neighborKey) != closedList.end()) continue;        
+            if (closedList.find(neighborKey) != closedList.end()) 
+                continue;        
             
-            if (!ReservationTable::GetInstance().IsEdgeFree(current->id, neighborID, enterTime, leaveTime + CLEARANCE_TIME, _agvID)) continue;                
+            if (!ReservationTable::GetInstance().IsEdgeFree(current->id, neighborID, enterTime, leaveTime + CLEARANCE_TIME, _agvID)) 
+                continue;                
                         
             float requiredDwellTime = (neighborID == _targetNodeID) ? LONG_TERM_HORIZON : CLEARANCE_TIME;
             
-            if (!ReservationTable::GetInstance().IsNodeFree(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) continue;
+            if (!ReservationTable::GetInstance().IsNodeFree(neighborID, leaveTime, leaveTime + requiredDwellTime, _agvID)) 
+                continue;
 
             float nextG = current->g + travelTime;            
 

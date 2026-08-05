@@ -144,7 +144,8 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
     }
 
     // 1단계: 검증 루프
-    if (initialWaitTime > 0.01f) {
+    if (initialWaitTime > 0.01f) 
+    {
         if (!resTable.IsNodeFree(_path[0].nodeID, _serverTime, _path[0].arrivalTime + TIME_MARGIN, _agvID))
             return false;
     }
@@ -203,7 +204,8 @@ bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<
 void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose)
 {
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
-    if (!agv) return;
+    if (!agv) 
+        return;
 
     m_PendingRoutes.erase(std::remove_if(m_PendingRoutes.begin(), m_PendingRoutes.end(),
         [_agvID](const PendingRoute& r) { return r.agvID == _agvID; }), m_PendingRoutes.end());

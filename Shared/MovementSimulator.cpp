@@ -124,8 +124,10 @@ StatusPacket MovementSimulator::GetStatus() const
 {
     StatusPacket p;
     p.agvID = m_CurrentRoute.agvID;
-    if (m_CurrentLinkIndex < m_CachedLinks.size()) p.currentLinkID = m_CachedLinks[m_CurrentLinkIndex].link.m_Id;
-    else p.currentLinkID = 0;
+    if (m_CurrentLinkIndex < m_CachedLinks.size()) 
+        p.currentLinkID = m_CachedLinks[m_CurrentLinkIndex].link.m_Id;
+    else 
+        p.currentLinkID = 0;
 
     p.progress = m_LinkProgress;
     p.x = m_X;
@@ -159,7 +161,8 @@ void MovementSimulator::Update(float dt, float serverTime, const MovementCallbac
 
     if (!m_IsMovingLink)
     {
-        if (serverTime < cache.departureTime) return;
+        if (serverTime < cache.departureTime) 
+            return;
 
         const float startTargetHeading = BezierFollower::Heading(cache.fromNode, cache.toNode, cache.link, 0.0f);
         const float startHeadingError = std::abs(AGVKinematics::NormalizeAngle(startTargetHeading - m_Heading));
