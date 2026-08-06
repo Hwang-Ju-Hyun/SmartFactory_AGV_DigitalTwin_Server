@@ -1,5 +1,7 @@
 # WHCA* 구현 코드 해설
 
+> 상태 안내(2026-08-06): 경로 계획 해설은 현재 코드와 함께 유지하지만, ESP32 실차 진행 상태는 [current-status.md](current-status.md)를 우선한다. 문서 후반의 차체 도착 전 설명은 과거 단계의 기록일 수 있다.
+
 이 문서는 현재 프로젝트의 WHCA* 계열 경로 계획 코드를 아주 천천히 설명한다.  
 목표는 "논문 알고리즘 이름은 아는데 코드에서 어디가 뭔지 모르겠다" 상태를 벗어나는 것이다.
 
@@ -82,7 +84,7 @@ struct TimeInterval
 };
 ```
 
-위 코드는 [Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:155)에 있다.
+위 코드는 [Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L155)에 있다.
 
 뜻은 아주 단순하다.
 
@@ -134,7 +136,7 @@ struct MapNode
 };
 ```
 
-[Shared/Map.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/Map.hpp:7)
+[Shared/Map.hpp](../Shared/Map.hpp#L7)
 
 노드는 "AGV가 지나가거나 멈출 수 있는 지점"이다.
 
@@ -154,7 +156,7 @@ struct MapLink
 };
 ```
 
-[Shared/Map.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/Map.hpp:18)
+[Shared/Map.hpp](../Shared/Map.hpp#L18)
 
 링크는 "노드와 노드 사이의 길"이다.
 
@@ -175,7 +177,7 @@ node.m_PosX = nodeItem["x"].get<float>();
 node.m_PosZ = nodeItem["z"].get<float>();
 ```
 
-[Shared/Map.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/Map.cpp:49)
+[Shared/Map.cpp](../Shared/Map.cpp#L49)
 
 링크도 JSON에서 로드된다.
 
@@ -186,7 +188,7 @@ link.m_Type = linkItem.value("type", 0);
 link.m_Dist = linkItem.value("dist", 0.0f);
 ```
 
-[Shared/Map.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/Map.cpp:63)
+[Shared/Map.cpp](../Shared/Map.cpp#L63)
 
 즉 PathFinder는 Unity 화면을 보지 않는다.  
 PathFinder는 `MapNode`, `MapLink`로 된 그래프만 본다.
@@ -202,7 +204,7 @@ std::unordered_map<uint32_t, std::vector<TimeInterval>> m_NodeReservations;
 std::unordered_map<uint64_t, std::vector<TimeInterval>> m_EdgeReservations;
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:171)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L171)
 
 뜻:
 
@@ -222,7 +224,7 @@ m_EdgeReservations:
 bool IsNodeFree(uint32_t nodeID, float start, float end, uint32_t ignoreAgvID)
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:178)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L178)
 
 핵심 코드:
 
@@ -255,7 +257,7 @@ return true;
 bool IsEdgeFree(uint32_t from, uint32_t to, float start, float end, uint32_t ignoreAgvID)
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:188)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L188)
 
 단, 링크는 `from`, `to` 두 노드로 key를 만든다.
 
@@ -268,7 +270,7 @@ inline uint64_t MakeEdgeKey(uint32_t from, uint32_t to)
 }
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:161)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L161)
 
 여기가 정말 중요하다.
 
@@ -300,7 +302,7 @@ Edge 예약을 방향 없이 잡으면 같은 통로를 동시에 못 쓰게 된
 void ReserveNode(uint32_t nodeID, float start, float end, uint32_t agvID, ReservationType type)
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:199)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L199)
 
 하는 일:
 
@@ -331,7 +333,7 @@ Home에 가도 그 노드를 점유한다.
 enum class ReservationType { Normal, Goal };
 ```
 
-[Shared/ReservationTable.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/ReservationTable.hpp:153)
+[Shared/ReservationTable.hpp](../Shared/ReservationTable.hpp#L153)
 
 그리고 RoutePlanner에서 목적지이면 오래 예약한다.
 
@@ -339,7 +341,7 @@ enum class ReservationType { Normal, Goal };
 const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f;
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:16)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L16)
 
 현재 `WINDOW_TIME = 16`이므로:
 
@@ -357,7 +359,7 @@ float nodeLeaveTime =
         : cur.departureTime + TIME_MARGIN;
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:157)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L157)
 
 뜻:
 
@@ -407,7 +409,7 @@ struct RRANode
 };
 ```
 
-[Shared/RRAstar.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/RRAstar.hpp:9)
+[Shared/RRAstar.hpp](../Shared/RRAstar.hpp#L9)
 
 현재 구현에서는 `h`는 거의 쓰지 않고, 목적지에서 퍼지는 Dijkstra 캐시처럼 동작한다.
 
@@ -415,7 +417,7 @@ struct RRANode
 m_OpenList.push(RRANode(m_GoalNodeID, 0.0f, 0.0f));
 ```
 
-[Shared/RRAstar.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/RRAstar.cpp:16)
+[Shared/RRAstar.cpp](../Shared/RRAstar.cpp#L16)
 
 뜻:
 
@@ -451,7 +453,7 @@ RoutePlanner가 목적지별로 RRAStar를 저장한다.
 std::unordered_map<uint32_t, RRAStar> m_RRAEngines;
 ```
 
-[Server/RoutePlanner.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.hpp:61)
+[Server/RoutePlanner.hpp](../Server/RoutePlanner.hpp#L61)
 
 목적지가 처음 나오면 초기화한다.
 
@@ -460,7 +462,7 @@ if (m_RRAEngines.find(_targetNodeID) == m_RRAEngines.end())
     m_RRAEngines[_targetNodeID].Init(_targetNodeID);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:242)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L242)
 
 ### 6.3 GetAbstractDistance
 
@@ -476,7 +478,7 @@ RRAStar가 답한다.
 float RRAStar::GetAbstractDistance(uint32_t nodeID)
 ```
 
-[Shared/RRAstar.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/RRAstar.cpp:19)
+[Shared/RRAstar.cpp](../Shared/RRAstar.cpp#L19)
 
 먼저 캐시를 본다.
 
@@ -534,7 +536,7 @@ startNode->h =
     _rraEngine.GetAbstractDistance(_startNodeID) / AGVKinematics::MAX_SPEED;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:53)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L53)
 
 거리 / 최대속도 = 예상 시간이다.
 
@@ -560,7 +562,7 @@ std::vector<PathStep> PathFinder::FindPath(
     RRAStar& rraEngine)
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:31)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L31)
 
 이 함수는 이렇게 말하는 것이다.
 
@@ -588,7 +590,7 @@ struct PathStep
 };
 ```
 
-[Shared/PathFinder.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.hpp:8)
+[Shared/PathFinder.hpp](../Shared/PathFinder.hpp#L8)
 
 뜻:
 
@@ -624,7 +626,7 @@ struct AStarNode
 };
 ```
 
-[Shared/PathFinder.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.hpp:16)
+[Shared/PathFinder.hpp](../Shared/PathFinder.hpp#L16)
 
 중요한 점:
 
@@ -648,7 +650,7 @@ inline std::string GenerateTimeSpaceKey(uint32_t nodeID, float time)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:17)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L17)
 
 여기서 시간에 `* 10`을 한다.
 
@@ -681,7 +683,7 @@ if (_startNodeID == _targetNodeID)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:36)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L36)
 
 뜻:
 
@@ -696,7 +698,7 @@ if (_startNodeID == _targetNodeID)
 std::priority_queue<..., ...> openList(...);
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:42)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L42)
 
 open list는 "아직 탐색해야 할 후보"다.  
 `f`가 작은 후보가 먼저 나온다.
@@ -712,7 +714,7 @@ startNode->h = _rraEngine.GetAbstractDistance(_startNodeID) / AGVKinematics::MAX
 startNode->f = startNode->g + startNode->h;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:49)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L49)
 
 처음에는:
 
@@ -738,7 +740,7 @@ while (!openList.empty())
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:65)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L65)
 
 매번 가장 좋아 보이는 후보를 꺼낸다.
 
@@ -750,7 +752,7 @@ if (closedList.find(currentKey) != closedList.end()) continue;
 closedList[currentKey] = current;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:71)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L71)
 
 뜻:
 
@@ -769,7 +771,7 @@ if (current->id == _targetNodeID)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:76)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L76)
 
 윈도우 시간이 끝나도 멈춘다.
 
@@ -781,7 +783,7 @@ if (current->departureTime - _startTime >= _windowTimeLimit)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:82)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L82)
 
 이게 WHCA*의 window 개념이다.
 
@@ -809,7 +811,7 @@ const float WAIT_TIME = 1.0f;
 float waitLeaveTime = current->departureTime + WAIT_TIME;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:12)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L12)
 
 1초 기다리는 후보를 만든다.
 
@@ -824,7 +826,7 @@ if (ReservationTable::GetInstance().IsNodeFree(
         _agvID))
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:95)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L95)
 
 뜻:
 
@@ -844,7 +846,7 @@ waitNode->departureTime = waitLeaveTime;
 waitNode->g = current->g + WAIT_TIME;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:102)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L102)
 
 핵심은 이것이다.
 
@@ -870,7 +872,7 @@ for (const auto& link : links)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:118)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L118)
 
 뜻:
 
@@ -905,7 +907,7 @@ while (traceNode != nullptr)
 if (isCycle) continue;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:124)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L124)
 
 뜻:
 
@@ -932,7 +934,7 @@ float dist =
         : sqrt(...)
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:140)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L140)
 
 곡선 링크면 Unity에서 계산된 `m_Dist`를 쓴다.  
 직선이면 두 노드 좌표 사이 유클리드 거리로 계산한다.
@@ -944,7 +946,7 @@ float travelTime =
     turnTime + AGVKinematics::EstimateStopToStopTravelTime(dist);
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:152)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L152)
 
 여기서 단순히 `거리 / 속도`가 아니다.
 
@@ -968,7 +970,7 @@ constexpr float MAX_ACCEL = 6.0f;
 constexpr float MAX_DECEL = 6.0f;
 ```
 
-[Shared/AGVKinematics.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/AGVKinematics.hpp:8)
+[Shared/AGVKinematics.hpp](../Shared/AGVKinematics.hpp#L8)
 
 거리가 충분히 길면:
 
@@ -999,7 +1001,7 @@ if (auto previousMovingNode = FindPreviousMovingNode(current))
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:142)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L142)
 
 어렵게 보이지만 의미는 이거다.
 
@@ -1020,7 +1022,7 @@ float enterTime = current->departureTime;
 float leaveTime = enterTime + travelTime;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:153)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L153)
 
 링크가 비었는지 검사:
 
@@ -1034,7 +1036,7 @@ if (!ReservationTable::GetInstance().IsEdgeFree(
     continue;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:159)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L159)
 
 뜻:
 
@@ -1055,7 +1057,7 @@ float requiredDwellTime =
         : CLEARANCE_TIME;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:161)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L161)
 
 도착 노드가 목적지면 오래 비어 있어야 한다.  
 경유 노드면 잠깐만 비어 있으면 된다.
@@ -1069,7 +1071,7 @@ if (!ReservationTable::GetInstance().IsNodeFree(
     continue;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:163)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L163)
 
 비어 있으면 후보 노드를 만든다.
 
@@ -1081,7 +1083,7 @@ neighborNode->h = rraDistance / MAX_SPEED;
 neighborNode->f = g + h;
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:169)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L169)
 
 ---
 
@@ -1098,7 +1100,7 @@ while (trace != nullptr)
 std::reverse(rawTrace.begin(), rawTrace.end());
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:185)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L185)
 
 그 다음 같은 노드에서 기다린 기록을 하나로 합친다.
 
@@ -1109,7 +1111,7 @@ if (rawTrace[i]->id == currentStep.nodeID)
 }
 ```
 
-[Shared/PathFinder.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/PathFinder.cpp:203)
+[Shared/PathFinder.cpp](../Shared/PathFinder.cpp#L203)
 
 예:
 
@@ -1138,7 +1140,7 @@ PathFinder는 "가능해 보이는 경로"를 찾는다.
 void RoutePlanner::CreateRoute(uint32_t agvID, uint32_t targetNodeID, float serverTime, MissionPurpose purpose)
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:203)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L203)
 
 흐름:
 
@@ -1156,7 +1158,7 @@ else
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:221)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L221)
 
 뜻:
 
@@ -1186,7 +1188,7 @@ bool RoutePlanner::TryFindPath(...)
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:239)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L239)
 
 이 함수는:
 
@@ -1217,7 +1219,7 @@ bool RoutePlanner::TryReservePathTransaction(
     float serverTime)
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:123)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L123)
 
 이름에 `Transaction`이 붙은 이유가 중요하다.
 
@@ -1239,7 +1241,7 @@ if (_path.size() >= 2 && _path[0].departureTime <= _serverTime + 0.05f)
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:135)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L135)
 
 예약표는 계획이고, OccupancyProvider는 실제 현재 점유다.
 
@@ -1265,7 +1267,7 @@ for (size_t i = 0; i < _path.size(); i++)
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:152)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L152)
 
 여기서는 아직 예약표에 쓰지 않는다.  
 그냥 "다 가능한가?"만 본다.
@@ -1276,7 +1278,7 @@ for (size_t i = 0; i < _path.size(); i++)
 resTable.OverrideFutureReservations(_agvID, _serverTime, CLEARANCE_TIME);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:175)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L175)
 
 AGV가 새 route를 받으면, 예전 route의 미래 예약이 남아있으면 안 된다.
 
@@ -1307,7 +1309,7 @@ serverTime + safetyMargin 이후의 내 예약을 제거하거나 잘라낸다.
 resTable.ReserveNode(cur.nodeID, cur.arrivalTime, nodeLeaveTime, _agvID, nodeType);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:192)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L192)
 
 그리고 다음 노드가 있으면 edge도 예약한다.
 
@@ -1321,7 +1323,7 @@ resTable.ReserveEdge(
     ReservationType::Normal);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:197)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L197)
 
 ---
 
@@ -1333,7 +1335,7 @@ resTable.ReserveEdge(
 HandlePathFound(...)
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:250)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L250)
 
 여기서 중앙 계획표에 저장한다.
 
@@ -1368,7 +1370,7 @@ for (const auto& step : path)
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:260)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L260)
 
 마지막:
 
@@ -1376,7 +1378,7 @@ for (const auto& step : path)
 controller->FollowRoute({_agvID, routeNodes});
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:268)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L268)
 
 여기서 controller가 UnityRobotController일 수도 있고 ESP32RobotController일 수도 있다.
 
@@ -1403,7 +1405,7 @@ ESP32RobotController:
 void RoutePlanner::HandlePathFailed(...)
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:272)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L272)
 
 현재 노드를 잠깐 예약한다.
 
@@ -1416,7 +1418,7 @@ ReservationTable::GetInstance().ReserveNode(
     ReservationType::Normal);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:276)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L276)
 
 그리고 WAIT_REPLAN 상태로 바꾼다.
 
@@ -1445,7 +1447,7 @@ if (pending.retryTimer <= 0.0f)
     CreateRoute(...);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:23)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L23)
 
 ---
 
@@ -1481,7 +1483,7 @@ else
 }
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:330)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L330)
 
 이게 WHCA*의 "Windowed" 감각이다.
 
@@ -1506,7 +1508,7 @@ EventManager::GetInstance().Subscribe(
     [this](const RobotEvent& e){ OnRobotIdle(e); });
 ```
 
-[Server/TaskManager.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/TaskManager.cpp:11)
+[Server/TaskManager.cpp](../Server/TaskManager.cpp#L11)
 
 IDLE 이벤트가 오면 상차 노드를 찾는다.
 
@@ -1514,7 +1516,7 @@ IDLE 이벤트가 오면 상차 노드를 찾는다.
 int loadNodeID = DispatchManager::GetInstance().FindBestLoadNode(...);
 ```
 
-[Server/TaskManager.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/TaskManager.cpp:39)
+[Server/TaskManager.cpp](../Server/TaskManager.cpp#L39)
 
 찾았으면 RoutePlanner에게 말한다.
 
@@ -1526,7 +1528,7 @@ RoutePlanner::GetInstance().CreateRoute(
     MissionPurpose::PICKUP);
 ```
 
-[Server/TaskManager.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/TaskManager.cpp:61)
+[Server/TaskManager.cpp](../Server/TaskManager.cpp#L61)
 
 상차가 끝나면 하차 노드를 찾는다.
 
@@ -1535,7 +1537,7 @@ int unloadNodeID = DispatchManager::GetInstance().FindBestDispatchNode(...);
 RoutePlanner::GetInstance().CreateRoute(..., MissionPurpose::DROP);
 ```
 
-[Server/TaskManager.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/TaskManager.cpp:66)
+[Server/TaskManager.cpp](../Server/TaskManager.cpp#L66)
 
 즉:
 
@@ -1577,7 +1579,7 @@ while (it->second->HasEvent())
 }
 ```
 
-[Server/NetworkManagerServer.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/NetworkManagerServer.cpp:409)
+[Server/NetworkManagerServer.cpp](../Server/NetworkManagerServer.cpp#L409)
 
 RoutePlanner는 NODE_ARRIVED를 구독한다.
 
@@ -1587,7 +1589,7 @@ EventManager::GetInstance().Subscribe(
     [this](const RobotEvent& e) { OnRobotStepCompleted(e); });
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:18)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L18)
 
 도착 이벤트가 오면:
 
@@ -1597,7 +1599,7 @@ if (ContinueCurrentRoute(agv, plan)) return;
 FinishRoute(agv, plan, event);
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:281)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L281)
 
 뜻:
 
@@ -1624,7 +1626,7 @@ std::unordered_map<uint32_t, uint32_t> m_NodeOccupancy;
 std::unordered_map<uint64_t, uint32_t> m_EdgeOccupancy;
 ```
 
-[Shared/OccupancyProvider.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/OccupancyProvider.hpp:11)
+[Shared/OccupancyProvider.hpp](../Shared/OccupancyProvider.hpp#L11)
 
 즉:
 
@@ -1642,7 +1644,7 @@ OccupancyProvider:
 void OccupyNode(uint32_t agvID, uint32_t nodeID)
 ```
 
-[Shared/OccupancyProvider.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/OccupancyProvider.hpp:38)
+[Shared/OccupancyProvider.hpp](../Shared/OccupancyProvider.hpp#L38)
 
 만약 다른 AGV가 이미 점유 중인 노드에 들어가면 assert가 난다.
 
@@ -1658,7 +1660,7 @@ Edge 점유:
 void SetEdgeOccupancy(uint64_t edgeKey, uint32_t agvID)
 ```
 
-[Shared/OccupancyProvider.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/OccupancyProvider.hpp:32)
+[Shared/OccupancyProvider.hpp](../Shared/OccupancyProvider.hpp#L32)
 
 노드 도착 시 이전 edge 점유를 지운다.
 
@@ -1670,7 +1672,7 @@ if (edgeIt != m_AgvCurrentEdge.end())
 }
 ```
 
-[Shared/OccupancyProvider.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/OccupancyProvider.hpp:47)
+[Shared/OccupancyProvider.hpp](../Shared/OccupancyProvider.hpp#L47)
 
 ---
 
@@ -1685,7 +1687,7 @@ void UnityRobotController::FollowRoute(const RoutePacket& routePacket)
 }
 ```
 
-[Server/UnityRobotController.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/UnityRobotController.cpp:14)
+[Server/UnityRobotController.cpp](../Server/UnityRobotController.cpp#L14)
 
 Update 때 callbacks를 넘긴다.
 
@@ -1697,7 +1699,7 @@ callbacks.isNodeFree = m_IsNodeFreeCallback;
 m_Simulator.Update(dt, serverTime, callbacks);
 ```
 
-[Server/UnityRobotController.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/UnityRobotController.cpp:42)
+[Server/UnityRobotController.cpp](../Server/UnityRobotController.cpp#L42)
 
 이 callback들은 RobotManager에서 주입한다.
 
@@ -1709,7 +1711,7 @@ controller->SetTryOccupyEdgeCallback(
     });
 ```
 
-[Server/RobotManager.hpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RobotManager.hpp:16)
+[Server/RobotManager.hpp](../Server/RobotManager.hpp#L16)
 
 MovementSimulator가 링크로 출발하기 전:
 
@@ -1722,7 +1724,7 @@ if (callbacks.tryOccupyEdge &&
 }
 ```
 
-[Shared/MovementSimulator.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/MovementSimulator.cpp:169)
+[Shared/MovementSimulator.cpp](../Shared/MovementSimulator.cpp#L169)
 
 즉 시뮬레이터는:
 
@@ -1742,7 +1744,7 @@ ESP32RobotController는 route를 ESP32로 보낸다.
 m_RobotSession->SendRoute(routePacket);
 ```
 
-[Server/ESP32RobotController.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/ESP32RobotController.cpp:20)
+[Server/ESP32RobotController.cpp](../Server/ESP32RobotController.cpp#L20)
 
 그리고 ESP32가 ARRIVED를 보내면 서버는 node occupancy를 갱신한다.
 
@@ -1757,7 +1759,7 @@ if (event.type == ControllerEventType::ARRIVED)
 }
 ```
 
-[Server/ESP32RobotController.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/ESP32RobotController.cpp:49)
+[Server/ESP32RobotController.cpp](../Server/ESP32RobotController.cpp#L49)
 
 다만 현재 ESP32 실제 주행 단계는 아직 완성 전이다.  
 Unity MovementSimulator처럼 서버 callback을 이용해 출발 직전 edge 점유를 잡는 로직은 ESP32 내부 motion layer가 완성되면서 더 정교해져야 한다.
@@ -1788,7 +1790,7 @@ if (!callbacks.tryOccupyEdge(...))
 }
 ```
 
-[Shared/MovementSimulator.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Shared/MovementSimulator.cpp:169)
+[Shared/MovementSimulator.cpp](../Shared/MovementSimulator.cpp#L169)
 
 이 이벤트는 UnityRobotController가 `ControllerEventType::EXECUTION_BLOCKED`로 바꾼다.
 
@@ -1800,7 +1802,7 @@ m_EventQueue.push({
 });
 ```
 
-[Server/UnityRobotController.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/UnityRobotController.cpp:64)
+[Server/UnityRobotController.cpp](../Server/UnityRobotController.cpp#L64)
 
 서버 update loop는 이걸 받으면:
 
@@ -1808,7 +1810,7 @@ m_EventQueue.push({
 RoutePlanner::GetInstance().OnExecutionBlocked(...)
 ```
 
-[Server/NetworkManagerServer.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/NetworkManagerServer.cpp:419)
+[Server/NetworkManagerServer.cpp](../Server/NetworkManagerServer.cpp#L419)
 
 OnExecutionBlocked는:
 
@@ -1831,7 +1833,7 @@ ReservationTable::GetInstance().ReserveEdge(_currentNodeID, _blockedNodeID, ... 
 m_PendingRoutes.push_back({ _agvID, targetNodeID, purpose, 0.1f });
 ```
 
-[Server/RoutePlanner.cpp](/home/hwang-juhyun/FinalProject/AGV_FleetControlSystem/Server/RoutePlanner.cpp:80)
+[Server/RoutePlanner.cpp](../Server/RoutePlanner.cpp#L80)
 
 ---
 

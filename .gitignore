@@ -509,3 +509,14 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,c++,csharp,unity
+
+# Local credentials and firmware secrets
+.env
+.env.*
+!.env.example
+**/secrets.h
+**/Secrets.h
+**/credentials.h
+**/Credentials.h
+!**/secrets.example.h
+!**/credentials.example.h
