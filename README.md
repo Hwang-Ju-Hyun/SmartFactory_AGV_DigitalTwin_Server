@@ -96,4 +96,4 @@ Codex 대화 내용과 커밋하지 않은 변경은 환경 사이에서 자동 
 - 작업 시작 전 pull, 작업 종료 전 `docs/current-status.md` 갱신, commit, push를 한 묶음으로 수행한다.
 - 자세한 명령과 충돌 방지 규칙은 [개발 작업 흐름](docs/development-workflow.md)을 따른다.
 
-비밀번호, Wi-Fi 인증정보, API key는 Git에 저장하지 않는다. 이 저장소의 과거 ESP32 스냅샷에는 제거와 교체가 필요한 인증정보가 있으므로, 보안 정리가 끝나기 전 새 원격 공유를 확대하지 않는다.
+비밀번호, Wi-Fi 인증정보, API key는 Git에 저장하지 않는다. 현재 GitHub 원격은 public이며 과거 ESP32 스냅샷에 실제 인증정보가 추적돼 있으므로 이미 노출된 credential로 취급한다. 비밀번호 변경과 Git 이력 정리가 끝나기 전에는 push하지 않는다.

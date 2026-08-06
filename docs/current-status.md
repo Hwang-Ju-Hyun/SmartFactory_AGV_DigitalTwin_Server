@@ -91,7 +91,8 @@ cmake --build build -j2
 ## 알려진 위험과 blocker
 
 - `agvallcode.txt`에 실제 Wi-Fi 인증정보가 Git 추적 상태로 남아 있다. 값은 재사용하거나 문서에 옮기지 않는다.
-- 해당 비밀번호를 먼저 변경한 뒤 현재 파일을 placeholder로 바꾸고, 원격 노출 범위에 따라 Git 이력 정리를 결정해야 한다.
+- 2026-08-06 확인 결과 GitHub 원격 저장소는 public이다. 해당 credential은 이미 노출된 것으로 취급하고 공유기에서 즉시 변경해야 한다.
+- 비밀번호를 변경한 뒤 현재 파일을 placeholder로 바꾸고 Git 과거 이력에서도 제거해야 한다. 정리가 끝나기 전 새 commit을 원격에 push하지 않는다.
 - 과거 network firmware의 오른쪽 motor 방향 GPIO 순서가 실차 검증값과 반대다. 출력 활성화 전 `BIN1=33`, `BIN2=32`로 통일하고 바퀴를 띄워 방향을 다시 확인한다.
 - 과거 문서 일부는 차체 도착 전 상태다. 현재 상태 판단에는 이 문서를 우선한다.
 - `Shared/build/` 생성물이 과거 Git에 추적돼 있으나 현재 source of truth가 아니다.
