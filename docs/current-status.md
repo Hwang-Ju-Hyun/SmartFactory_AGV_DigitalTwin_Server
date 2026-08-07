@@ -1,8 +1,8 @@
 # Current project status
 
-Last verified: 2026-08-06
+Last verified: 2026-08-07
 
-Implementation base: `c56ada3` on `old-new-combined`
+Implementation base: `120a600` on `old-new-combined`
 
 Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
@@ -33,6 +33,23 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-07 ESP32 HELLO/HELLO_ACK 진단
+
+WSL Server와 Windows ESP32 사이의 motor-disabled Phase 2A 연결을 진단했다.
+
+- Server와 ESP32 기준 commit은 각각 `120a600`, `640891d`였다.
+- HELLO 19 byte와 HELLO_ACK 21 byte의 packet ID, protocol version, payload field, little-endian framing이 일치했다.
+- WSL에서 CMake configure/build가 성공했다.
+- localhost FakeRobot은 `HELLO_ACK accepted=1`, `ROUTE_COMMAND`, `STATUS`, `ARRIVED` 흐름을 통과했다.
+- Windows `portproxy`의 ESP32 frontend TCP 연결 두 개는 AGV_Server 시작 전에 생성됐고, 대응하는 WSL backend 연결과 Server의 accept 로그가 없었다.
+- ESP32 firmware에는 HELLO_ACK timeout이 없어 frontend 연결만 살아 있으면 HELLO를 재전송하거나 TCP를 다시 연결하지 않는다.
+
+따라서 관찰된 `[TCP] Connected, sending HELLO` 정지는 Server/ESP32 wire format 불일치가 아니라 Server listener보다 먼저 만들어진 stale proxy 연결로 판별했다. Server를 먼저 실행한 뒤 ESP32를 reset해 새 연결을 만드는 실물 재검증이 남아 있다. 재현 근거가 Server source 결함을 가리키지 않아 이번 진단에서는 Server 코드를 수정하지 않았다.
+
+FakeRobot 장시간 경로 실행 중에는 AGV 1이 AGV 3이 점유한 node 7에 진입하며 `OccupancyProvider::OccupyNode()` assertion이 발생했다. HELLO와 별개의 자동 route/실행 점유 blocker로 분리해 후속 진단한다.
+
+### 2026-08-06 기준 검증
 
 2026-08-06 WSL/Linux 환경에서 다음을 실행했다.
 
@@ -100,15 +117,16 @@ cmake --build build -j2
 
 ## 다음 우선 작업
 
-1. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
-2. 실차 검증 코드를 `Firmware/ESP32_AGV/` 같은 buildable PlatformIO/Arduino project로 가져오기
-3. `secrets.example.h`만 추적하고 실제 `secrets.h`는 ignore 처리
-4. 전원 분배단자, fuse, switch와 기판 고정
-5. 후진 15 cm 시험으로 양쪽 encoder 부호 확정
-6. 실차 GPIO와 모든 local safety를 network firmware에 옮기되 motor output은 끈 상태로 통신 검증
-7. 바퀴를 띄운 상태에서 HELLO/STATUS/CANCEL/ESTOP 검증
-8. odometry와 route executor를 추가하고 시간 기반 progress 제거
-9. 낮은 속도로 단일 route를 실행한 뒤 Unity 오차 측정
+1. Server를 먼저 실행하고 ESP32를 reset해 새 TCP 연결의 HELLO_ACK를 motor-disabled 상태에서 재검증
+2. ESP32에 HELLO_ACK timeout과 stale TCP reconnect를 추가
+3. FakeRobot에서 드러난 node 7 occupancy collision assertion을 별도 Server 작업으로 진단
+4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
+5. 전원 분배단자, fuse, switch와 기판 고정
+6. 후진 15 cm 시험으로 양쪽 encoder 부호 확정
+7. 실차 GPIO와 모든 local safety를 network firmware에 옮기되 motor output은 끈 상태로 통신 검증
+8. 바퀴를 띄운 상태에서 HELLO/STATUS/CANCEL/ESTOP 검증
+9. odometry와 route executor를 추가하고 시간 기반 progress 제거
+10. 낮은 속도로 단일 route를 실행한 뒤 Unity 오차 측정
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

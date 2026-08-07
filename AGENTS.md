@@ -76,6 +76,10 @@ cmake --build build -j
 
 Codex 세션 자체는 Windows와 WSL 사이에서 공유되지 않는다. 장기 기억은 Git에 추적되는 문서로 남긴다.
 
+- WSL의 `AGV-DigitalTwin-WSL.code-workspace`에서는 이 Server 저장소가 주 작업 저장소다.
+- sibling `AGV_DigitalTwin_ESP32`와 `SmartFactory_AGV_DigitalTwin_Unity` 저장소는 명시적 작업 소유권 변경이 없으면 읽기 전용 참고 자료로 취급한다.
+- cross-repo 작업 전에는 세 저장소 각각의 `git status --short --branch`, 현재 branch와 HEAD commit을 확인한다.
+- WSL에서는 명시적 요청 없이 ESP32 업로드나 Unity 실행을 시도하지 않는다. 해당 저장소의 실제 검증 결과는 Windows 작업 기록과 commit 근거로 판단한다.
 - 작업 시작 시 `docs/current-status.md`의 “다음 우선 작업”과 알려진 위험을 확인한다.
 - 의미 있는 milestone, blocker, 검증 결과가 바뀐 경우에만 해당 문서를 갱신한다.
 - 진행 중인 세부 작업은 별도 branch와 commit으로 전달하고, 대화에만 남겨두지 않는다.

@@ -1,0 +1,17 @@
+{
+    "folders": [
+        {
+            "name": "SERVER-primary",
+            "path": "."
+        },
+        {
+            "name": "ESP32-reference",
+            "path": "../AGV_DigitalTwin_ESP32"
+        },
+        {
+            "name": "UNITY-reference",
+            "path": "../SmartFactory_AGV_DigitalTwin_Unity"
+        }
+    ],
+    "settings": {}
+}
