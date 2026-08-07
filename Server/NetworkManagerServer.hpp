@@ -7,14 +7,21 @@
 
 class LinkingContext;
 
+enum class ServerRunMode
+{
+    AutomaticFleet,
+    PhysicalDemo
+};
+
 class NetworkManagerServer
 {
 private:
-    NetworkManagerServer();
+    explicit NetworkManagerServer(ServerRunMode _runMode);
     float m_TotalElapsedServerTime;
+    ServerRunMode m_RunMode;
 public:
     static std::unique_ptr<NetworkManagerServer> sInstance;    
-    static void StaticInit();    
+    static void StaticInit(ServerRunMode _runMode = ServerRunMode::AutomaticFleet);
 public:
     void ProcessPacket(ClientProxy* _cs,InputMemoryStream& _stream);
 private:
@@ -27,6 +34,7 @@ private:
     void HandleReadyMap_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void HandleReadyObject_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void CreateSimulationWorld();
+    void SendPhysicalDemoRoute(uint32_t _agvID);
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    

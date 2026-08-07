@@ -2,7 +2,7 @@
 
 Last verified: 2026-08-07
 
-Implementation base: `120a600` on `old-new-combined`
+Implementation base: `e193f64` on `old-new-combined` plus the physical-demo working tree
 
 Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
@@ -22,7 +22,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | 영역 | 상태 | 근거/메모 |
 |---|---|---|
 | C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `AGV_Client` target |
-| Server-authoritative world | 검증 완료 | 현재 TESTCASE0에서 AGV 4대 생성 |
+| Server-authoritative world | 검증 완료 | 기본 TESTCASE0 AGV 4대와 `--physical-demo` 단일 AGV mode |
 | WHCA* 계열 route planning | 검증 완료 | smoke test에서 route 생성과 후속 route 재전송 확인 |
 | 시간 기반 node/edge/goal reservation | 검증 완료 | server/FakeRobot smoke flow에서 사용 |
 | 실행 시점 occupancy 검사 | 검증 완료 | simulator/controller 실행 flow에서 사용 |
@@ -33,6 +33,27 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-07 motor-disabled physical demo
+
+사용자 실물 시험에서 WSL Server와 ESP32의 연결이 복구돼 다음 흐름을 확인했다.
+
+- ESP32 `HELLO_ACK accepted=1 agvID=1 error=0`
+- 기존 자동 mode의 Server route `[1, 5, 9]` 수신
+- firmware가 exact `[1, 2]`가 아닌 route를 거절하고 `STBY=LOW`, `PWM=0` 유지
+
+이 결과를 기준으로 Server에 `--physical-demo` runtime mode를 추가했다.
+
+- node 1에 AGV 1대만 생성
+- `IDLE_READY`와 TaskManager 자동 배차 비활성화
+- AGV 1의 HELLO 뒤 RoutePlanner가 exact `[1, 2]`인지 검증
+- node/edge/goal 예약과 master plan을 만든 뒤 `ROUTE_COMMAND` 전송
+- `MissionPurpose::NONE` route 완료 시 새 자동 임무 없이 IDLE 전환
+- strict route에서 예상 밖 `ARRIVED` 또는 execution blocked가 오면 일반 재계획을 금지하고 `CANCEL_ROUTE`와 논리 safe stop 수행
+- remote `ARRIVED`의 node sequence를 RoutePlanner가 먼저 검증한 뒤에만 occupancy와 AGV current node 갱신
+- VS Code CMake Tools의 `AGV_Server` 벌레 버튼은 `--physical-demo`를 자동 전달
+
+WSL에서 CMake configure/build 후 FakeRobot smoke test를 수행했다. `HELLO_ACK accepted=1`, `ROUTE routeID=1 nodes=2`, `ARRIVED node=2`를 확인했고, 도착 뒤 추가 route나 occupancy assertion은 발생하지 않았다. AGV 2 요청은 `UNKNOWN_AGV`로 거절됐다. 의도적으로 잘못 보낸 `ARRIVED node=3`에는 `CANCEL_ROUTE`를 보냈고, 뒤늦은 두 번째 잘못된 ARRIVED도 새 route나 occupancy 변경 없이 무시한 다음 재접속한 정상 `[1, 2]` route가 완료됐다. 인자 없이 실행한 기본 `AutomaticFleet`도 AGV 4대와 기존 자동 route 흐름을 유지했다. 실제 ESP32와 Unity는 새 mode로 아직 재검증하지 않았다.
 
 ### 2026-08-07 ESP32 HELLO/HELLO_ACK 진단
 
@@ -45,7 +66,7 @@ WSL Server와 Windows ESP32 사이의 motor-disabled Phase 2A 연결을 진단�
 - Windows `portproxy`의 ESP32 frontend TCP 연결 두 개는 AGV_Server 시작 전에 생성됐고, 대응하는 WSL backend 연결과 Server의 accept 로그가 없었다.
 - ESP32 firmware에는 HELLO_ACK timeout이 없어 frontend 연결만 살아 있으면 HELLO를 재전송하거나 TCP를 다시 연결하지 않는다.
 
-따라서 관찰된 `[TCP] Connected, sending HELLO` 정지는 Server/ESP32 wire format 불일치가 아니라 Server listener보다 먼저 만들어진 stale proxy 연결로 판별했다. Server를 먼저 실행한 뒤 ESP32를 reset해 새 연결을 만드는 실물 재검증이 남아 있다. 재현 근거가 Server source 결함을 가리키지 않아 이번 진단에서는 Server 코드를 수정하지 않았다.
+따라서 관찰된 `[TCP] Connected, sending HELLO` 정지는 Server/ESP32 wire format 불일치가 아니라 Server listener보다 먼저 만들어진 stale proxy 연결로 판별했다. 이후 Server를 먼저 실행하고 ESP32를 reset해 실제 `HELLO_ACK accepted=1`까지 확인했다.
 
 FakeRobot 장시간 경로 실행 중에는 AGV 1이 AGV 3이 점유한 node 7에 진입하며 `OccupancyProvider::OccupyNode()` assertion이 발생했다. HELLO와 별개의 자동 route/실행 점유 blocker로 분리해 후속 진단한다.
 
@@ -114,12 +135,13 @@ cmake --build build -j2
 - 과거 문서 일부는 차체 도착 전 상태다. 현재 상태 판단에는 이 문서를 우선한다.
 - `Shared/build/` 생성물이 과거 Git에 추적돼 있으나 현재 source of truth가 아니다.
 - server reconnect cleanup, robot offline timeout과 실제 emergency-stop 송신 경로를 보강해야 한다.
+- physical demo도 같은 AGV ID의 동시/교체 session을 아직 명시적으로 거절하지 않는다. 실차 시험 중 AGV 1로 FakeRobot을 함께 연결하지 않는다.
 
 ## 다음 우선 작업
 
-1. Server를 먼저 실행하고 ESP32를 reset해 새 TCP 연결의 HELLO_ACK를 motor-disabled 상태에서 재검증
-2. ESP32에 HELLO_ACK timeout과 stale TCP reconnect를 추가
-3. FakeRobot에서 드러난 node 7 occupancy collision assertion을 별도 Server 작업으로 진단
+1. `--physical-demo` Server를 먼저 실행하고 ESP32를 reset해 exact `[1, 2]` 수신과 motor lock 유지 확인
+2. 같은 mode에 Unity viewer를 연결해 AGV 1대가 node 1에 보이는지 확인
+3. ESP32에 HELLO_ACK timeout과 stale TCP reconnect를 추가
 4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
 5. 전원 분배단자, fuse, switch와 기판 고정
 6. 후진 15 cm 시험으로 양쪽 encoder 부호 확정
@@ -127,6 +149,7 @@ cmake --build build -j2
 8. 바퀴를 띄운 상태에서 HELLO/STATUS/CANCEL/ESTOP 검증
 9. odometry와 route executor를 추가하고 시간 기반 progress 제거
 10. 낮은 속도로 단일 route를 실행한 뒤 Unity 오차 측정
+11. FakeRobot에서 드러난 자동 fleet node 7 occupancy collision assertion을 별도 Server 작업으로 진단
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

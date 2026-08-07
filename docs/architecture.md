@@ -1,8 +1,8 @@
 # System architecture
 
-Last verified: 2026-08-06
+Last verified: 2026-08-07
 
-Implementation base: `c56ada3` (`old-new-combined`)
+Implementation base: `e193f64` (`old-new-combined`) plus the physical-demo working tree
 
 ## 한 문장 요약
 
@@ -60,11 +60,12 @@ flowchart LR
 
 ```text
 ServerMain
+  -> runtime mode 선택 (기본 AutomaticFleet 또는 --physical-demo)
   -> TCP 0.0.0.0:6666 bind/listen
   -> ObjectRegistry 초기화
   -> NetworkManagerServer 초기화
-     -> Map/warehouse/route/task 초기화
-     -> 현재 TESTCASE0의 AGV 4대 생성
+     -> AutomaticFleet: map/warehouse/route/task 초기화, TESTCASE0 AGV 4대 생성
+     -> PhysicalDemo: route 초기화, node 1의 AGV 1대 생성, 자동 task 비활성화
      -> UnityRobotController 등록
   -> select() 기반 loop
      -> accept/read packet
@@ -73,6 +74,8 @@ ServerMain
 ```
 
 현재 `_TESTCASE0`은 AGV 4대를 map node `1, 2, 3, 4`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`의 compile-time test 설정이다.
+
+`--physical-demo`는 이 기본 world를 바꾸지 않는 별도 runtime mode다. 이 mode는 AGV 1의 RobotProtocol `HELLO` 이후 RoutePlanner를 통해 exact `[1 -> 2]` route만 만들며, 경로·예약·ARRIVED 수명주기를 그대로 사용한다. 목적은 motor-disabled 단일 실차 연동이다. Unity는 같은 server에 연결해 map과 AGV 1대의 상태를 렌더링할 수 있지만 route의 source of truth가 되지는 않는다.
 
 ## 임무에서 실행까지
 

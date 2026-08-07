@@ -28,15 +28,23 @@ std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
 uint32_t NetworkManagerServer::nextSessionID=1;
 
-NetworkManagerServer::NetworkManagerServer()
+namespace
+{
+    constexpr uint32_t kPhysicalDemoAgvID = 1;
+    constexpr uint32_t kPhysicalDemoStartNodeID = 1;
+    constexpr uint32_t kPhysicalDemoTargetNodeID = 2;
+}
+
+NetworkManagerServer::NetworkManagerServer(ServerRunMode _runMode)
     : m_TotalElapsedServerTime(0.0f)
+    , m_RunMode(_runMode)
 {
     m_LinkingContext = new LinkingContext;
 }
 
-void NetworkManagerServer::StaticInit()
+void NetworkManagerServer::StaticInit(ServerRunMode _runMode)
 {
-    sInstance.reset(new NetworkManagerServer());    
+    sInstance.reset(new NetworkManagerServer(_runMode));
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
     srand((unsigned int)time(NULL));
     sInstance->CreateSimulationWorld();
@@ -182,10 +190,45 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
               << " clientType=" << static_cast<int>(hello.clientType)
               << " sequence=" << _header.sequence << "\n";
 
-    if (!RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
+    if (m_RunMode == ServerRunMode::PhysicalDemo)
+    {
+        SendPhysicalDemoRoute(assignedAgvID);
+    }
+    else if (!RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
     {
         std::cout << "[RoutePlanner] No active route to resend for AGV " << assignedAgvID << "\n";
     }
+}
+
+void NetworkManagerServer::SendPhysicalDemoRoute(uint32_t _agvID)
+{
+    const std::vector<uint32_t> expectedNodeIDs = {
+        kPhysicalDemoStartNodeID,
+        kPhysicalDemoTargetNodeID
+    };
+
+    if (_agvID != kPhysicalDemoAgvID)
+    {
+        std::cout << "[PhysicalDemo] Route not sent: only AGV 1 is allowed\n";
+        return;
+    }
+
+    if (RoutePlanner::GetInstance().ResendCurrentRouteToController(_agvID, expectedNodeIDs))
+    {
+        std::cout << "[PhysicalDemo] Resent active logical route [1 -> 2]\n";
+        return;
+    }
+
+    std::cout << "[PhysicalDemo] Creating motor-disabled logical route [1 -> 2]\n";
+    std::cout << "[PhysicalDemo] ESP32 temporarily maps this logical leg to 30 cm; physical scale is not calibrated\n";
+    if (!RoutePlanner::GetInstance().CreateRouteMatchingNodes(
+            _agvID, expectedNodeIDs, m_TotalElapsedServerTime, MissionPurpose::NONE))
+    {
+        std::cout << "[PhysicalDemo] SAFE STOP: exact route [1 -> 2] was not sent\n";
+        return;
+    }
+
+    std::cout << "[PhysicalDemo] Exact route [1 -> 2] registered and sent\n";
 }
 
 RobotSessionPtr NetworkManagerServer::FindRobotSession(ClientProxy* _proxy, uint32_t _agvID)
@@ -318,36 +361,33 @@ void NetworkManagerServer::CreateSimulationWorld()
     if (m_IsWorldCreated)
         return;
 
-    #ifdef _TESTCASE0
-    int spawnCount = 4;
-    uint32_t initNodes[4] = {1,2,3,4}; 
+    std::vector<uint32_t> initNodes;
+    if (m_RunMode == ServerRunMode::PhysicalDemo)
+    {
+        initNodes = { kPhysicalDemoStartNodeID };
+    }
+    else
+    {
+        #ifdef _TESTCASE0
+        initNodes = {1, 2, 3, 4};
+        #elifdef _TESTCASE1
+        initNodes = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22};
+        #elifdef _TESTCASE2
+        initNodes = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41};
+        #elifdef _TESTCASE3
+        initNodes = {1, 2, 3, 4, 5};
+        #elifdef _TESTCASE4
+        initNodes = {1, 2};
+        #endif
 
-    #elifdef _TESTCASE1
-    int spawnCount = 22;
-    uint32_t initNodes[22] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22}; 
+        TaskManager::GetInsance();
+        WarehouseManager::GetInstance().Init();
+    }
 
-    #elifdef _TESTCASE2    
-    int spawnCount = 22;
-    //int spawnCount = 12;
-
-    uint32_t initNodes[22] = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41}; 
-    //uint32_t initNodes[12] = {75,65,76,73,66,74,68,67,69,70,71,72};
-    #elifdef _TESTCASE3  
-    
-    int spawnCount = 5;
-    uint32_t initNodes[5] = {1, 2, 3, 4, 5};
-    
-    #elifdef _TESTCASE4
-    int spawnCount = 2;
-    uint32_t initNodes[2] = {1,2};
-    #endif
-
-    TaskManager::GetInsance();
     RoutePlanner::GetInstance().Init();
-    WarehouseManager::GetInstance().Init();
 
     std::vector<Robo*> Robos;
-    for(int i = 0; i < spawnCount; i++)
+    for(size_t i = 0; i < initNodes.size(); i++)
     {
         ObjectPtr newRobo = ObjectRegistry::sInstance->CreateObject(ClassID::OBJ_AGV);
         RegisterObject(newRobo); 
@@ -375,18 +415,26 @@ void NetworkManagerServer::CreateSimulationWorld()
         ReservationTable::GetInstance().ReserveNode(startNodeID, 0.0f, 100.0f, agv->GetNetworkID(), ReservationType::Goal);        
     }     
 
-    for (Robo* agv : Robos)
+    if (m_RunMode == ServerRunMode::AutomaticFleet)
     {
-        RobotEvent startEvent;
-        startEvent.agvID = agv->GetNetworkID();
-        startEvent.timestamp = m_TotalElapsedServerTime;
-        startEvent.type = RobotEventType::IDLE_READY; // "저 백수입니다"
-        
-        EventManager::GetInstance().Publish(startEvent); 
+        for (Robo* agv : Robos)
+        {
+            RobotEvent startEvent;
+            startEvent.agvID = agv->GetNetworkID();
+            startEvent.timestamp = m_TotalElapsedServerTime;
+            startEvent.type = RobotEventType::IDLE_READY; // "저 백수입니다"
+
+            EventManager::GetInstance().Publish(startEvent);
+        }
     }
 
     m_IsWorldCreated = true;
-    std::cout << "[서버] Server-authoritative world created. AGV count=" << spawnCount << "\n";
+    std::cout << "[서버] Server-authoritative world created. AGV count=" << initNodes.size() << "\n";
+    if (m_RunMode == ServerRunMode::PhysicalDemo)
+    {
+        std::cout << "[PhysicalDemo] Single AGV at node 1; automatic task dispatch disabled\n";
+        std::cout << "[PhysicalDemo] Waiting for AGV 1 HELLO before issuing [1 -> 2]\n";
+    }
 }
 
 void NetworkManagerServer::HandleReadyMap_Packet(ClientProxy* _proxy, InputMemoryStream& _instream)

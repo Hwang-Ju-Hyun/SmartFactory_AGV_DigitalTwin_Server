@@ -10,6 +10,9 @@
             "enabled": false
         },
         "externalConsole": false,
+        "args": [
+            "--physical-demo"
+        ],
         "setupCommands": [
             {
                 "description": "Enable GDB pretty printing",

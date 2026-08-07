@@ -15,6 +15,20 @@ const float CLEARANCE_TIME = 0.6f;
 const float REPLAN_PENALTY_TIME = 1.0f; 
 const float LONG_TERM_HORIZON = WINDOW_TIME * 3.0f; 
 
+namespace
+{
+    bool RouteMatchesExpectedNodeIDs(const std::vector<RouteNodeTime>& _routeNodes,
+                                     const std::vector<uint32_t>& _expectedNodeIDs)
+    {
+        return _routeNodes.size() == _expectedNodeIDs.size() &&
+            std::equal(_routeNodes.begin(), _routeNodes.end(), _expectedNodeIDs.begin(),
+                [](const RouteNodeTime& routeNode, uint32_t expectedNodeID)
+                {
+                    return routeNode.nodeID == expectedNodeID;
+                });
+    }
+}
+
 void RoutePlanner::Init()
 {    
     EventManager::GetInstance().Subscribe(RobotEventType::NODE_ARRIVED, [this](const RobotEvent& _e) { OnRobotStepCompleted(_e); });
@@ -39,7 +53,8 @@ void RoutePlanner::Update(float _deltaTime, float _serverTime)
     }
 }
 
-bool RoutePlanner::ResendCurrentRouteToController(uint32_t _agvID)
+bool RoutePlanner::ResendCurrentRouteToController(uint32_t _agvID,
+                                                  const std::vector<uint32_t>& _expectedNodeIDs)
 {
     auto planIt = m_MasterPlans.find(_agvID);
     if (planIt == m_MasterPlans.end())
@@ -67,6 +82,13 @@ bool RoutePlanner::ResendCurrentRouteToController(uint32_t _agvID)
     if (routeNodes.size() < 2)
         return false;
 
+    if (!_expectedNodeIDs.empty() && !RouteMatchesExpectedNodeIDs(routeNodes, _expectedNodeIDs))
+    {
+        std::cout << "[RoutePlanner] Active route not resent for AGV " << _agvID
+                  << ": node sequence does not match the required route\n";
+        return false;
+    }
+
     IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
     if (!controller)
         return false;
@@ -89,6 +111,12 @@ void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, 
             controller->CancelRoute();
         agv->SetCurrentNodeID(_currentNodeID);
         agv->ChangeState(AGVState::IDLE);
+        return;
+    }
+
+    if (planIt->second.strictNodeSequence)
+    {
+        StopRouteWithoutReplan(_agvID, agv, _serverTime, "execution blocked");
         return;
     }
 
@@ -225,7 +253,7 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     {
         if (TryReservePathTransaction(_agvID, path, _targetNodeID, _serverTime)) 
         {
-            HandlePathFound(_agvID, _targetNodeID, _purpose, path);
+            HandlePathFound(_agvID, _targetNodeID, _purpose, path, false);
         } 
         else 
         {
@@ -236,6 +264,70 @@ void RoutePlanner::CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _s
     {
         HandlePathFailed(_agvID, _targetNodeID, _serverTime, _purpose);
     }
+}
+
+bool RoutePlanner::CreateRouteMatchingNodes(uint32_t _agvID, const std::vector<uint32_t>& _expectedNodeIDs,
+                                            float _serverTime, MissionPurpose _purpose)
+{
+    if (_expectedNodeIDs.size() < 2)
+    {
+        std::cout << "[RoutePlanner] Exact route rejected: at least two nodes are required\n";
+        return false;
+    }
+
+    Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+    if (!agv)
+        return false;
+
+    if (agv->GetCurrentNodeID() != _expectedNodeIDs.front())
+    {
+        std::cout << "[RoutePlanner] Exact route rejected for AGV " << _agvID
+                  << ": current node=" << agv->GetCurrentNodeID()
+                  << " expected=" << _expectedNodeIDs.front() << "\n";
+        return false;
+    }
+
+    m_PendingRoutes.erase(std::remove_if(m_PendingRoutes.begin(), m_PendingRoutes.end(),
+        [_agvID](const PendingRoute& r) { return r.agvID == _agvID; }), m_PendingRoutes.end());
+
+    const uint32_t targetNodeID = _expectedNodeIDs.back();
+    std::vector<PathStep> path;
+    if (!TryFindPath(_agvID, targetNodeID, _serverTime, path))
+    {
+        std::cout << "[RoutePlanner] Exact route rejected: no path found for AGV " << _agvID << "\n";
+        return false;
+    }
+
+    std::vector<RouteNodeTime> candidateRouteNodes;
+    candidateRouteNodes.reserve(path.size());
+    for (const PathStep& step : path)
+        candidateRouteNodes.push_back({ step.nodeID, step.arrivalTime, step.departureTime });
+
+    const bool matchesExpectedNodes = RouteMatchesExpectedNodeIDs(candidateRouteNodes, _expectedNodeIDs);
+
+    if (!matchesExpectedNodes)
+    {
+        std::cout << "[RoutePlanner] Exact route rejected for AGV " << _agvID
+                  << ": planner returned [";
+        for (size_t i = 0; i < path.size(); ++i)
+        {
+            if (i > 0)
+                std::cout << " -> ";
+            std::cout << path[i].nodeID;
+        }
+        std::cout << "]\n";
+        return false;
+    }
+
+    if (!TryReservePathTransaction(_agvID, path, targetNodeID, _serverTime))
+    {
+        std::cout << "[RoutePlanner] Exact route rejected: reservation conflict for AGV "
+                  << _agvID << "\n";
+        return false;
+    }
+
+    HandlePathFound(_agvID, targetNodeID, _purpose, path, true);
+    return true;
 }
 
 bool RoutePlanner::TryFindPath(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, std::vector<PathStep>& outPath) 
@@ -249,10 +341,12 @@ bool RoutePlanner::TryFindPath(uint32_t _agvID, uint32_t _targetNodeID, float _s
     return (!outPath.empty() && outPath.size() >= 2);
 }
 
-void RoutePlanner::HandlePathFound(uint32_t _agvID, uint32_t _targetNodeID, MissionPurpose _purpose, const std::vector<PathStep>& path) {
+void RoutePlanner::HandlePathFound(uint32_t _agvID, uint32_t _targetNodeID, MissionPurpose _purpose,
+                                   const std::vector<PathStep>& path, bool _strictNodeSequence) {
     RoutePlan plan;
     plan.agvID = _agvID; plan.currentStepIndex = 1; plan.purpose = _purpose;
-    plan.finalTargetNodeID = _targetNodeID; plan.steps = path; 
+    plan.finalTargetNodeID = _targetNodeID; plan.steps = path;
+    plan.strictNodeSequence = _strictNodeSequence;
     m_MasterPlans[_agvID] = plan;
 
     Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
@@ -290,6 +384,14 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
     RoutePlan& plan = m_MasterPlans[agvID]; 
 
+    if (plan.strictNodeSequence &&
+        (plan.currentStepIndex >= plan.steps.size() ||
+         plan.steps[plan.currentStepIndex].nodeID != _e.currentNodeID))
+    {
+        StopRouteWithoutReplan(agvID, agv, _e.timestamp, "unexpected ARRIVED node");
+        return;
+    }
+
     UpdateRobotPosition(agv, plan, _e);
         
     if (ContinueCurrentRoute(agv, plan)) return;
@@ -297,10 +399,40 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     FinishRoute(agv, plan, _e);
 }
 
+void RoutePlanner::StopRouteWithoutReplan(uint32_t _agvID, Robo* _agv, float _serverTime, const char* _reason)
+{
+    if (IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID))
+        controller->CancelRoute();
+
+    m_MasterPlans.erase(_agvID);
+    m_PendingRoutes.erase(std::remove_if(m_PendingRoutes.begin(), m_PendingRoutes.end(),
+        [_agvID](const PendingRoute& route) { return route.agvID == _agvID; }), m_PendingRoutes.end());
+
+    const uint32_t confirmedNodeID = _agv->GetCurrentNodeID();
+    _agv->ChangeState(AGVState::IDLE);
+    _agv->StartWorkTimer(0.0f);
+
+    auto& occupancy = OccupancyProvider::GetInstance();
+    occupancy.ClearExecutionState(_agvID);
+    occupancy.OccupyNode(_agvID, confirmedNodeID);
+
+    auto& reservations = ReservationTable::GetInstance();
+    reservations.OverrideFutureReservations(_agvID, _serverTime, 0.0f);
+    reservations.ReserveNode(confirmedNodeID, _serverTime, _serverTime + LONG_TERM_HORIZON,
+                             _agvID, ReservationType::Goal);
+
+    std::cout << "[RoutePlanner] STRICT ROUTE SAFE STOP. AGV " << _agvID
+              << " reason=" << _reason << " confirmedNode=" << confirmedNodeID << "\n";
+}
+
 void RoutePlanner::UpdateRobotPosition(Robo* agv, RoutePlan& plan, const RobotEvent& _e) {
+    const uint32_t previousNodeID = agv->GetCurrentNodeID();
+    auto& occupancy = OccupancyProvider::GetInstance();
+    if (previousNodeID != _e.currentNodeID)
+        occupancy.LeaveNode(_e.agvID, previousNodeID);
+
+    occupancy.OccupyNode(_e.agvID, _e.currentNodeID);
     agv->SetCurrentNodeID(_e.currentNodeID);
-    //  쪼개진 모듈로 갱신 요청
-    OccupancyProvider::GetInstance().OccupyNode(_e.agvID, _e.currentNodeID);
     plan.currentStepIndex++; 
 }
 
@@ -327,6 +459,13 @@ void RoutePlanner::FinishRoute(Robo* agv, RoutePlan& plan, const RobotEvent& _e)
         {
             agv->ChangeState(AGVState::IDLE); agv->StartWorkTimer(0.0f); 
             EventManager::GetInstance().Publish({ RobotEventType::IDLE_READY, agvID, _e.timestamp });
+        }
+        else
+        {
+            agv->ChangeState(AGVState::IDLE);
+            agv->StartWorkTimer(0.0f);
+            std::cout << "[RoutePlanner] Route completed without automatic follow-up. AGV "
+                      << agvID << " node=" << _e.currentNodeID << "\n";
         }
         m_MasterPlans.erase(agvID); 
     } 

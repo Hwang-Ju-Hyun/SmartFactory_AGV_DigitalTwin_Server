@@ -9,10 +9,54 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string_view>
 bool g_LOOP=true;
 
-int main(void)
-{    
+namespace
+{
+    bool TryParseRunMode(int argc, char** argv, ServerRunMode& outRunMode, bool& outHelpRequested)
+    {
+        outRunMode = ServerRunMode::AutomaticFleet;
+        outHelpRequested = false;
+
+        for (int i = 1; i < argc; ++i)
+        {
+            const std::string_view argument(argv[i]);
+            if (argument == "--physical-demo")
+            {
+                outRunMode = ServerRunMode::PhysicalDemo;
+            }
+            else if (argument == "--help")
+            {
+                outHelpRequested = true;
+                std::cout << "Usage: AGV_Server [--physical-demo]\n"
+                          << "  no option        Run the existing automatic four-AGV world\n"
+                          << "  --physical-demo  Run one AGV and issue only logical route [1 -> 2]\n";
+                return false;
+            }
+            else
+            {
+                std::cerr << "Unknown option: " << argument << "\n"
+                          << "Usage: AGV_Server [--physical-demo]\n";
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+int main(int argc, char** argv)
+{
+    ServerRunMode runMode;
+    bool helpRequested = false;
+    if (!TryParseRunMode(argc, argv, runMode, helpRequested))
+        return helpRequested ? 0 : 2;
+
+    std::cout << "[Server] mode="
+              << (runMode == ServerRunMode::PhysicalDemo ? "PHYSICAL_DEMO" : "AUTOMATIC_FLEET")
+              << "\n";
+
     SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("0.0.0.0:6666");    
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
     int option = 1;
@@ -30,7 +74,7 @@ int main(void)
 
     ObjectRegistry::sInstance->StaticInit();
     
-    NetworkManagerServer::sInstance->StaticInit();
+    NetworkManagerServer::sInstance->StaticInit(runMode);
     
     const std::chrono::duration<double> kTickDuration(1.0 / 30.0); 
     auto lastUpdateTime = std::chrono::high_resolution_clock::now();

@@ -9,7 +9,6 @@ class ESP32RobotController : public IRobotController
 private:
     RobotSessionPtr m_RobotSession;
     RoutePacket m_CurrentRoute;
-    uint32_t m_LastKnownNodeID = 0;
 
     std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
     std::function<void(uint32_t)> m_NodeLeaveCallback;

@@ -14,8 +14,6 @@ ESP32RobotController::ESP32RobotController(RobotSessionPtr _robotSession)
 void ESP32RobotController::FollowRoute(const RoutePacket& _routePacket)
 {
     m_CurrentRoute = _routePacket;
-    if (!_routePacket.nodes.empty())
-        m_LastKnownNodeID = _routePacket.nodes.front().nodeID;
 
     if (m_RobotSession)
         m_RobotSession->SendRoute(_routePacket);
@@ -46,19 +44,8 @@ ControllerEvent ESP32RobotController::PopEvent()
     if (!m_RobotSession)
         return ControllerEvent{ ControllerEventType::NONE, 0, 0 };
 
-    ControllerEvent event = m_RobotSession->PopEvent();
-    if (event.type == ControllerEventType::ARRIVED)
-    {
-        if (m_NodeLeaveCallback && m_LastKnownNodeID != 0 && m_LastKnownNodeID != event.nodeID)
-            m_NodeLeaveCallback(m_LastKnownNodeID);
-
-        if (m_CanEnterNodeCallback)
-            m_CanEnterNodeCallback(event.nodeID);
-
-        m_LastKnownNodeID = event.nodeID;
-    }
-
-    return event;
+    // RoutePlanner가 계획상의 다음 node인지 검증한 뒤 occupancy를 갱신한다.
+    return m_RobotSession->PopEvent();
 }
 
 void ESP32RobotController::Update(float dt, float serverTime)

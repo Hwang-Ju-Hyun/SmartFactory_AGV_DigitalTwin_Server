@@ -76,6 +76,20 @@ build/Client/AGV_Client
 
 서버는 TCP `0.0.0.0:6666`에서 Unity legacy protocol과 RobotProtocol을 구분해 처리한다. FakeRobot에서 `HELLO_ACK`, `ROUTE`, `STATUS`, `ARRIVED` 로그가 이어지는지 확인한다.
 
+### Motor-disabled physical demo
+
+실물 ESP32와 첫 단일 구간을 확인할 때는 physical demo mode를 사용한다.
+
+```bash
+./build/Server/AGV_Server --physical-demo
+```
+
+이 mode는 AGV 1대만 node 1에 만들고 자동 작업 배정을 끈다. AGV 1의 `HELLO`를 승인한 뒤 RoutePlanner가 정확히 `[1 -> 2]`인지 확인하고 예약한 route만 전송한다. 현재 ESP32 firmware는 이 논리 구간을 실물 30 cm로 임시 해석하며, server map의 1→2 길이 약 7.95 unit과 실제 scale이 같다는 뜻은 아니다.
+
+이 option은 ESP32 motor output을 켜지 않는다. 현재 Phase 2A firmware의 compile lock, `STBY=LOW`, `PWM=0`, `ARRIVED` 차단은 그대로 유지해야 한다. 저장소의 VS Code 설정은 CMake Tools에서 `AGV_Server` target의 벌레 버튼을 누를 때 이 option을 자동 전달한다. 다른 target, 특히 `FakeRobot`은 위 터미널 명령으로 별도 실행한다.
+
+Physical demo 중에는 ESP32와 FakeRobot을 동시에 AGV 1로 연결하지 않는다. 현재 server는 같은 AGV의 이전 session 정리를 완성하지 않았으므로 재접속 시험은 motor-disabled 상태에서만 하고, 이상한 재전송이 보이면 server와 ESP32 연결을 모두 종료한 뒤 server부터 다시 시작한다.
+
 ## 문서 읽는 순서
 
 1. [현재 구현 상태와 다음 작업](docs/current-status.md)

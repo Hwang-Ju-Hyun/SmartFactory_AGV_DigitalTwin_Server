@@ -193,8 +193,12 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 
 - network firmware에 실차 GPIO와 safety code 이식
 - motor output은 비활성화
+- Server를 `./build/Server/AGV_Server --physical-demo`로 실행해 AGV 1과 exact `[1 -> 2]`만 사용
+- 같은 시험에서 ESP32와 FakeRobot을 동시에 AGV 1로 연결하지 않음
 - 바퀴를 띄운 상태에서 HELLO/HELLO_ACK/STATUS/CANCEL/ESTOP 확인
 - reconnect와 Wi-Fi 끊김 시 안전 상태 확인
+
+2026-08-07 기준 Server physical demo는 FakeRobot으로 `HELLO_ACK -> ROUTE [1,2] -> ARRIVED node 2`까지 검증됐다. 실제 ESP32에서는 새 mode의 route 수신을 motor-disabled 상태로 다시 확인해야 한다. 이 `[1 -> 2]`는 현재 firmware가 30 cm로 해석하는 임시 논리 mapping이며 `MapData.json`의 약 7.95 unit을 실물 30 cm scale로 확정한 것이 아니다.
 
 ### 4. RouteExecutor 연결
 

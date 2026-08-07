@@ -24,6 +24,7 @@ struct RoutePlan
     // A*의 시공간 스텝을 그대로 들고 있습니다.
     std::vector<PathStep> steps; 
     size_t currentStepIndex; 
+    bool strictNodeSequence = false;
 };
 
 struct PendingRoute 
@@ -42,9 +43,12 @@ public:
     void Init(); 
     
     void CreateRoute(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose);
+    bool CreateRouteMatchingNodes(uint32_t _agvID, const std::vector<uint32_t>& _expectedNodeIDs,
+                                  float _serverTime, MissionPurpose _purpose);
     void Update(float _deltaTime, float _serverTime); 
     void OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, uint32_t _blockedNodeID, float _serverTime);
-    bool ResendCurrentRouteToController(uint32_t _agvID);
+    bool ResendCurrentRouteToController(uint32_t _agvID,
+                                        const std::vector<uint32_t>& _expectedNodeIDs = {});
     
     void ClearRRAEngines() { m_RRAEngines.clear(); }
 private:
@@ -64,8 +68,10 @@ public:
 
 private:
     bool TryFindPath(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, std::vector<PathStep>& outPath);
-    void HandlePathFound(uint32_t _agvID, uint32_t _targetNodeID, MissionPurpose _purpose, const std::vector<PathStep>& path);
+    void HandlePathFound(uint32_t _agvID, uint32_t _targetNodeID, MissionPurpose _purpose,
+                         const std::vector<PathStep>& path, bool _strictNodeSequence);
     void HandlePathFailed(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose);
+    void StopRouteWithoutReplan(uint32_t _agvID, Robo* _agv, float _serverTime, const char* _reason);
 
     void UpdateRobotPosition(Robo* agv, RoutePlan& plan, const RobotEvent& _e);
     bool ContinueCurrentRoute(Robo* agv, RoutePlan& plan);
