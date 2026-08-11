@@ -49,6 +49,8 @@ Unity TestCase03에서 불필요한 중복 node 23을 제거한 뒤 다시 expor
 
 ESP32 `bffe8e59` motor-disabled follower trace에서 실제 payload 수신, `minRadius > 65 mm`, `reverse=0`을 확인했다.
 
+Server에는 command-capable client만 허용하는 `--trajectory-raised-wheel` mode를 추가했다. `[1 -> 4]`를 `80 mm/s`로 보내며 CMake build를 통과했고, 실제 모터 시험은 아직 하지 않았다.
+
 후속 Server working tree에 `--trajectory-preview`를 추가했다. 이 mode는 단일 AGV/node 1, 자동 배차 off 상태에서 preview-only capability를 가진 client에만 `[1 -> 4]`를 한 번 전송한다. 모든 waypoint target speed는 0이며 RoutePlanner plan·예약·`ROUTE_COMMAND`·`ARRIVED` 흐름을 만들지 않는다.
 
 이전 25 mm/unit 시점의 FakeRobot TCP E2E도 통과했으며, 현재 60 mm/unit은 실제 ESP32의 motor-disabled trace까지 통과했다.

@@ -355,7 +355,7 @@ Server sampler는 directed node link를 순서대로 확인한 뒤 다음처럼 
 - synthetic rotate waypoint는 node 도착을 중복 보고하지 않도록 `nodeID=0`이며 `NODE_BOUNDARY`를 갖지 않음
 - 접선이 이어지는 LINE/BEZIER 경계는 정지 없이 연속 waypoint 생성
 
-2026-08-11 기준 versioned serializer, capability gate, mixed-link builder와 FakeRobot/ESP32 preview parser, synthetic smoke test까지 구현됐다. TestCase03 export도 Server working tree에 반영돼 의도한 첫 Bezier `[1 -> 4]`를 hardware-free preview로 검증했다. `--trajectory-preview`는 preview-only client에만 모든 target speed가 0인 payload를 직접 전송하고 RoutePlanner 실행·예약·`ROUTE_COMMAND`를 만들지 않는다. localhost FakeRobot TCP 시험에서 HELLO부터 8-waypoint payload 수신과 `zeroSpeed=1`까지 통과했다. ESP32 preview는 motor-locked parse/validate/store만 수행하며 follower가 아니다. 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
+2026-08-11 기준 `60 mm/map-unit` TestCase03 `[1 -> 4]` preview와 ESP32 motor-disabled follower trace가 통과했다. `--trajectory-preview`는 preview-only client에 speed 0만 보내고, `--trajectory-raised-wheel`은 command-capable client에만 `80 mm/s` 실행 trajectory를 보낸다. 두 mode 모두 자동 배차와 RoutePlanner를 사용하지 않으며, 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
 
 ### 10.4 STATUS
 

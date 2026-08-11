@@ -107,6 +107,14 @@ TestCase03의 첫 demo Bezier `[1 -> 4]`를 TCP와 motor 없이 확인하는 pre
 
 이 mode는 AGV 1대만 node 1에 만들고 자동 배차와 RoutePlanner 실행을 끈다. `PREVIEW` capability만 광고하고 실행 capability는 광고하지 않은 client에만 `[1 -> 4]` `TRAJECTORY_COMMAND`를 한 번 보내며, 모든 target speed는 0이다. `ROUTE_COMMAND`와 `ARRIVED` 흐름은 만들지 않는다. 실제 scale과 시작 heading을 확정한 실행 mode가 아니다.
 
+곡선 공중시험 전용 실행 mode:
+
+```bash
+./build/Server/AGV_Server --trajectory-raised-wheel
+```
+
+`COMMAND` capability client에만 `[1 -> 4]`, `60 mm/map-unit`, `80 mm/s`를 전송한다. 자동 배차는 꺼지며 ESP32의 local BOOT 승인과 안전 제한이 우선한다.
+
 실제 ESP32나 기본 6666 listener와 분리한 localhost FakeRobot 검증:
 
 ```bash

@@ -25,6 +25,8 @@ namespace
             return "PHYSICAL_DEMO";
         case ServerRunMode::TrajectoryPreview:
             return "TRAJECTORY_PREVIEW";
+        case ServerRunMode::TrajectoryRaisedWheel:
+            return "TRAJECTORY_RAISED_WHEEL";
         }
         return "UNKNOWN";
     }
@@ -60,14 +62,25 @@ namespace
                 outRunMode = ServerRunMode::TrajectoryPreview;
                 explicitModeSelected = true;
             }
+            else if (argument == "--trajectory-raised-wheel")
+            {
+                if (explicitModeSelected)
+                {
+                    std::cerr << "Only one server run mode may be selected\n";
+                    return false;
+                }
+                outRunMode = ServerRunMode::TrajectoryRaisedWheel;
+                explicitModeSelected = true;
+            }
             else if (argument == "--help")
             {
                 outHelpRequested = true;
-                std::cout << "Usage: AGV_Server [--physical-demo | --trajectory-preview]"
+                std::cout << "Usage: AGV_Server [--physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
                              " [--listen ADDRESS:PORT]\n"
                           << "  no option             Run the TestCase03 automatic five-AGV world\n"
                           << "  --physical-demo       Run one AGV and issue only logical route [1 -> 2]\n"
                           << "  --trajectory-preview  Send motor-locked preview [1 -> 4] only to a preview-capable robot\n"
+                          << "  --trajectory-raised-wheel  Send executable 80 mm/s [1 -> 4] only to a command-capable robot\n"
                           << "  --listen ADDRESS:PORT Override the default 0.0.0.0:6666 listener\n";
                 return false;
             }
@@ -83,7 +96,7 @@ namespace
             else
             {
                 std::cerr << "Unknown option: " << argument << "\n"
-                          << "Usage: AGV_Server [--physical-demo | --trajectory-preview]"
+                          << "Usage: AGV_Server [--physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
                              " [--listen ADDRESS:PORT]\n";
                 return false;
             }
