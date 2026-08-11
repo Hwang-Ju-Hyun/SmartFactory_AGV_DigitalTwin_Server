@@ -1,5 +1,7 @@
 #include "PacketSerializer.hpp"
+#include <cmath>
 #include <cstring>
+#include <utility>
 
 namespace RobotProtocol
 {
@@ -45,6 +47,7 @@ namespace RobotProtocol
         {
         case PacketID::ROUTE_COMMAND:
         case PacketID::CANCEL_ROUTE:
+        case PacketID::TRAJECTORY_COMMAND:
         case PacketID::STATUS:
         case PacketID::ARRIVED:
         case PacketID::PING:
@@ -95,14 +98,29 @@ namespace RobotProtocol
         outStream.Write(payload.protocolVersion);
         outStream.Write(static_cast<uint8_t>(payload.clientType));
         outStream.Write(payload.requestedAgvID);
+        if (payload.capabilities != CAPABILITY_NONE)
+            outStream.Write(payload.capabilities);
     }
 
     bool ReadHelloPayload(InputMemoryStream& inStream, HelloPayload& outPayload)
     {
         uint8_t rawClientType = 0;
+        outPayload.capabilities = CAPABILITY_NONE;
         if (!ReadUInt16(inStream, outPayload.protocolVersion)) return false;
         if (!ReadUInt8(inStream, rawClientType)) return false;
         if (!ReadUInt32(inStream, outPayload.requestedAgvID)) return false;
+
+        // Protocol v1 originally ended after requestedAgvID. Reading the
+        // capability mask only when present keeps deployed ESP32 clients
+        // wire-compatible.
+        const uint32_t optionalBytes = inStream.GetRemainDataSize();
+        if (optionalBytes != 0 && optionalBytes != sizeof(uint32_t))
+            return false;
+        if (optionalBytes == sizeof(uint32_t) &&
+            !ReadUInt32(inStream, outPayload.capabilities))
+        {
+            return false;
+        }
 
         outPayload.clientType = static_cast<ClientType>(rawClientType);
         return true;
@@ -193,6 +211,101 @@ namespace RobotProtocol
             if (!ReadFloat(inStream, node.departureTime)) return false;
             outPayload.nodes.push_back(node);
         }
+        return true;
+    }
+
+    bool WriteTrajectoryCommandPayload(OutputMemoryStream& outStream, const TrajectoryCommandPayload& payload)
+    {
+        if (payload.routeID == 0 ||
+            payload.formatVersion != kTrajectoryFormatVersion ||
+            payload.startNodeID == 0 ||
+            payload.finalNodeID == 0 ||
+            payload.waypoints.empty() ||
+            payload.waypoints.size() > kMaxTrajectoryWaypoints)
+            return false;
+        if (!std::isfinite(payload.millimetersPerMapUnit) ||
+            payload.millimetersPerMapUnit <= 0.0f)
+            return false;
+        for (const TrajectoryWaypoint& waypoint : payload.waypoints)
+        {
+            if (!std::isfinite(waypoint.forwardMm) ||
+                !std::isfinite(waypoint.leftMm) ||
+                !std::isfinite(waypoint.headingRad) ||
+                !std::isfinite(waypoint.targetSpeedMmPerSecond) ||
+                waypoint.targetSpeedMmPerSecond < 0.0f)
+                return false;
+        }
+
+        constexpr uint8_t knownFlags = TRAJECTORY_FLAG_NODE_BOUNDARY |
+            TRAJECTORY_FLAG_STOP | TRAJECTORY_FLAG_ROTATE_IN_PLACE |
+            TRAJECTORY_FLAG_FINAL;
+        for (const TrajectoryWaypoint& waypoint : payload.waypoints)
+            if ((waypoint.flags & static_cast<uint8_t>(~knownFlags)) != 0) return false;
+
+        outStream.Write(payload.routeID);
+        outStream.Write(payload.formatVersion);
+        const uint16_t waypointCount = static_cast<uint16_t>(payload.waypoints.size());
+        outStream.Write(waypointCount);
+        outStream.Write(payload.startNodeID);
+        outStream.Write(payload.finalNodeID);
+        outStream.Write(payload.millimetersPerMapUnit);
+        for (const TrajectoryWaypoint& waypoint : payload.waypoints)
+        {
+            outStream.Write(waypoint.forwardMm);
+            outStream.Write(waypoint.leftMm);
+            outStream.Write(waypoint.headingRad);
+            outStream.Write(waypoint.targetSpeedMmPerSecond);
+            outStream.Write(waypoint.nodeID);
+            outStream.Write(waypoint.flags);
+        }
+        return true;
+    }
+
+    bool ReadTrajectoryCommandPayload(InputMemoryStream& inStream, TrajectoryCommandPayload& outPayload)
+    {
+        outPayload = {};
+        TrajectoryCommandPayload decoded;
+        uint8_t formatVersion = 0;
+        uint16_t waypointCount = 0;
+        if (!ReadUInt32(inStream, decoded.routeID)) return false;
+        if (!ReadUInt8(inStream, formatVersion)) return false;
+        if (formatVersion != kTrajectoryFormatVersion) return false;
+        decoded.formatVersion = formatVersion;
+        if (!ReadUInt16(inStream, waypointCount)) return false;
+        if (waypointCount == 0 || waypointCount > kMaxTrajectoryWaypoints) return false;
+        if (!ReadUInt32(inStream, decoded.startNodeID)) return false;
+        if (!ReadUInt32(inStream, decoded.finalNodeID)) return false;
+        if (!ReadFloat(inStream, decoded.millimetersPerMapUnit)) return false;
+        if (decoded.routeID == 0 || decoded.startNodeID == 0 ||
+            decoded.finalNodeID == 0 ||
+            !std::isfinite(decoded.millimetersPerMapUnit) ||
+            decoded.millimetersPerMapUnit <= 0.0f) return false;
+
+        decoded.waypoints.reserve(waypointCount);
+        constexpr uint8_t knownFlags = TRAJECTORY_FLAG_NODE_BOUNDARY |
+            TRAJECTORY_FLAG_STOP | TRAJECTORY_FLAG_ROTATE_IN_PLACE |
+            TRAJECTORY_FLAG_FINAL;
+        for (uint16_t i = 0; i < waypointCount; ++i)
+        {
+            TrajectoryWaypoint waypoint;
+            if (!ReadFloat(inStream, waypoint.forwardMm)) return false;
+            if (!ReadFloat(inStream, waypoint.leftMm)) return false;
+            if (!ReadFloat(inStream, waypoint.headingRad)) return false;
+            if (!ReadFloat(inStream, waypoint.targetSpeedMmPerSecond)) return false;
+            if (!ReadUInt32(inStream, waypoint.nodeID)) return false;
+            if (!ReadUInt8(inStream, waypoint.flags)) return false;
+            if (!std::isfinite(waypoint.forwardMm) ||
+                !std::isfinite(waypoint.leftMm) ||
+                !std::isfinite(waypoint.headingRad) ||
+                !std::isfinite(waypoint.targetSpeedMmPerSecond) ||
+                waypoint.targetSpeedMmPerSecond < 0.0f ||
+                (waypoint.flags & static_cast<uint8_t>(~knownFlags)) != 0)
+                return false;
+            decoded.waypoints.push_back(waypoint);
+        }
+
+        if (inStream.GetRemainDataSize() != 0) return false;
+        outPayload = std::move(decoded);
         return true;
     }
 

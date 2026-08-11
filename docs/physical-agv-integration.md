@@ -1,12 +1,12 @@
 # Physical ESP32 AGV integration
 
-Last updated: 2026-08-06
+Last updated: 2026-08-11
 
 Hardware verification record: 2026-08-04
 
 ## 현재 결론
 
-실차의 motor·encoder·L자 자율 주행과 ESP32 RobotProtocol 통신 골격은 각각 존재하지만, 아직 하나의 firmware로 결합되지 않았다.
+단일 직선 `[1 -> 2]`에서는 Server RobotProtocol, motor·encoder, STATUS/ARRIVED와 Unity 표시까지 하나의 firmware로 결합해 바닥 시험을 완료했다. 일반 LINE/Bezier follower와 실제 odometry pose 연동은 아직 별도 단계다.
 
 | 영역 | 상태 |
 |---|---|
@@ -14,13 +14,13 @@ Hardware verification record: 2026-08-04
 | 15 cm·30 cm 직진 | 실차 검증 완료 |
 | 좌우 제자리 90도 | 실차 검증 완료 |
 | `30 cm -> CW 90도 -> 30 cm` | 바닥 시험 완료 |
-| ESP32 RobotProtocol 연결 | 별도 network firmware 기록에서 검증 |
-| 실제 motor control + RobotProtocol | 미완료 |
+| ESP32 RobotProtocol 연결 | 실차 E2E 검증 완료 |
+| 실제 motor control + RobotProtocol | exact `[1 -> 2]` 바닥 검증 완료 |
 | 후진 | 미검증 |
-| encoder odometry | 미구현 |
-| 실제 pose의 Digital Twin 반영 | 미완료 |
+| encoder odometry | motor-locked preview 구현, 실차 pose 미검증 |
+| 실제 pose의 Digital Twin 반영 | node/progress 완료, odometry pose 미완료 |
 
-과거 network firmware는 motor output을 끈 상태에서 약 1.2초 단위로 route 진행을 흉내 낸다. 실제 주행 완료를 의미하지 않는다.
+과거 network firmware의 시간 기반 진행 기록은 현재 실차 firmware의 근거가 아니다. 현재 완료 범위는 exact `[1 -> 2]`이고 임의 LINE/Bezier route는 아직 실행하지 않았다.
 
 ## 하드웨어
 
@@ -198,7 +198,7 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 - 바퀴를 띄운 상태에서 HELLO/HELLO_ACK/STATUS/CANCEL/ESTOP 확인
 - reconnect와 Wi-Fi 끊김 시 안전 상태 확인
 
-2026-08-07 기준 Server physical demo는 FakeRobot으로 `HELLO_ACK -> ROUTE [1,2] -> ARRIVED node 2`까지 검증됐다. 실제 ESP32에서는 새 mode의 route 수신을 motor-disabled 상태로 다시 확인해야 한다. 이 `[1 -> 2]`는 현재 firmware가 30 cm로 해석하는 임시 논리 mapping이며 `MapData.json`의 약 7.95 unit을 실물 30 cm scale로 확정한 것이 아니다.
+2026-08-10 기준 Server physical demo는 FakeRobot뿐 아니라 실제 ESP32와 Unity까지 검증됐다. motor-disabled dry run, raised-wheel encoder run, 저속 바닥 `[1 -> 2]`, STATUS/ARRIVED와 Unity 표시가 모두 성공했다. 2026-08-11 반영한 TestCase03 map에서 `[1 -> 2]`는 12.0 map unit이며 firmware는 이를 약 30 cm로 해석한다. 여기서 계산되는 25 mm/map-unit은 전체 실물 맵의 확정 scale이 아니다.
 
 ### 4. RouteExecutor 연결
 
@@ -207,12 +207,16 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 - 실제 node 도착 후 STATUS와 ARRIVED 전송
 - 처음에는 AGV 1대, 직선 1구간, 낮은 PWM으로 제한
 
+단일 직선 `[1 -> 2]`에 대해서는 위 항목을 완료했다. 다음 executor 확장은 기존 경로를 다시 하드코딩하지 않고, Server가 LINE/BEZIER map link를 robot-local metric waypoint로 샘플링한 `TRAJECTORY_COMMAND`를 따르는 방식으로 진행한다. capability가 없는 기존 firmware에는 계속 `ROUTE_COMMAND`만 보내 기존 검증본을 보존한다.
+
 ### 5. Digital Twin 비교
 
 - server의 node/progress 기반 pose와 odometry pose를 함께 log
 - 원점, axis, scale, heading 오차 보정
 - 15 cm, 후진, 좌우 90도, L자 route 회귀 시험
 - 그 뒤에만 다중 AGV/예약 route와 결합
+
+node/progress 기반 Unity 이동은 physical-demo 실차와 함께 검증됐다. motor-locked ESP32 preview에는 nominal 48 mm wheel, 130 mm track, 260 counts/rev 기반 robot-local odometry가 구현됐지만 STATUS world pose에는 연결하지 않았다. TestCase03 export는 Server working tree에 반영했고 의도한 `[1 -> 4]` Bezier의 hardware-free waypoint preview도 통과했다. Server `--trajectory-preview`는 preview-only client에 모든 target speed가 0인 payload만 보내도록 구현했으며 실제 ESP32 수신은 아직 남았다. 임시 25 mm/unit에서는 이 곡선의 sampled 최소 반경이 약 37 mm라 트레드 반폭 65 mm보다 작으므로 실차 dispatch에는 사용하지 않는다. Unity의 새 map 렌더 재확인, 신뢰 가능한 실제 시작 heading, map-to-mm scale과 follower 검증은 아직 남아 있다.
 
 웹 조종은 진단 수단으로는 유용하지만, 본 시스템 연동은 이미 정의된 RobotProtocol을 먼저 완성한다.
 

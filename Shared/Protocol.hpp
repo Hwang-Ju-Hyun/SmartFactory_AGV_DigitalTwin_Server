@@ -5,6 +5,17 @@ namespace RobotProtocol
 {
     constexpr uint16_t kProtocolVersion = 1;
     constexpr uint16_t kMaxRouteNodes = 64;
+    constexpr uint8_t kTrajectoryFormatVersion = 1;
+    constexpr uint16_t kMaxTrajectoryWaypoints = 64;
+
+    enum ClientCapability : uint32_t
+    {
+        CAPABILITY_NONE = 0,
+        // Full execution support: follower, safety, STATUS and ARRIVED.
+        CAPABILITY_TRAJECTORY_COMMAND = 1u << 0,
+        // Parse/validate/store only. Never a runtime motion target.
+        CAPABILITY_TRAJECTORY_PREVIEW = 1u << 1
+    };
 
     enum class ClientType : uint8_t
     {
@@ -19,6 +30,7 @@ namespace RobotProtocol
     {
         ROUTE_COMMAND = 100,
         CANCEL_ROUTE = 101,
+        TRAJECTORY_COMMAND = 102,
 
         STATUS = 200,
         ARRIVED = 201,
@@ -77,6 +89,9 @@ namespace RobotProtocol
         uint16_t protocolVersion = kProtocolVersion;
         ClientType clientType = ClientType::UNKNOWN;
         uint32_t requestedAgvID = 0;
+        // Optional on the wire. Legacy v1 clients omit this field and are
+        // treated as CAPABILITY_NONE by the server.
+        uint32_t capabilities = CAPABILITY_NONE;
     };
 
     struct HelloAckPayload
@@ -114,5 +129,14 @@ namespace RobotProtocol
     struct TimePayload
     {
         uint32_t timestampMs = 0;
+    };
+
+    enum TrajectoryWaypointFlag : uint8_t
+    {
+        TRAJECTORY_FLAG_NONE = 0,
+        TRAJECTORY_FLAG_NODE_BOUNDARY = 1u << 0,
+        TRAJECTORY_FLAG_STOP = 1u << 1,
+        TRAJECTORY_FLAG_ROTATE_IN_PLACE = 1u << 2,
+        TRAJECTORY_FLAG_FINAL = 1u << 3
     };
 }

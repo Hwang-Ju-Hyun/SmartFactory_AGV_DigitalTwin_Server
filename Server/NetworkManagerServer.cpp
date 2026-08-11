@@ -23,6 +23,8 @@
 #include "ESP32RobotController.hpp"
 #include "OccupancyProvider.hpp"
 #include "PacketSerializer.hpp"
+#include "TrajectoryBuilder.hpp"
+#include <utility>
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
 
@@ -33,6 +35,12 @@ namespace
     constexpr uint32_t kPhysicalDemoAgvID = 1;
     constexpr uint32_t kPhysicalDemoStartNodeID = 1;
     constexpr uint32_t kPhysicalDemoTargetNodeID = 2;
+    constexpr uint32_t kTrajectoryPreviewAgvID = 1;
+    constexpr uint32_t kTrajectoryPreviewStartNodeID = 1;
+    constexpr uint32_t kTrajectoryPreviewTargetNodeID = 4;
+    constexpr float kTrajectoryPreviewScaleMmPerMapUnit = 25.0f;
+    constexpr float kTrajectoryPreviewSpacingMm = 20.0f;
+    constexpr float kTrajectoryPreviewAssumedStartHeadingRad = 3.14159265358979323846f;
 }
 
 NetworkManagerServer::NetworkManagerServer(ServerRunMode _runMode)
@@ -148,7 +156,8 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
     ObjectPtr agvObject = assignedAgvID != 0 ? m_LinkingContext->GetObject(assignedAgvID) : nullptr;
     const bool agvOK = agvObject && agvObject->GetClassID() == ClassID::OBJ_AGV;
 
-    RobotSessionPtr robotSession = std::make_shared<RobotSession>(_proxy->GetSession(), assignedAgvID);
+    RobotSessionPtr robotSession = std::make_shared<RobotSession>(
+        _proxy->GetSession(), assignedAgvID, hello.capabilities);
     if (Robo* agv = dynamic_cast<Robo*>(agvObject.get()))
     {
         robotSession->PrimeStatus(agv->GetPosX(), agv->GetPosZ(), agv->GetHeadingAngle());
@@ -188,16 +197,76 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
 
     std::cout << "[RobotProtocol] Robot client connected. agvID=" << assignedAgvID
               << " clientType=" << static_cast<int>(hello.clientType)
+              << " capabilities=0x" << std::hex << hello.capabilities << std::dec
               << " sequence=" << _header.sequence << "\n";
 
     if (m_RunMode == ServerRunMode::PhysicalDemo)
     {
         SendPhysicalDemoRoute(assignedAgvID);
     }
+    else if (m_RunMode == ServerRunMode::TrajectoryPreview)
+    {
+        SendTrajectoryPreview(assignedAgvID, robotSession);
+    }
     else if (!RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
     {
         std::cout << "[RoutePlanner] No active route to resend for AGV " << assignedAgvID << "\n";
     }
+}
+
+void NetworkManagerServer::SendTrajectoryPreview(
+    uint32_t _agvID, const RobotSessionPtr& _robotSession)
+{
+    if (_agvID != kTrajectoryPreviewAgvID)
+    {
+        std::cout << "[TrajectoryPreview] Not sent: only AGV 1 is allowed\n";
+        return;
+    }
+    if (!_robotSession || !_robotSession->SupportsTrajectoryPreviewOnly())
+    {
+        std::cout << "[TrajectoryPreview] SAFE: client is not preview-only"
+                     " (PREVIEW set, COMMAND clear); no trajectory sent\n";
+        return;
+    }
+
+    const MapLink& previewLink = MapManager::GetInstance().FindLink(
+        kTrajectoryPreviewStartNodeID, kTrajectoryPreviewTargetNodeID);
+    if (previewLink.m_Type != 1)
+    {
+        std::cout << "[TrajectoryPreview] SAFE: directed [1 -> 4] is not a Bezier link;"
+                     " no trajectory sent\n";
+        return;
+    }
+
+    TrajectoryBuildOptions options;
+    options.hasTrustedStartHeading = true;
+    options.startHeadingRad = kTrajectoryPreviewAssumedStartHeadingRad;
+    options.millimetersPerMapUnit = kTrajectoryPreviewScaleMmPerMapUnit;
+    options.spacingMm = kTrajectoryPreviewSpacingMm;
+    // This mode validates transport and parsing only. A zero speed remains
+    // non-executable even if a client violates the preview capability contract.
+    options.cruiseSpeedMmPerSecond = 0.0f;
+
+    RobotProtocol::TrajectoryCommandPayload trajectory;
+    std::string error;
+    if (!TrajectoryBuilder::Build(
+            { kTrajectoryPreviewStartNodeID, kTrajectoryPreviewTargetNodeID },
+            0, options, trajectory, error))
+    {
+        std::cout << "[TrajectoryPreview] SAFE: build failed; no trajectory sent: "
+                  << error << "\n";
+        return;
+    }
+
+    std::cout << "[TrajectoryPreview] Sending parse/store-only [1 -> 4]"
+                 " with targetSpeed=0; no RoutePlanner execution\n";
+    if (!_robotSession->SendTrajectoryPreview(std::move(trajectory)))
+    {
+        std::cout << "[TrajectoryPreview] SAFE: trajectory send rejected\n";
+        return;
+    }
+
+    std::cout << "[TrajectoryPreview] Sent [1 -> 4]; waiting only for client preview log\n";
 }
 
 void NetworkManagerServer::SendPhysicalDemoRoute(uint32_t _agvID)
@@ -350,10 +419,10 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
     std::cout << "[서버] Unity viewer object ready\n";
 }
 
-#define _TESTCASE0
+//#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-//#define _TESTCASE3
+#define _TESTCASE3
 //#define _TESTCASE4
 
 void NetworkManagerServer::CreateSimulationWorld()
@@ -362,7 +431,7 @@ void NetworkManagerServer::CreateSimulationWorld()
         return;
 
     std::vector<uint32_t> initNodes;
-    if (m_RunMode == ServerRunMode::PhysicalDemo)
+    if (m_RunMode != ServerRunMode::AutomaticFleet)
     {
         initNodes = { kPhysicalDemoStartNodeID };
     }
@@ -404,7 +473,10 @@ void NetworkManagerServer::CreateSimulationWorld()
         agv->AssignNextStep(startNode, startNode, AGVState::IDLE, 0.0f, 1.0f); 
         
         agv->SetPos(startNode.m_PosX, startNode.m_PosZ);
-        agv->SetHeadingAngle(90.0f);
+        const float startHeading = m_RunMode == ServerRunMode::TrajectoryPreview
+            ? kTrajectoryPreviewAssumedStartHeadingRad
+            : 90.0f;
+        agv->SetHeadingAngle(startHeading);
         agv->SetCurrentNodeID(startNodeID);
                 
         RobotManager::GetInstance().RegisterRobot(
@@ -434,6 +506,13 @@ void NetworkManagerServer::CreateSimulationWorld()
     {
         std::cout << "[PhysicalDemo] Single AGV at node 1; automatic task dispatch disabled\n";
         std::cout << "[PhysicalDemo] Waiting for AGV 1 HELLO before issuing [1 -> 2]\n";
+    }
+    else if (m_RunMode == ServerRunMode::TrajectoryPreview)
+    {
+        std::cout << "[TrajectoryPreview] Single AGV at node 1; automatic task dispatch disabled\n";
+        std::cout << "[TrajectoryPreview] Waiting for preview-capable AGV 1 HELLO\n";
+        std::cout << "[TrajectoryPreview] Packet will contain [1 -> 4], targetSpeed=0,"
+                     " and no motor execution route\n";
     }
 }
 

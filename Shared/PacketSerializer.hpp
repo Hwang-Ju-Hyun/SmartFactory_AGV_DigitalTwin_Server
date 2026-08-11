@@ -12,6 +12,28 @@ namespace RobotProtocol
         std::vector<RouteNodeTime> nodes;
     };
 
+    struct TrajectoryWaypoint
+    {
+        // Format v1 robot-local frame: +forward is the robot's trusted start
+        // heading, +left is counter-clockwise 90 degrees from +forward.
+        float forwardMm = 0.0f;
+        float leftMm = 0.0f;
+        float headingRad = 0.0f;
+        float targetSpeedMmPerSecond = 0.0f;
+        uint32_t nodeID = 0;
+        uint8_t flags = TRAJECTORY_FLAG_NONE;
+    };
+
+    struct TrajectoryCommandPayload
+    {
+        uint32_t routeID = 0;
+        uint8_t formatVersion = kTrajectoryFormatVersion;
+        uint32_t startNodeID = 0;
+        uint32_t finalNodeID = 0;
+        float millimetersPerMapUnit = 0.0f;
+        std::vector<TrajectoryWaypoint> waypoints;
+    };
+
     bool IsKnownPacketID(uint16_t rawPacketID);
     bool PeekPacketID(InputMemoryStream& inStream, PacketID& outPacketID);
 
@@ -29,6 +51,9 @@ namespace RobotProtocol
 
     void WriteRouteCommandPayload(OutputMemoryStream& outStream, const RouteCommandPayload& payload);
     bool ReadRouteCommandPayload(InputMemoryStream& inStream, RouteCommandPayload& outPayload);
+
+    bool WriteTrajectoryCommandPayload(OutputMemoryStream& outStream, const TrajectoryCommandPayload& payload);
+    bool ReadTrajectoryCommandPayload(InputMemoryStream& inStream, TrajectoryCommandPayload& outPayload);
 
     void WriteArrivedPayload(OutputMemoryStream& outStream, const ArrivedPayload& payload);
     bool ReadArrivedPayload(InputMemoryStream& inStream, ArrivedPayload& outPayload);

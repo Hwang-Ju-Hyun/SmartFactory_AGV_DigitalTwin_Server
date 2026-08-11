@@ -1,0 +1,374 @@
+#include "MemoryStream.hpp"
+#include "PacketSerializer.hpp"
+#include "TrajectoryBuilder.hpp"
+#include <cmath>
+#include <cstdint>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+namespace
+{
+    int g_Failures = 0;
+
+    void Check(bool condition, const std::string& message)
+    {
+        if (condition) return;
+        ++g_Failures;
+        std::cerr << "[TrajectorySmokeTest] FAIL: " << message << "\n";
+    }
+
+    bool Near(float lhs, float rhs, float tolerance = 0.05f)
+    {
+        return std::abs(lhs - rhs) <= tolerance;
+    }
+
+    bool HasFlag(const RobotProtocol::TrajectoryWaypoint& waypoint, uint8_t flag)
+    {
+        return (waypoint.flags & flag) != 0;
+    }
+
+    MapNode Node(uint32_t id, float x, float z)
+    {
+        MapNode node{};
+        node.m_Id = id;
+        node.m_PosX = x;
+        node.m_PosZ = z;
+        node.type = 0;
+        return node;
+    }
+
+    MapLink Line(uint32_t id, uint32_t from, uint32_t to)
+    {
+        MapLink link{};
+        link.m_Id = id;
+        link.m_FromNodeID = from;
+        link.m_ToNodeID = to;
+        link.m_Type = 0;
+        return link;
+    }
+
+    MapLink Curve(uint32_t id, uint32_t from, uint32_t to,
+                  float cx1, float cz1, float cx2, float cz2)
+    {
+        MapLink link = Line(id, from, to);
+        link.m_Type = 1;
+        link.m_CX1 = cx1;
+        link.m_CZ1 = cz1;
+        link.m_CX2 = cx2;
+        link.m_CZ2 = cz2;
+        return link;
+    }
+
+    void TestMixedLineBezierLine()
+    {
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 5, Node(5, 0.0f, -8.0f) },
+            { 3, Node(3, 0.0f, -14.0f) },
+            { 1, Node(1, 4.0f, -16.0f) },
+            { 2, Node(2, 16.0f, -16.0f) }
+        };
+        const std::vector<MapLink> links = {
+            Line(1, 5, 3),
+            Curve(2, 3, 1, 0.0f, -16.0f, 2.0f, -16.0f),
+            Line(3, 1, 2)
+        };
+
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = -1.5707963f;
+        options.millimetersPerMapUnit = 10.0f;
+        options.spacingMm = 20.0f;
+        options.cruiseSpeedMmPerSecond = 120.0f;
+        options.cornerStopThresholdRad = 0.35f;
+
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        std::string error;
+        const bool built = TrajectoryBuilder::BuildFromGeometry(
+            { 5, 3, 1, 2 }, nodes, links, 77, options, trajectory, error);
+        Check(built, "mixed LINE/BEZIER/LINE build failed: " + error);
+        if (!built) return;
+
+        Check(trajectory.routeID == 77, "routeID was not preserved");
+        Check(trajectory.formatVersion == RobotProtocol::kTrajectoryFormatVersion,
+              "trajectory format version is wrong");
+        Check(trajectory.startNodeID == 5 && trajectory.finalNodeID == 2,
+              "start/final node IDs are wrong");
+        Check(!trajectory.waypoints.empty(), "trajectory has no waypoints");
+        Check(trajectory.waypoints.size() <= RobotProtocol::kMaxTrajectoryWaypoints,
+              "trajectory exceeded protocol waypoint limit");
+
+        const auto& first = trajectory.waypoints.front();
+        const auto& last = trajectory.waypoints.back();
+        Check(Near(first.forwardMm, 0.0f) && Near(first.leftMm, 0.0f),
+              "first waypoint is not robot-local origin");
+        Check(HasFlag(first, RobotProtocol::TRAJECTORY_FLAG_NODE_BOUNDARY),
+              "first waypoint lacks NODE_BOUNDARY");
+        Check(Near(last.forwardMm, 80.0f) && Near(last.leftMm, 160.0f),
+              "final local coordinate is wrong");
+        Check(last.nodeID == 2, "final waypoint node ID is wrong");
+        Check(HasFlag(last, RobotProtocol::TRAJECTORY_FLAG_FINAL) &&
+              HasFlag(last, RobotProtocol::TRAJECTORY_FLAG_STOP),
+              "final waypoint lacks FINAL/STOP");
+
+        bool sawCurveInterior = false;
+        bool sawUnexpectedRotate = false;
+        for (const auto& waypoint : trajectory.waypoints)
+        {
+            if (waypoint.forwardMm > 60.0f && waypoint.forwardMm < 80.0f &&
+                waypoint.leftMm > 0.0f && waypoint.leftMm < 40.0f)
+            {
+                sawCurveInterior = true;
+            }
+            sawUnexpectedRotate = sawUnexpectedRotate ||
+                HasFlag(waypoint, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        }
+        Check(sawCurveInterior, "Bezier interior samples were not generated");
+        Check(!sawUnexpectedRotate,
+              "tangent-continuous LINE/BEZIER path inserted an unnecessary rotation");
+
+        OutputMemoryStream encoded;
+        Check(RobotProtocol::WriteTrajectoryCommandPayload(encoded, trajectory),
+              "trajectory serializer rejected a valid payload");
+        InputMemoryStream encodedInput(
+            const_cast<char*>(encoded.GetBuffer()), encoded.GetLength());
+        RobotProtocol::TrajectoryCommandPayload decoded;
+        Check(RobotProtocol::ReadTrajectoryCommandPayload(encodedInput, decoded),
+              "trajectory serializer round-trip failed");
+        Check(decoded.waypoints.size() == trajectory.waypoints.size(),
+              "round-trip waypoint count changed");
+        Check(decoded.routeID == trajectory.routeID &&
+              decoded.finalNodeID == trajectory.finalNodeID,
+              "round-trip identifiers changed");
+
+        TrajectoryBuildOptions tooDense = options;
+        tooDense.spacingMm = 1.0f;
+        RobotProtocol::TrajectoryCommandPayload rejected;
+        error.clear();
+        Check(!TrajectoryBuilder::BuildFromGeometry(
+                  { 5, 3, 1, 2 }, nodes, links, 78, tooDense, rejected, error),
+              "builder silently accepted more than 64 waypoints");
+        Check(rejected.waypoints.empty(),
+              "failed build leaked a partial trajectory");
+    }
+
+    void TestSharpCornerRotation()
+    {
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 10, Node(10, 0.0f, 0.0f) },
+            { 11, Node(11, 10.0f, 0.0f) },
+            { 12, Node(12, 10.0f, 10.0f) }
+        };
+        const std::vector<MapLink> links = {
+            Line(10, 10, 11),
+            Line(11, 11, 12)
+        };
+
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = 0.0f;
+        options.millimetersPerMapUnit = 10.0f;
+        options.spacingMm = 50.0f;
+        options.cruiseSpeedMmPerSecond = 100.0f;
+        options.cornerStopThresholdRad = 0.35f;
+
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        std::string error;
+        const bool built = TrajectoryBuilder::BuildFromGeometry(
+            { 10, 11, 12 }, nodes, links, 88, options, trajectory, error);
+        Check(built, "sharp-corner build failed: " + error);
+        if (!built) return;
+
+        bool sawStoppedCorner = false;
+        bool sawRotation = false;
+        for (const auto& waypoint : trajectory.waypoints)
+        {
+            if (waypoint.nodeID == 11)
+                sawStoppedCorner = sawStoppedCorner ||
+                    HasFlag(waypoint, RobotProtocol::TRAJECTORY_FLAG_STOP);
+            if (HasFlag(waypoint, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE))
+            {
+                sawRotation = Near(waypoint.forwardMm, 100.0f) &&
+                              Near(waypoint.leftMm, 0.0f) &&
+                              Near(waypoint.headingRad, 1.5707963f) &&
+                              waypoint.nodeID == 0 &&
+                              !HasFlag(waypoint,
+                                  RobotProtocol::TRAJECTORY_FLAG_NODE_BOUNDARY);
+            }
+        }
+        Check(sawStoppedCorner, "sharp corner did not request STOP");
+        Check(sawRotation, "sharp corner did not insert the expected in-place rotation");
+    }
+
+    void TestMalformedWaypointCount()
+    {
+        OutputMemoryStream malformed;
+        malformed.Write(static_cast<uint32_t>(1));
+        malformed.Write(RobotProtocol::kTrajectoryFormatVersion);
+        malformed.Write(static_cast<uint16_t>(RobotProtocol::kMaxTrajectoryWaypoints + 1));
+        malformed.Write(static_cast<uint32_t>(10));
+        malformed.Write(static_cast<uint32_t>(12));
+        malformed.Write(10.0f);
+
+        InputMemoryStream input(
+            const_cast<char*>(malformed.GetBuffer()), malformed.GetLength());
+        RobotProtocol::TrajectoryCommandPayload decoded;
+        Check(!RobotProtocol::ReadTrajectoryCommandPayload(input, decoded),
+              "deserializer accepted a waypoint count above the protocol limit");
+    }
+
+    void TestInitialHeadingAndWireGuards()
+    {
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 1, Node(1, 0.0f, 0.0f) },
+            { 2, Node(2, 10.0f, 0.0f) }
+        };
+        const std::vector<MapLink> links = { Line(1, 1, 2) };
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = 1.5707963f;
+        options.millimetersPerMapUnit = 10.0f;
+        options.spacingMm = 50.0f;
+
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        std::string error;
+        Check(TrajectoryBuilder::BuildFromGeometry(
+                  { 1, 2 }, nodes, links, 99, options, trajectory, error),
+              "trusted initial heading build failed: " + error);
+        Check(trajectory.waypoints.size() >= 3,
+              "initial rotation waypoint was not inserted");
+        if (trajectory.waypoints.size() >= 2)
+        {
+            const auto& rotate = trajectory.waypoints[1];
+            Check(HasFlag(rotate, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE) &&
+                  rotate.nodeID == 0 &&
+                  !HasFlag(rotate, RobotProtocol::TRAJECTORY_FLAG_NODE_BOUNDARY) &&
+                  Near(rotate.headingRad, -1.5707963f),
+                  "initial rotation did not preserve trusted start heading");
+        }
+
+        OutputMemoryStream encoded;
+        Check(RobotProtocol::WriteTrajectoryCommandPayload(encoded, trajectory),
+              "valid versioned trajectory failed to serialize");
+        std::vector<char> wrongVersion(encoded.GetBuffer(),
+                                       encoded.GetBuffer() + encoded.GetLength());
+        wrongVersion[sizeof(uint32_t)] = 2;
+        InputMemoryStream wrongVersionInput(wrongVersion.data(), wrongVersion.size());
+        RobotProtocol::TrajectoryCommandPayload decoded;
+        Check(!RobotProtocol::ReadTrajectoryCommandPayload(wrongVersionInput, decoded),
+              "deserializer accepted an unknown trajectory format version");
+
+        std::vector<char> trailing(encoded.GetBuffer(),
+                                   encoded.GetBuffer() + encoded.GetLength());
+        trailing.push_back(static_cast<char>(0x7f));
+        InputMemoryStream trailingInput(trailing.data(), trailing.size());
+        Check(!RobotProtocol::ReadTrajectoryCommandPayload(trailingInput, decoded),
+              "deserializer accepted trailing trajectory bytes");
+
+        TrajectoryBuildOptions missingHeading = options;
+        missingHeading.hasTrustedStartHeading = false;
+        RobotProtocol::TrajectoryCommandPayload rejected;
+        error.clear();
+        Check(!TrajectoryBuilder::BuildFromGeometry(
+                  { 1, 2 }, nodes, links, 100, missingHeading, rejected, error),
+              "builder accepted a route without a trusted start heading");
+    }
+
+    void TestOptionalHelloCapabilities()
+    {
+        OutputMemoryStream legacyHello;
+        legacyHello.Write(RobotProtocol::kProtocolVersion);
+        legacyHello.Write(static_cast<uint8_t>(RobotProtocol::ClientType::ESP32));
+        legacyHello.Write(static_cast<uint32_t>(1));
+
+        InputMemoryStream legacyInput(
+            const_cast<char*>(legacyHello.GetBuffer()), legacyHello.GetLength());
+        RobotProtocol::HelloPayload legacyDecoded;
+        Check(RobotProtocol::ReadHelloPayload(legacyInput, legacyDecoded),
+              "legacy v1 HELLO without capabilities was rejected");
+        Check(legacyDecoded.capabilities == RobotProtocol::CAPABILITY_NONE,
+              "legacy v1 HELLO did not default capabilities to zero");
+
+        RobotProtocol::HelloPayload capableHello;
+        capableHello.protocolVersion = RobotProtocol::kProtocolVersion;
+        capableHello.clientType = RobotProtocol::ClientType::FAKE_ROBOT;
+        capableHello.requestedAgvID = 1;
+        capableHello.capabilities = RobotProtocol::CAPABILITY_TRAJECTORY_PREVIEW;
+        OutputMemoryStream capableEncoded;
+        RobotProtocol::WriteHelloPayload(capableEncoded, capableHello);
+
+        InputMemoryStream capableInput(
+            const_cast<char*>(capableEncoded.GetBuffer()), capableEncoded.GetLength());
+        RobotProtocol::HelloPayload capableDecoded;
+        Check(RobotProtocol::ReadHelloPayload(capableInput, capableDecoded),
+              "capability-extended HELLO was rejected");
+        Check((capableDecoded.capabilities &
+               RobotProtocol::CAPABILITY_TRAJECTORY_PREVIEW) != 0,
+              "trajectory preview capability was lost during HELLO round-trip");
+
+        RobotProtocol::HelloPayload plainHello;
+        plainHello.protocolVersion = RobotProtocol::kProtocolVersion;
+        plainHello.clientType = RobotProtocol::ClientType::ESP32;
+        plainHello.requestedAgvID = 1;
+        plainHello.capabilities = RobotProtocol::CAPABILITY_NONE;
+        OutputMemoryStream plainEncoded;
+        RobotProtocol::WriteHelloPayload(plainEncoded, plainHello);
+        Check(plainEncoded.GetLength() == 7,
+              "capability-free HELLO no longer preserves the legacy 7-byte payload");
+
+        OutputMemoryStream malformedHello;
+        malformedHello.Write(RobotProtocol::kProtocolVersion);
+        malformedHello.Write(static_cast<uint8_t>(RobotProtocol::ClientType::ESP32));
+        malformedHello.Write(static_cast<uint32_t>(1));
+        malformedHello.Write(static_cast<uint8_t>(0xff));
+        InputMemoryStream malformedInput(
+            const_cast<char*>(malformedHello.GetBuffer()), malformedHello.GetLength());
+        RobotProtocol::HelloPayload malformedDecoded;
+        Check(!RobotProtocol::ReadHelloPayload(malformedInput, malformedDecoded),
+              "HELLO parser accepted a partial capability field");
+    }
+
+    void TestMaximumTrajectoryWireSize()
+    {
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        trajectory.routeID = 123;
+        trajectory.formatVersion = RobotProtocol::kTrajectoryFormatVersion;
+        trajectory.startNodeID = 1;
+        trajectory.finalNodeID = 2;
+        trajectory.millimetersPerMapUnit = 10.0f;
+        trajectory.waypoints.resize(RobotProtocol::kMaxTrajectoryWaypoints);
+
+        OutputMemoryStream encoded;
+        Check(RobotProtocol::WriteTrajectoryCommandPayload(encoded, trajectory),
+              "serializer rejected exactly 64 waypoints");
+        constexpr uint32_t expectedPayloadBytes =
+            19u + RobotProtocol::kMaxTrajectoryWaypoints * 21u;
+        Check(encoded.GetLength() == expectedPayloadBytes,
+              "maximum trajectory payload is not 1363 bytes");
+
+        trajectory.waypoints.push_back(RobotProtocol::TrajectoryWaypoint{});
+        OutputMemoryStream tooLarge;
+        Check(!RobotProtocol::WriteTrajectoryCommandPayload(tooLarge, trajectory),
+              "serializer accepted 65 waypoints");
+    }
+}
+
+int main()
+{
+    TestMixedLineBezierLine();
+    TestSharpCornerRotation();
+    TestMalformedWaypointCount();
+    TestInitialHeadingAndWireGuards();
+    TestOptionalHelloCapabilities();
+    TestMaximumTrajectoryWireSize();
+
+    if (g_Failures != 0)
+    {
+        std::cerr << "[TrajectorySmokeTest] FAILED checks=" << g_Failures << "\n";
+        return 1;
+    }
+
+    std::cout << "[TrajectorySmokeTest] PASS mixed LINE/BEZIER/LINE, corner rotation, serializer limits\n";
+    return 0;
+}

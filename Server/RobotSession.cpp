@@ -3,6 +3,7 @@
 #include "Map.hpp"
 #include <cmath>
 #include <iostream>
+#include <utility>
 
 namespace
 {
@@ -53,9 +54,10 @@ namespace
     }
 }
 
-RobotSession::RobotSession(TCPSessionPtr session, uint32_t agvID)
+RobotSession::RobotSession(TCPSessionPtr session, uint32_t agvID, uint32_t clientCapabilities)
     : m_TCPSession(session)
     , m_AgvID(agvID)
+    , m_ClientCapabilities(clientCapabilities)
 {
     m_LastStatus.agvID = agvID;
     m_LastStatus.battery = 100.0f;
@@ -130,6 +132,7 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
     case RobotProtocol::PacketID::HELLO_ACK:
     case RobotProtocol::PacketID::HELLO:
     case RobotProtocol::PacketID::ROUTE_COMMAND:
+    case RobotProtocol::PacketID::TRAJECTORY_COMMAND:
     case RobotProtocol::PacketID::CANCEL_ROUTE:
         break;
     }
@@ -155,6 +158,63 @@ void RobotSession::SendRoute(const RoutePacket& routePacket)
     std::cout << "[RobotProtocol] Send ROUTE_COMMAND agvID=" << routePacket.agvID
               << " routeID=" << payload.routeID
               << " nodes=" << payload.nodes.size() << "\n";
+}
+
+bool RobotSession::SendTrajectory(RobotProtocol::TrajectoryCommandPayload payload)
+{
+    return SendTrajectoryForCapability(
+        std::move(payload), RobotProtocol::CAPABILITY_TRAJECTORY_COMMAND, "execution");
+}
+
+bool RobotSession::SendTrajectoryPreview(RobotProtocol::TrajectoryCommandPayload payload)
+{
+    if (!SupportsTrajectoryPreviewOnly())
+    {
+        std::cout << "[RobotProtocol] TRAJECTORY_COMMAND preview not sent: AGV "
+                  << m_AgvID << " is not a preview-only client\n";
+        return false;
+    }
+    for (const RobotProtocol::TrajectoryWaypoint& waypoint : payload.waypoints)
+    {
+        if (std::abs(waypoint.targetSpeedMmPerSecond) > 0.001f)
+        {
+            std::cout << "[RobotProtocol] TRAJECTORY_COMMAND preview not sent: AGV "
+                      << m_AgvID << " payload contains non-zero target speed\n";
+            return false;
+        }
+    }
+    return SendTrajectoryForCapability(
+        std::move(payload), RobotProtocol::CAPABILITY_TRAJECTORY_PREVIEW, "preview");
+}
+
+bool RobotSession::SendTrajectoryForCapability(
+    RobotProtocol::TrajectoryCommandPayload payload,
+    uint32_t requiredCapability,
+    const char* capabilityName)
+{
+    if ((m_ClientCapabilities & requiredCapability) == 0)
+    {
+        std::cout << "[RobotProtocol] TRAJECTORY_COMMAND not sent: AGV " << m_AgvID
+                  << " did not advertise " << capabilityName << " capability\n";
+        return false;
+    }
+
+    if (payload.routeID == 0)
+        payload.routeID = m_NextRouteID++;
+
+    OutputMemoryStream payloadStream;
+    if (!RobotProtocol::WriteTrajectoryCommandPayload(payloadStream, payload))
+    {
+        std::cout << "[RobotProtocol] TRAJECTORY_COMMAND not sent: invalid payload for AGV "
+                  << m_AgvID << "\n";
+        return false;
+    }
+
+    SendRobotPacket(RobotProtocol::PacketID::TRAJECTORY_COMMAND, m_AgvID, payloadStream);
+    std::cout << "[RobotProtocol] Send TRAJECTORY_COMMAND agvID=" << m_AgvID
+              << " routeID=" << payload.routeID
+              << " waypoints=" << payload.waypoints.size() << "\n";
+    return true;
 }
 
 void RobotSession::SendCancelRoute(uint32_t agvID)

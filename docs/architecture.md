@@ -60,12 +60,13 @@ flowchart LR
 
 ```text
 ServerMain
-  -> runtime mode 선택 (기본 AutomaticFleet 또는 --physical-demo)
-  -> TCP 0.0.0.0:6666 bind/listen
+  -> runtime mode 선택 (기본 AutomaticFleet, --physical-demo, --trajectory-preview)
+  -> 기본 TCP 0.0.0.0:6666 bind/listen (--listen으로 test endpoint 변경 가능)
   -> ObjectRegistry 초기화
   -> NetworkManagerServer 초기화
-     -> AutomaticFleet: map/warehouse/route/task 초기화, TESTCASE0 AGV 4대 생성
+     -> AutomaticFleet: map/warehouse/route/task 초기화, TESTCASE3 AGV 5대 생성
      -> PhysicalDemo: route 초기화, node 1의 AGV 1대 생성, 자동 task 비활성화
+     -> TrajectoryPreview: node 1의 AGV 1대, 자동 task 비활성화, preview-only zero-speed [1 -> 4]
      -> UnityRobotController 등록
   -> select() 기반 loop
      -> accept/read packet
@@ -73,9 +74,11 @@ ServerMain
      -> SendOutgoingReplicationPackets()
 ```
 
-현재 `_TESTCASE0`은 AGV 4대를 map node `1, 2, 3, 4`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`의 compile-time test 설정이다.
+현재 `_TESTCASE3`은 AGV 5대를 map node `1, 2, 3, 4, 5`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`와 `Shared/DispatchManager.hpp`의 compile-time test 설정이다.
 
 `--physical-demo`는 이 기본 world를 바꾸지 않는 별도 runtime mode다. 이 mode는 AGV 1의 RobotProtocol `HELLO` 이후 RoutePlanner를 통해 exact `[1 -> 2]` route만 만들며, 경로·예약·ARRIVED 수명주기를 그대로 사용한다. 목적은 motor-disabled 단일 실차 연동이다. Unity는 같은 server에 연결해 map과 AGV 1대의 상태를 렌더링할 수 있지만 route의 source of truth가 되지는 않는다.
+
+`--trajectory-preview`는 실행 route가 아닌 통신 진단 mode다. preview-only capability인 AGV 1에 모든 target speed가 0인 `[1 -> 4]` trajectory를 한 번 보내고 RoutePlanner plan·예약·`ROUTE_COMMAND`·`ARRIVED`를 만들지 않는다.
 
 ## 임무에서 실행까지
 

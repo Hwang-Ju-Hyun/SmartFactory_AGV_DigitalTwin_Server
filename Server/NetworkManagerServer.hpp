@@ -10,7 +10,8 @@ class LinkingContext;
 enum class ServerRunMode
 {
     AutomaticFleet,
-    PhysicalDemo
+    PhysicalDemo,
+    TrajectoryPreview
 };
 
 class NetworkManagerServer
@@ -35,6 +36,7 @@ private:
     void HandleReadyObject_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void CreateSimulationWorld();
     void SendPhysicalDemoRoute(uint32_t _agvID);
+    void SendTrajectoryPreview(uint32_t _agvID, const RobotSessionPtr& _robotSession);
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    

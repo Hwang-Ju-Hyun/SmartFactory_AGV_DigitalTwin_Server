@@ -9,35 +9,82 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 #include <string_view>
 bool g_LOOP=true;
 
 namespace
 {
-    bool TryParseRunMode(int argc, char** argv, ServerRunMode& outRunMode, bool& outHelpRequested)
+    const char* RunModeName(ServerRunMode runMode)
+    {
+        switch (runMode)
+        {
+        case ServerRunMode::AutomaticFleet:
+            return "AUTOMATIC_FLEET";
+        case ServerRunMode::PhysicalDemo:
+            return "PHYSICAL_DEMO";
+        case ServerRunMode::TrajectoryPreview:
+            return "TRAJECTORY_PREVIEW";
+        }
+        return "UNKNOWN";
+    }
+
+    bool TryParseOptions(int argc, char** argv, ServerRunMode& outRunMode,
+                         std::string& outListenAddress, bool& outHelpRequested)
     {
         outRunMode = ServerRunMode::AutomaticFleet;
+        outListenAddress = "0.0.0.0:6666";
         outHelpRequested = false;
+        bool explicitModeSelected = false;
 
         for (int i = 1; i < argc; ++i)
         {
             const std::string_view argument(argv[i]);
             if (argument == "--physical-demo")
             {
+                if (explicitModeSelected)
+                {
+                    std::cerr << "Only one server run mode may be selected\n";
+                    return false;
+                }
                 outRunMode = ServerRunMode::PhysicalDemo;
+                explicitModeSelected = true;
+            }
+            else if (argument == "--trajectory-preview")
+            {
+                if (explicitModeSelected)
+                {
+                    std::cerr << "Only one server run mode may be selected\n";
+                    return false;
+                }
+                outRunMode = ServerRunMode::TrajectoryPreview;
+                explicitModeSelected = true;
             }
             else if (argument == "--help")
             {
                 outHelpRequested = true;
-                std::cout << "Usage: AGV_Server [--physical-demo]\n"
-                          << "  no option        Run the existing automatic four-AGV world\n"
-                          << "  --physical-demo  Run one AGV and issue only logical route [1 -> 2]\n";
+                std::cout << "Usage: AGV_Server [--physical-demo | --trajectory-preview]"
+                             " [--listen ADDRESS:PORT]\n"
+                          << "  no option             Run the TestCase03 automatic five-AGV world\n"
+                          << "  --physical-demo       Run one AGV and issue only logical route [1 -> 2]\n"
+                          << "  --trajectory-preview  Send motor-locked preview [1 -> 4] only to a preview-capable robot\n"
+                          << "  --listen ADDRESS:PORT Override the default 0.0.0.0:6666 listener\n";
                 return false;
+            }
+            else if (argument == "--listen")
+            {
+                if (i + 1 >= argc)
+                {
+                    std::cerr << "--listen requires ADDRESS:PORT\n";
+                    return false;
+                }
+                outListenAddress = argv[++i];
             }
             else
             {
                 std::cerr << "Unknown option: " << argument << "\n"
-                          << "Usage: AGV_Server [--physical-demo]\n";
+                          << "Usage: AGV_Server [--physical-demo | --trajectory-preview]"
+                             " [--listen ADDRESS:PORT]\n";
                 return false;
             }
         }
@@ -49,15 +96,20 @@ namespace
 int main(int argc, char** argv)
 {
     ServerRunMode runMode;
+    std::string listenAddress;
     bool helpRequested = false;
-    if (!TryParseRunMode(argc, argv, runMode, helpRequested))
+    if (!TryParseOptions(argc, argv, runMode, listenAddress, helpRequested))
         return helpRequested ? 0 : 2;
 
-    std::cout << "[Server] mode="
-              << (runMode == ServerRunMode::PhysicalDemo ? "PHYSICAL_DEMO" : "AUTOMATIC_FLEET")
-              << "\n";
+    std::cout << "[Server] mode=" << RunModeName(runMode)
+              << " listen=" << listenAddress << "\n";
 
-    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString("0.0.0.0:6666");    
+    SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString(listenAddress);
+    if (!serverAddr)
+    {
+        std::cerr << "Invalid listen address: " << listenAddress << "\n";
+        return 2;
+    }
     TCPSocketPtr sockServerTcp=SocketUtil::CreateTCPSocket(AF_INET);
     int option = 1;
     setsockopt(sockServerTcp->GetSocket(), SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));

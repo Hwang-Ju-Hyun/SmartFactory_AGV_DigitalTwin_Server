@@ -209,6 +209,7 @@ Server의 `TCPSession`은 앞의 `packetSize` 2 byte를 기준으로 frame을 �
 |---|---:|---|---|
 | ROUTE_COMMAND | 100 | Server -> Robot | 경로 명령 |
 | CANCEL_ROUTE | 101 | Server -> Robot | 현재 경로 취소 |
+| TRAJECTORY_COMMAND | 102 | Server -> Robot | capability를 선언한 robot용 local metric waypoint 경로 |
 | STATUS | 200 | Robot -> Server | 현재 노드/링크/진행률/좌표/배터리/상태 보고 |
 | ARRIVED | 201 | Robot -> Server | 특정 노드 도착 보고 |
 | PING | 300 | 양방향 | 연결 확인 요청 |
@@ -267,6 +268,7 @@ Direction: Client -> Server
 | protocolVersion | uint16 | 현재 `1` |
 | clientType | uint8 | ESP32 또는 FAKE_ROBOT |
 | requestedAgvID | uint32 | 연결하고 싶은 AGV ID |
+| capabilities | uint32, optional | 지원 기능 bit mask. 생략한 기존 v1 client는 0으로 처리 |
 
 사용 이유:
 
@@ -304,6 +306,56 @@ Direction: Server -> Robot
 | nodes[i].departureTime | float | 해당 노드 출발 예정 시간 |
 
 Server는 `RoutePlanner`가 만든 PathStep을 `RouteNodeTime` 배열로 바꿔 전송한다. ESP32는 현재 임시 구현에서 시간 기반으로 progress를 올리고 있지만, 최종 구현에서는 이 node sequence를 local route executor가 받아서 `rotate`, `drive`, `stop` 같은 내부 motion command로 변환한다.
+
+### 10.3.1 TRAJECTORY_COMMAND
+
+Direction: Server -> Robot
+
+`HELLO.capabilities`의 두 bit는 의도적으로 다른 의미를 가진다.
+
+- `CAPABILITY_TRAJECTORY_COMMAND`: follower, safety, STATUS/ARRIVED까지 포함한 완전 실행 지원
+- `CAPABILITY_TRAJECTORY_PREVIEW`: parse/validate/store/log만 지원하며 motion dispatch 대상이 아님
+
+기존 v1 ESP32처럼 optional capability field를 생략한 client에는 계속 `ROUTE_COMMAND`만 사용한다. Preview bit만 선언한 client에도 Server가 trajectory 실행을 요구하면 안 된다.
+
+| Field | Type | 설명 |
+|---|---|---|
+| routeID | uint32 | trajectory 식별자 |
+| formatVersion | uint8 | trajectory payload 형식. 현재 값은 1 |
+| waypointCount | uint16 | waypoint 수, 1~64 |
+| startNodeID | uint32 | 출발 node |
+| finalNodeID | uint32 | 최종 node |
+| millimetersPerMapUnit | float | 생성에 사용한 map→metric scale, 진단·검증용 |
+| waypoints[i].forwardMm | float | 신뢰된 실제 시작 heading 방향을 +축으로 한 전방 거리 mm |
+| waypoints[i].leftMm | float | 시작 heading에서 반시계 90도를 +축으로 한 좌측 거리 mm |
+| waypoints[i].headingRad | float | 신뢰된 실제 시작 heading을 0으로 한 상대 heading radian |
+| waypoints[i].targetSpeedMmPerSecond | float | 상위 목표 속도. firmware local safety limit가 항상 우선 |
+| waypoints[i].nodeID | uint32 | node boundary가 아니면 0, boundary면 해당 node ID |
+| waypoints[i].flags | uint8 | node/stop/rotate/final bit mask |
+
+Waypoint flag:
+
+| Flag | Value | 의미 |
+|---|---:|---|
+| NODE_BOUNDARY | 1 | server map node 경계 |
+| STOP | 2 | 이 waypoint에서 정지 |
+| ROTATE_IN_PLACE | 4 | 같은 위치에서 heading을 맞춘 뒤 진행 |
+| FINAL | 8 | trajectory 최종 waypoint |
+
+Wire order는 `routeID -> formatVersion -> waypointCount -> startNodeID -> finalNodeID -> millimetersPerMapUnit -> waypoints`로 고정한다. 최대 payload는 `19 + 64 * 21 = 1363 byte`, RobotProtocol body/frame header를 포함한 전체 TCP frame은 1375 byte다. waypoint가 64개를 넘으면 server는 조용히 자르지 않고 trajectory 생성을 실패시킨다. 알 수 없는 format version이나 trailing byte도 거부한다. 장거리 경로 chunking은 아직 구현하지 않았다.
+
+Server sampler는 directed node link를 순서대로 확인한 뒤 다음처럼 처리한다.
+
+- `type=0`: 직선 보간
+- `type=1`: `cx1/cz1`, `cx2/cz2` cubic Bezier
+- cubic curve는 조밀한 parameter sample의 누적 chord length를 만들고 요청 spacing에 맞춰 등거리 근사 재샘플링
+- robot-local frame은 first-link tangent가 아니라 신뢰된 실제 시작 pose heading을 사용하며, heading이 없거나 non-finite이면 build 실패
+- 시작 자세와 첫 link 접선 차이가 threshold보다 크면 origin STOP과 `nodeID=0`인 `ROTATE_IN_PLACE` waypoint 삽입
+- 다음 link 접선 변화가 threshold보다 크면 `STOP`과 `ROTATE_IN_PLACE` 삽입
+- synthetic rotate waypoint는 node 도착을 중복 보고하지 않도록 `nodeID=0`이며 `NODE_BOUNDARY`를 갖지 않음
+- 접선이 이어지는 LINE/BEZIER 경계는 정지 없이 연속 waypoint 생성
+
+2026-08-11 기준 versioned serializer, capability gate, mixed-link builder와 FakeRobot/ESP32 preview parser, synthetic smoke test까지 구현됐다. TestCase03 export도 Server working tree에 반영돼 의도한 첫 Bezier `[1 -> 4]`를 hardware-free preview로 검증했다. `--trajectory-preview`는 preview-only client에만 모든 target speed가 0인 payload를 직접 전송하고 RoutePlanner 실행·예약·`ROUTE_COMMAND`를 만들지 않는다. localhost FakeRobot TCP 시험에서 HELLO부터 8-waypoint payload 수신과 `zeroSpeed=1`까지 통과했다. ESP32 preview는 motor-locked parse/validate/store만 수행하며 follower가 아니다. 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
 
 ### 10.4 STATUS
 
