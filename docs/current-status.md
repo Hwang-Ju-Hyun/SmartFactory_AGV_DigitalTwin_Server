@@ -28,7 +28,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | 실행 시점 occupancy 검사 | 검증 완료 | simulator/controller 실행 flow에서 사용 |
 | Unity map/replication protocol | 검증 완료 | physical-demo에서 AGV 1 생성과 실차 진행/도착 표시를 사용자 시험으로 확인 |
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
-| metric trajectory 기반 | 진행 중 | TestCase03 `[1 -> 4]` preview-only Server send path 구현·build; 실제 ESP32 수신과 follower는 아직 없음 |
+| metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
 | 자동화된 test target | 일부 구현 | synthetic `TrajectorySmokeTest`와 canonical-map `[1 -> 4]` preview test 통과; 전체 fleet test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
@@ -45,13 +45,13 @@ Unity TestCase03에서 불필요한 중복 node 23을 제거한 뒤 다시 expor
 - 현재 일반 자동 mode는 TESTCASE3 시작 node `{1, 2, 3, 4, 5}`를 사용
 - 기존 `--physical-demo`는 AGV 1의 exact `[1 -> 2]`로 분리 유지
 
-별도 `TrajectoryPreview` target으로 의도한 실제 directed Bezier link `[1 -> 4]`를 TCP와 motor 없이 읽었다. 임시 `25 mm/map-unit`, geometry상 시작 접선 heading `pi`, 20 mm spacing에서 8 waypoint, 약 127.114 mm sampled length, 187-byte payload를 만들었다. `cmake --build build -j2`와 CTest 2개(`trajectory_smoke`, `trajectory_testcase03_bezier_preview`)가 모두 통과했다.
+별도 `TrajectoryPreview` target으로 directed Bezier link `[1 -> 4]`를 TCP와 motor 없이 읽었다. 시험 공간을 확인한 뒤 `60 mm/map-unit`을 곡선 demo scale로 선택했다. geometry상 시작 접선 heading `pi`, 20 mm spacing에서 17 waypoint, 약 305.884 mm sampled length, 376-byte payload를 만들었다. sampled 최소 회전반경은 약 87.6 mm로 트레드 반폭 65 mm보다 크다. CMake build와 CTest 2개가 통과했다.
 
-이 결과는 JSON geometry와 sampler의 결합 검증이다. `25 mm/map-unit`은 `[1 -> 2]=12 unit`을 기존 300 mm 직진에 임시 대응시킨 값일 뿐이며, ESP32 전송·곡선 follower·실차 주행을 검증한 결과가 아니다. 이 scale에서 `[1 -> 4]`의 sampled 최소 회전반경은 약 37.3 mm로 트레드 반폭 65 mm보다 작으므로 실제 추종에는 안쪽 바퀴 역회전 또는 다른 scale/path가 필요하다.
+ESP32 `bffe8e59` motor-disabled follower trace에서 실제 payload 수신, `minRadius > 65 mm`, `reverse=0`을 확인했다.
 
 후속 Server working tree에 `--trajectory-preview`를 추가했다. 이 mode는 단일 AGV/node 1, 자동 배차 off 상태에서 preview-only capability를 가진 client에만 `[1 -> 4]`를 한 번 전송한다. 모든 waypoint target speed는 0이며 RoutePlanner plan·예약·`ROUTE_COMMAND`·`ARRIVED` 흐름을 만들지 않는다.
 
-실제 ESP32와 6666 port를 피하기 위해 `127.0.0.1:16666` listener와 expectation mode FakeRobot으로 TCP E2E를 수행했다. `HELLO_ACK accepted=1`, `start=1`, `final=4`, `waypoints=8`, `startNearOrigin=1`, `finalFlag=1`, `finiteValues=1`, `zeroSpeed=1`을 확인하고 `TRAJECTORY_PREVIEW_PASS`로 종료했다. Server에는 `ROUTE_COMMAND`, `ARRIVED`, 자동 후속 route가 없었다. CMake build와 기존 CTest 2개도 통과했다. 실제 ESP32 수신만 남아 있다.
+이전 25 mm/unit 시점의 FakeRobot TCP E2E도 통과했으며, 현재 60 mm/unit은 실제 ESP32의 motor-disabled trace까지 통과했다.
 
 ### 2026-08-10 physical-demo 실차·Unity E2E
 
@@ -75,7 +75,7 @@ Unity TestCase03에서 불필요한 중복 node 23을 제거한 뒤 다시 expor
 - 64 waypoint를 넘으면 truncate하지 않고 실패
 - format version, malformed/trailing payload, initial turn, synthetic `LINE -> BEZIER -> LINE`, sharp corner, serializer limit smoke test 통과
 
-ESP32 `agent/phase2d-trajectory-odometry` worktree는 format v1을 parse/validate/store하고 robot-local odometry를 계산하는 motor-locked preview 환경까지 build했다. `STATUS` world pose와 motor follower는 연결하지 않았다. Server의 별도 `--trajectory-preview` send path는 구현됐지만 실제 ESP32 수신은 아직 확인하지 않았다. 기존 runtime physical-demo는 계속 `ROUTE_COMMAND`만 보내므로 현재 ESP32 실차 동작은 바뀌지 않는다.
+ESP32 `bffe8e59`는 format v1 수신과 motor-disabled follower trace까지 통과했다. `STATUS` world pose와 실제 곡선 motor follower는 아직 연결하지 않았다. 기존 runtime physical-demo는 계속 `ROUTE_COMMAND`만 보내므로 기존 직선 실차 동작은 바뀌지 않는다.
 
 ### 2026-08-07 motor-disabled physical demo
 
@@ -173,9 +173,9 @@ cmake --build build -j2
 ## 알려진 위험과 blocker
 
 - TestCase03 export는 Server working tree에 반영됐지만 아직 Server와 Unity 저장소의 기준 commit으로 함께 확정되지 않았다. Unity의 수정 scene/export도 별도 commit으로 보존해야 한다.
-- metric trajectory의 `millimetersPerMapUnit`은 아직 임시값이다. 새 맵의 `[1 -> 2]` 12.0 map unit과 실물 300 mm에서 계산한 25 mm/unit을 전체 TestCase03에 적용하기 전에 트랙 치수를 확인해야 한다.
+- `60 mm/map-unit`은 TestCase03 곡선 demo용 선택값이며 시설 전체의 최종 실측 calibration은 아니다.
 - physical-demo가 초기화하는 heading 값은 trajectory의 신뢰된 radian start heading으로 사용할 수 없다. 실제 시작 자세의 좌표계와 단위를 확정하기 전 runtime dispatch를 켜지 않는다.
-- 임시 25 mm/unit의 `[1 -> 4]`는 현재 차체에 매우 급한 곡선이다. 후진/inner-wheel reversal을 실차 검증하기 전에는 motor dispatch 대상으로 승격하지 않는다.
+- `[1 -> 4]` motor-disabled trace는 통과했지만 raised-wheel 곡선 시험 전까지 motor dispatch는 활성화하지 않는다.
 
 - `agvallcode.txt`에 실제 Wi-Fi 인증정보가 Git 추적 상태로 남아 있다. 값은 재사용하거나 문서에 옮기지 않는다.
 - 2026-08-06 확인 결과 GitHub 원격 저장소는 public이다. 해당 credential은 이미 노출된 것으로 취급하고 공유기에서 즉시 변경해야 한다.
@@ -189,13 +189,10 @@ cmake --build build -j2
 ## 다음 우선 작업
 
 1. Unity 저장소에 수정한 TestCase03 scene/export를 별도 commit으로 보존하고 Server map과 같은 데이터인지 확인
-2. `[1 -> 4]`의 실제 배치 기준 시작 heading과 `millimetersPerMapUnit`을 측정·확정
-3. `--trajectory-preview`와 motor-locked ESP32로 실제 payload 수신·저장 및 local odometry trace 검증
-4. 별도 단계에서 waypoint follower를 motor-disabled trace로 구현·검증
-5. 실차 가능한 곡선/scale을 정한 뒤 raised-wheel curve, 저속 바닥 curve, Unity 실제 pose 비교 순으로 승격
-6. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
-7. 전원 분배단자, fuse, switch와 기판 고정
-8. 새 TestCase03 자동 fleet smoke와 기존 occupancy collision을 별도 Server 작업으로 진단
+2. 시작 heading을 확인한 뒤 raised-wheel curve, 저속 바닥 curve, Unity 실제 pose 비교 순으로 승격
+3. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
+4. 전원 분배단자, fuse, switch와 기판 고정
+5. 새 TestCase03 자동 fleet smoke와 기존 occupancy collision을 별도 Server 작업으로 진단
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

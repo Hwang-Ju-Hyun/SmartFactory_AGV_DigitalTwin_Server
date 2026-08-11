@@ -38,7 +38,7 @@ namespace
     constexpr uint32_t kTrajectoryPreviewAgvID = 1;
     constexpr uint32_t kTrajectoryPreviewStartNodeID = 1;
     constexpr uint32_t kTrajectoryPreviewTargetNodeID = 4;
-    constexpr float kTrajectoryPreviewScaleMmPerMapUnit = 25.0f;
+    constexpr float kTrajectoryPreviewScaleMmPerMapUnit = 60.0f;
     constexpr float kTrajectoryPreviewSpacingMm = 20.0f;
     constexpr float kTrajectoryPreviewAssumedStartHeadingRad = 3.14159265358979323846f;
 }

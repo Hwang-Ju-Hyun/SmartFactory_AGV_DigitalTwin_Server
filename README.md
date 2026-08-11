@@ -88,7 +88,7 @@ TestCase03의 첫 demo Bezier `[1 -> 4]`를 TCP와 motor 없이 확인하는 pre
 
 ```bash
 ./build/Server/TrajectoryPreview \
-  --scale-mm-per-unit 25 \
+  --scale-mm-per-unit 60 \
   --spacing-mm 20 \
   --speed-mm-s 80 \
   --start-heading-rad 3.14159265359 \
@@ -97,7 +97,7 @@ TestCase03의 첫 demo Bezier `[1 -> 4]`를 TCP와 motor 없이 확인하는 pre
   1 4
 ```
 
-여기서 `25 mm/map-unit`은 새 맵의 `[1 -> 2]=12 unit`을 기존 실물 300 mm 시험에 임시로 맞춘 값이다. TestCase03 전체의 확정 scale이 아니며, 이 실행 파일은 server socket을 열거나 ESP32에 패킷을 보내지 않는다. 이 임시 scale의 `[1 -> 4]`는 sampled 최소 반경이 트레드 반폭보다 작아 안쪽 바퀴 역회전이 필요할 수 있으므로 실차 dispatch 대상으로 사용하지 않는다.
+`60 mm/map-unit`은 TestCase03 곡선 시험용 scale이다. `[1 -> 4]`는 약 306 mm이고 sampled 최소 반경은 약 87.6 mm로 트레드 반폭 65 mm보다 크며, `[1 -> 2]`는 약 720 mm다. 아직 motor-disabled ESP32 trace 검증 전이므로 실차 dispatch에는 사용하지 않는다.
 
 ### Motor-locked trajectory network preview
 

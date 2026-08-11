@@ -39,7 +39,7 @@ if(BUILD_TESTING)
     add_test(
         NAME trajectory_testcase03_bezier_preview
         COMMAND TrajectoryPreview
-            --scale-mm-per-unit 25
+            --scale-mm-per-unit 60
             --spacing-mm 20
             --speed-mm-s 80
             --start-heading-rad 3.14159265359

@@ -198,7 +198,7 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 - 바퀴를 띄운 상태에서 HELLO/HELLO_ACK/STATUS/CANCEL/ESTOP 확인
 - reconnect와 Wi-Fi 끊김 시 안전 상태 확인
 
-2026-08-10 기준 Server physical demo는 FakeRobot뿐 아니라 실제 ESP32와 Unity까지 검증됐다. motor-disabled dry run, raised-wheel encoder run, 저속 바닥 `[1 -> 2]`, STATUS/ARRIVED와 Unity 표시가 모두 성공했다. 2026-08-11 반영한 TestCase03 map에서 `[1 -> 2]`는 12.0 map unit이며 firmware는 이를 약 30 cm로 해석한다. 여기서 계산되는 25 mm/map-unit은 전체 실물 맵의 확정 scale이 아니다.
+2026-08-10 기준 Server physical demo는 FakeRobot뿐 아니라 실제 ESP32와 Unity까지 검증됐다. 기존 `[1 -> 2]` firmware는 해당 논리 구간을 약 30 cm로 해석한다. 새 trajectory follower는 이 하드코딩과 분리해 TestCase03 demo scale `60 mm/map-unit`을 사용하며, 이 경우 `[1 -> 2]`는 약 720 mm다.
 
 ### 4. RouteExecutor 연결
 
@@ -216,7 +216,7 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 - 15 cm, 후진, 좌우 90도, L자 route 회귀 시험
 - 그 뒤에만 다중 AGV/예약 route와 결합
 
-node/progress 기반 Unity 이동은 physical-demo 실차와 함께 검증됐다. motor-locked ESP32 preview에는 nominal 48 mm wheel, 130 mm track, 260 counts/rev 기반 robot-local odometry가 구현됐지만 STATUS world pose에는 연결하지 않았다. TestCase03 export는 Server working tree에 반영했고 의도한 `[1 -> 4]` Bezier의 hardware-free waypoint preview도 통과했다. Server `--trajectory-preview`는 preview-only client에 모든 target speed가 0인 payload만 보내도록 구현했으며 실제 ESP32 수신은 아직 남았다. 임시 25 mm/unit에서는 이 곡선의 sampled 최소 반경이 약 37 mm라 트레드 반폭 65 mm보다 작으므로 실차 dispatch에는 사용하지 않는다. Unity의 새 map 렌더 재확인, 신뢰 가능한 실제 시작 heading, map-to-mm scale과 follower 검증은 아직 남아 있다.
+node/progress 기반 Unity 이동은 physical-demo 실차와 함께 검증됐다. TestCase03 `[1 -> 4]` preview는 `60 mm/map-unit`에서 약 305.9 mm, sampled 최소 반경 약 87.6 mm다. ESP32 `bffe8e59` motor-disabled trace에서 실제 수신과 `reverse=0`을 확인했으며, 다음 단계는 raised-wheel 곡선 시험이다.
 
 웹 조종은 진단 수단으로는 유용하지만, 본 시스템 연동은 이미 정의된 RobotProtocol을 먼저 완성한다.
 
