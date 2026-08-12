@@ -26,7 +26,7 @@ public:
     IRobotController(TCPSessionPtr _robotSession){};
     virtual ~IRobotController()=default;
     
-    virtual void FollowRoute(const RoutePacket& routePacket) = 0;
+    virtual bool FollowRoute(const RoutePacket& routePacket) = 0;
     virtual void CancelRoute() = 0;
     virtual StatusPacket GetStatus() = 0;
 

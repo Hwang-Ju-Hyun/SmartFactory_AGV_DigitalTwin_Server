@@ -20,7 +20,7 @@ public:
     UnityRobotController(uint32_t agvID, float x, float z, float heading = 0.0f);
     virtual ~UnityRobotController() override;
 
-    virtual void FollowRoute(const RoutePacket& _routePacket) override;
+    virtual bool FollowRoute(const RoutePacket& _routePacket) override;
     virtual void CancelRoute() override;
     virtual StatusPacket GetStatus() override;  
 

@@ -11,10 +11,11 @@ UnityRobotController::UnityRobotController(uint32_t agvID, float x, float z, flo
 
 UnityRobotController::~UnityRobotController() {}
 
-void UnityRobotController::FollowRoute(const RoutePacket& _routePacket)
+bool UnityRobotController::FollowRoute(const RoutePacket& _routePacket)
 {   
     while(!m_EventQueue.empty()) { m_EventQueue.pop(); } 
     m_Simulator.LoadRoute(_routePacket);
+    return true;
 }
 
 void UnityRobotController::CancelRoute()

@@ -21,6 +21,8 @@ namespace
         {
         case ServerRunMode::AutomaticFleet:
             return "AUTOMATIC_FLEET";
+        case ServerRunMode::PhysicalFleet:
+            return "PHYSICAL_FLEET";
         case ServerRunMode::PhysicalDemo:
             return "PHYSICAL_DEMO";
         case ServerRunMode::TrajectoryPreview:
@@ -52,6 +54,16 @@ namespace
                 outRunMode = ServerRunMode::PhysicalDemo;
                 explicitModeSelected = true;
             }
+            else if (argument == "--physical-fleet")
+            {
+                if (explicitModeSelected)
+                {
+                    std::cerr << "Only one server run mode may be selected\n";
+                    return false;
+                }
+                outRunMode = ServerRunMode::PhysicalFleet;
+                explicitModeSelected = true;
+            }
             else if (argument == "--trajectory-preview")
             {
                 if (explicitModeSelected)
@@ -75,9 +87,10 @@ namespace
             else if (argument == "--help")
             {
                 outHelpRequested = true;
-                std::cout << "Usage: AGV_Server [--physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
+                std::cout << "Usage: AGV_Server [--physical-fleet | --physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
                              " [--listen ADDRESS:PORT]\n"
-                          << "  no option             Run the TestCase03 automatic five-AGV world\n"
+                          << "  no option             Run the TestCase0 automatic simulated world\n"
+                          << "  --physical-fleet      Run the real TestCase0 LINE fleet with physical AGV 1\n"
                           << "  --physical-demo       Run one AGV and issue only logical route [1 -> 2]\n"
                           << "  --trajectory-preview  Send motor-locked preview [1 -> 4] only to a preview-capable robot\n"
                           << "  --trajectory-raised-wheel  Send executable 80 mm/s [1 -> 4] only to a command-capable robot\n"
@@ -96,7 +109,7 @@ namespace
             else
             {
                 std::cerr << "Unknown option: " << argument << "\n"
-                          << "Usage: AGV_Server [--physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
+                          << "Usage: AGV_Server [--physical-fleet | --physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
                              " [--listen ADDRESS:PORT]\n";
                 return false;
             }

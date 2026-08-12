@@ -17,6 +17,8 @@ struct TrajectoryBuildOptions
     float spacingMm = 50.0f;
     float cruiseSpeedMmPerSecond = 100.0f;
     float cornerStopThresholdRad = 0.35f;
+    bool lineEndpointOnly = false;
+    bool stopAtEveryNodeBoundary = false;
 };
 
 class TrajectoryBuilder

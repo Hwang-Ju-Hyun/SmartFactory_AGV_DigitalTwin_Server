@@ -37,15 +37,14 @@ target_link_libraries(TrajectoryPreview PRIVATE Shared)
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
     add_test(
-        NAME trajectory_testcase03_bezier_preview
+        NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview
-            --scale-mm-per-unit 60
-            --spacing-mm 20
+            --scale-mm-per-unit 50
+            --spacing-mm 50
             --speed-mm-s 80
-            --start-heading-rad 3.14159265359
+            --start-heading-rad 0
             --track-width-mm 130
-            --require-bezier
-            1 4
+            1 2
     )
     set_tests_properties(
         trajectory_testcase03_bezier_preview

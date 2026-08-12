@@ -10,6 +10,7 @@ class LinkingContext;
 enum class ServerRunMode
 {
     AutomaticFleet,
+    PhysicalFleet,
     PhysicalDemo,
     TrajectoryPreview,
     TrajectoryRaisedWheel
@@ -59,6 +60,7 @@ private:
     bool m_IsMapReady = false;
     bool m_IsWorldCreated = false;
     bool m_IsSimulationActive=false;
+    bool m_IsPhysicalFleetActivated=false;
 public:
     void StartSimulation(){m_IsSimulationActive=true;}
     void StopSimulation(){m_IsSimulationActive=false;}

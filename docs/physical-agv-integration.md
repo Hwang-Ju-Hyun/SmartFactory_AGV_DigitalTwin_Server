@@ -209,6 +209,8 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 
 단일 직선 `[1 -> 2]`에 대해서는 위 항목을 완료했다. 다음 executor 확장은 기존 경로를 다시 하드코딩하지 않고, Server가 LINE/BEZIER map link를 robot-local metric waypoint로 샘플링한 `TRAJECTORY_COMMAND`를 따르는 방식으로 진행한다. capability가 없는 기존 firmware에는 계속 `ROUTE_COMMAND`만 보내 기존 검증본을 보존한다.
 
+2026-08-12의 실제 TestCase0 단계는 Bezier를 제외한다. `--physical-fleet`에서 AGV 1을 node 1, 동쪽 방향으로 배치하고 COMMAND-capable firmware 연결 뒤에만 자동 임무를 시작한다. map scale은 `50 mm/unit`이며 각 LINE node boundary에서 정지·ARRIVED 후 필요하면 제자리 회전한다.
+
 ### 5. Digital Twin 비교
 
 - server의 node/progress 기반 pose와 odometry pose를 함께 log

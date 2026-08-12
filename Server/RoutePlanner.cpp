@@ -93,7 +93,12 @@ bool RoutePlanner::ResendCurrentRouteToController(uint32_t _agvID,
     if (!controller)
         return false;
 
-    controller->FollowRoute({ _agvID, routeNodes });
+    if (!controller->FollowRoute({ _agvID, routeNodes }))
+    {
+        std::cout << "[RoutePlanner] Active route resend rejected by controller. AGV "
+                  << _agvID << "\n";
+        return false;
+    }
     std::cout << "[RoutePlanner] Resent active route to controller. AGV " << _agvID
               << " nodes=" << routeNodes.size() << "\n";
     return true;
@@ -359,10 +364,11 @@ void RoutePlanner::HandlePathFound(uint32_t _agvID, uint32_t _targetNodeID, Miss
     }
 
     IRobotController* controller = RobotManager::GetInstance().GetRobotController(_agvID);
-    if (controller)
+    if (!controller || !controller->FollowRoute({_agvID, routeNodes}))
     {
-        controller->FollowRoute({_agvID, routeNodes});
-    } 
+        const float failureTime = path.empty() ? 0.0f : path.front().departureTime;
+        StopRouteWithoutReplan(_agvID, agv, failureTime, "controller rejected route");
+    }
 }
 
 void RoutePlanner::HandlePathFailed(uint32_t _agvID, uint32_t _targetNodeID, float _serverTime, MissionPurpose _purpose) {
@@ -384,9 +390,8 @@ void RoutePlanner::OnRobotStepCompleted(const RobotEvent& _e)
     if (m_MasterPlans.find(agvID) == m_MasterPlans.end()) return;
     RoutePlan& plan = m_MasterPlans[agvID]; 
 
-    if (plan.strictNodeSequence &&
-        (plan.currentStepIndex >= plan.steps.size() ||
-         plan.steps[plan.currentStepIndex].nodeID != _e.currentNodeID))
+    if (plan.currentStepIndex >= plan.steps.size() ||
+        plan.steps[plan.currentStepIndex].nodeID != _e.currentNodeID)
     {
         StopRouteWithoutReplan(agvID, agv, _e.timestamp, "unexpected ARRIVED node");
         return;

@@ -42,6 +42,10 @@ namespace
     constexpr float kTrajectoryDemoSpacingMm = 20.0f;
     constexpr float kTrajectoryDemoAssumedStartHeadingRad = 3.14159265358979323846f;
     constexpr float kTrajectoryRaisedWheelSpeedMmPerSecond = 80.0f;
+    constexpr uint32_t kPhysicalFleetAgvID = 1;
+    constexpr uint32_t kPhysicalFleetStartNodeID = 1;
+    constexpr float kPhysicalFleetScaleMmPerMapUnit = 50.0f;
+    constexpr float kPhysicalFleetCruiseSpeedMmPerSecond = 80.0f;
 }
 
 NetworkManagerServer::NetworkManagerServer(ServerRunMode _runMode)
@@ -189,9 +193,16 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
     m_AgvIdToRobotSessionMap[assignedAgvID] = robotSession;
     m_ProxyToRobotSessionMap[_proxy] = robotSession;
 
+    ESP32TrajectoryExecutionConfig trajectoryConfig;
+    if (m_RunMode == ServerRunMode::PhysicalFleet)
+    {
+        trajectoryConfig.enabled = true;
+        trajectoryConfig.millimetersPerMapUnit = kPhysicalFleetScaleMmPerMapUnit;
+        trajectoryConfig.cruiseSpeedMmPerSecond = kPhysicalFleetCruiseSpeedMmPerSecond;
+    }
     RobotManager::GetInstance().RegisterRobot(
         assignedAgvID,
-        std::make_unique<ESP32RobotController>(robotSession)
+        std::make_unique<ESP32RobotController>(robotSession, trajectoryConfig)
     );
 
     robotSession->SendHelloAck(ack);
@@ -201,7 +212,26 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
               << " capabilities=0x" << std::hex << hello.capabilities << std::dec
               << " sequence=" << _header.sequence << "\n";
 
-    if (m_RunMode == ServerRunMode::PhysicalDemo)
+    if (m_RunMode == ServerRunMode::PhysicalFleet)
+    {
+        if (!robotSession->SupportsTrajectoryCommand())
+        {
+            std::cout << "[PhysicalFleet] AGV 1 is connected but not armed for trajectory execution;"
+                         " automatic dispatch remains stopped\n";
+        }
+        else if (RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
+        {
+            std::cout << "[PhysicalFleet] Active automatic route restored\n";
+        }
+        else if (!m_IsPhysicalFleetActivated)
+        {
+            m_IsPhysicalFleetActivated = true;
+            EventManager::GetInstance().Publish(
+                { RobotEventType::IDLE_READY, assignedAgvID, m_TotalElapsedServerTime });
+            std::cout << "[PhysicalFleet] Command-capable AGV 1 ready; automatic dispatch enabled\n";
+        }
+    }
+    else if (m_RunMode == ServerRunMode::PhysicalDemo)
     {
         SendPhysicalDemoRoute(assignedAgvID);
     }
@@ -478,10 +508,10 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
     std::cout << "[서버] Unity viewer object ready\n";
 }
 
-//#define _TESTCASE0
+#define _TESTCASE0
 //#define _TESTCASE1
 //#define _TESTCASE2
-#define _TESTCASE3
+//#define _TESTCASE3
 //#define _TESTCASE4
 
 void NetworkManagerServer::CreateSimulationWorld()
@@ -489,8 +519,14 @@ void NetworkManagerServer::CreateSimulationWorld()
     if (m_IsWorldCreated)
         return;
 
+    const bool automaticTasks = m_RunMode == ServerRunMode::AutomaticFleet ||
+                                m_RunMode == ServerRunMode::PhysicalFleet;
     std::vector<uint32_t> initNodes;
-    if (m_RunMode != ServerRunMode::AutomaticFleet)
+    if (m_RunMode == ServerRunMode::PhysicalFleet)
+    {
+        initNodes = { kPhysicalFleetStartNodeID };
+    }
+    else if (m_RunMode != ServerRunMode::AutomaticFleet)
     {
         initNodes = { kPhysicalDemoStartNodeID };
     }
@@ -508,6 +544,10 @@ void NetworkManagerServer::CreateSimulationWorld()
         initNodes = {1, 2};
         #endif
 
+    }
+
+    if (automaticTasks)
+    {
         TaskManager::GetInsance();
         WarehouseManager::GetInstance().Init();
     }
@@ -536,13 +576,14 @@ void NetworkManagerServer::CreateSimulationWorld()
                                     m_RunMode == ServerRunMode::TrajectoryRaisedWheel;
         const float startHeading = trajectoryMode
             ? kTrajectoryDemoAssumedStartHeadingRad
-            : 90.0f;
+            : 0.0f;
         agv->SetHeadingAngle(startHeading);
         agv->SetCurrentNodeID(startNodeID);
                 
         RobotManager::GetInstance().RegisterRobot(
             agv->GetNetworkID(),
-            std::make_unique<UnityRobotController>(agv->GetNetworkID(), startNode.m_PosX, startNode.m_PosZ)
+            std::make_unique<UnityRobotController>(
+                agv->GetNetworkID(), startNode.m_PosX, startNode.m_PosZ, startHeading)
         );
         OccupancyProvider::GetInstance().OccupyNode(agv->GetNetworkID(), startNodeID);
         ReservationTable::GetInstance().ReserveNode(startNodeID, 0.0f, 100.0f, agv->GetNetworkID(), ReservationType::Goal);        
@@ -567,6 +608,12 @@ void NetworkManagerServer::CreateSimulationWorld()
     {
         std::cout << "[PhysicalDemo] Single AGV at node 1; automatic task dispatch disabled\n";
         std::cout << "[PhysicalDemo] Waiting for AGV 1 HELLO before issuing [1 -> 2]\n";
+    }
+    else if (m_RunMode == ServerRunMode::PhysicalFleet)
+    {
+        std::cout << "[PhysicalFleet] TestCase0 LINE map; physical AGV 1 starts at node 1\n";
+        std::cout << "[PhysicalFleet] Place AGV heading east (+X, 0 rad); waiting for armed COMMAND HELLO\n";
+        std::cout << "[PhysicalFleet] Automatic task/route planning will start after that HELLO\n";
     }
     else if (m_RunMode == ServerRunMode::TrajectoryPreview)
     {

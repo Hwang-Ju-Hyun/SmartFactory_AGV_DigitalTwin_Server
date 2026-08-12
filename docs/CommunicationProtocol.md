@@ -385,6 +385,8 @@ Direction: Robot -> Server
 
 Server는 ARRIVED를 받으면 `ControllerEvent::ARRIVED`로 바꾸고, `NetworkManagerServer::UpdateWorld()`에서 `RobotEventType::NODE_ARRIVED`로 publish한다. 이후 `RoutePlanner::OnRobotStepCompleted()`가 다음 계획 상태를 갱신한다.
 
+다중-node `TRAJECTORY_COMMAND`도 각 `NODE_BOUNDARY`에서 정지·settling 후 해당 node의 ARRIVED를 정확히 한 번 전송해야 한다. `nodeID=0`인 synthetic `ROTATE_IN_PLACE`에서는 ARRIVED를 보내지 않는다. Server는 계획상의 다음 node와 다르면 route를 safe-stop한다.
+
 ### 10.6 CANCEL_ROUTE
 
 Direction: Server -> Robot

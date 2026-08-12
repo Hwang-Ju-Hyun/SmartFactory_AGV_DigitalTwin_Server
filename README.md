@@ -78,26 +78,33 @@ build/Client/AGV_Client
 
 서버는 TCP `0.0.0.0:6666`에서 Unity legacy protocol과 RobotProtocol을 구분해 처리한다. FakeRobot에서 `HELLO_ACK`, `ROUTE`, `STATUS`, `ARRIVED` 로그가 이어지는지 확인한다.
 
+### 실제 TestCase0 LINE fleet
+
+```bash
+./build/Server/AGV_Server --physical-fleet
+```
+
+AGV 1대가 node 1에서 동쪽(`+X`, `0 rad`)을 향한 상태로 시작한다. COMMAND-capable ESP32가 연결된 뒤에만 TaskManager 자동 배차가 시작된다. Server가 계산한 임의 LINE 경로를 `50 mm/map-unit`, `80 mm/s` trajectory로 변환하며 특정 node sequence를 하드코딩하지 않는다.
+
 LINE/Bezier 혼합 trajectory sampler와 wire serializer의 hardware-free 회귀시험:
 
 ```bash
 ./build/Server/TrajectorySmokeTest
 ```
 
-TestCase03의 첫 demo Bezier `[1 -> 4]`를 TCP와 motor 없이 확인하는 preview:
+현재 TestCase0의 LINE `[1 -> 2]` geometry를 TCP와 motor 없이 확인하는 preview:
 
 ```bash
 ./build/Server/TrajectoryPreview \
-  --scale-mm-per-unit 60 \
-  --spacing-mm 20 \
+  --scale-mm-per-unit 50 \
+  --spacing-mm 50 \
   --speed-mm-s 80 \
-  --start-heading-rad 3.14159265359 \
+  --start-heading-rad 0 \
   --track-width-mm 130 \
-  --require-bezier \
-  1 4
+  1 2
 ```
 
-`60 mm/map-unit`은 TestCase03 곡선 시험용 scale이다. `[1 -> 4]`는 약 306 mm이고 sampled 최소 반경은 약 87.6 mm로 트레드 반폭 65 mm보다 크며, `[1 -> 2]`는 약 720 mm다. 아직 motor-disabled ESP32 trace 검증 전이므로 실차 dispatch에는 사용하지 않는다.
+현재 TestCase0 실제 운용 scale은 `50 mm/map-unit`이며 `[1 -> 2]`는 300 mm다. Bezier preview 기록은 `docs/current-status.md`에 과거 단계로 남겨 둔다.
 
 ### Motor-locked trajectory network preview
 

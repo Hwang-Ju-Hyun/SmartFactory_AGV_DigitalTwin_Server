@@ -282,7 +282,9 @@ bool TrajectoryBuilder::BuildFromGeometry(
         }
 
         const float linkLengthMm = linkLengthMapUnits * options.millimetersPerMapUnit;
-        const float requestedSegmentCount = std::ceil(linkLengthMm / options.spacingMm);
+        const float requestedSegmentCount = options.lineEndpointOnly && link.m_Type == 0
+            ? 1.0f
+            : std::ceil(linkLengthMm / options.spacingMm);
         if (!std::isfinite(requestedSegmentCount) ||
             requestedSegmentCount > static_cast<float>(RobotProtocol::kMaxTrajectoryWaypoints))
         {
@@ -307,6 +309,10 @@ bool TrajectoryBuilder::BuildFromGeometry(
             {
                 waypoint.nodeID = toNode.m_Id;
                 waypoint.flags |= RobotProtocol::TRAJECTORY_FLAG_NODE_BOUNDARY;
+                if (options.stopAtEveryNodeBoundary)
+                {
+                    waypoint.flags |= RobotProtocol::TRAJECTORY_FLAG_STOP;
+                }
             }
 
             if (linkIndex + 1 == routeLinks.size() && segment == segmentCount)
@@ -330,7 +336,8 @@ bool TrajectoryBuilder::BuildFromGeometry(
 
         RobotProtocol::TrajectoryWaypoint& corner = trajectory.waypoints.back();
         corner.flags |= RobotProtocol::TRAJECTORY_FLAG_STOP;
-        corner.targetSpeedMmPerSecond = 0.0f;
+        if (!options.stopAtEveryNodeBoundary)
+            corner.targetSpeedMmPerSecond = 0.0f;
 
         const Vector2 cornerPosition{ toNode.m_PosX, toNode.m_PosZ };
         RobotProtocol::TrajectoryWaypoint rotateWaypoint = ToLocalWaypoint(

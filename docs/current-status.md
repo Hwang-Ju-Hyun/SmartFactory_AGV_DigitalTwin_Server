@@ -22,7 +22,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | 영역 | 상태 | 근거/메모 |
 |---|---|---|
 | C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `TrajectorySmokeTest`, `TrajectoryPreview`, `AGV_Client` target |
-| Server-authoritative world | 구현됨·재검증 필요 | 현재 TESTCASE3 AGV 5대와 `--physical-demo` 단일 AGV mode; 새 맵 기준 자동 fleet smoke는 남음 |
+| Server-authoritative world | 구현됨 | TESTCASE0 및 실제 AGV 1용 `--physical-fleet` |
 | WHCA* 계열 route planning | 검증 완료 | smoke test에서 route 생성과 후속 route 재전송 확인 |
 | 시간 기반 node/edge/goal reservation | 검증 완료 | server/FakeRobot smoke flow에서 사용 |
 | 실행 시점 occupancy 검사 | 검증 완료 | simulator/controller 실행 flow에서 사용 |
@@ -34,6 +34,14 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-12 TestCase0 실제 LINE fleet
+
+- 새 map은 node 15개, directed link 44개이며 모두 양방향 LINE이다.
+- 수평/수직 link 길이는 6/7/8 map-unit이고 heading은 0/±90/180도다.
+- `--physical-fleet`은 node 1의 실제 AGV 1대만 만들고, COMMAND HELLO 뒤 실제 TaskManager/RoutePlanner 자동 배차를 시작한다.
+- 자동 경로는 `50 mm/map-unit`, `80 mm/s`, LINE endpoint와 제자리 회전 waypoint로 변환된다.
+- ESP32는 실제 node boundary마다 ARRIVED를 한 번 보고해야 한다. Server CMake build는 통과했으며 실제 주행은 아직 수행하지 않았다.
 
 ### 2026-08-11 TestCase03 map과 Bezier preview
 
