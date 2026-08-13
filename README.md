@@ -104,7 +104,7 @@ LINE/Bezier 혼합 trajectory sampler와 wire serializer의 hardware-free 회귀
   1 2
 ```
 
-현재 TestCase0 실제 운용 scale은 `50 mm/map-unit`이며 `[1 -> 2]`는 300 mm다. Bezier preview 기록은 `docs/current-status.md`에 과거 단계로 남겨 둔다.
+현재 TestCase0 실제 운용 scale은 `50 mm/map-unit`이며 `[1 -> 2]`는 200 mm다. 전체 격자는 약 `800 x 400 mm`다. Bezier preview 기록은 `docs/current-status.md`에 과거 단계로 남겨 둔다.
 
 ### Motor-locked trajectory network preview
 

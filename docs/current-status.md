@@ -1,8 +1,8 @@
 # Current project status
 
-Last verified: 2026-08-11
+Last verified: 2026-08-13
 
-Implementation base: Server `ee3244f`, ESP32 `efc9e191`, Unity `b821d0c2`, plus the Server trajectory working tree
+Implementation base: Server `df9d641` plus the TestCase0 map working tree, ESP32 `668622cf`, Unity `b821d0c2`
 
 Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
@@ -35,10 +35,12 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 ## 최근 software 검증
 
-### 2026-08-12 TestCase0 실제 LINE fleet
+### 2026-08-13 TestCase0 실제 LINE fleet
 
 - 새 map은 node 15개, directed link 44개이며 모두 양방향 LINE이다.
-- 수평/수직 link 길이는 6/7/8 map-unit이고 heading은 0/±90/180도다.
+- Unity에서 다시 export한 정사각 격자 map을 Server `Shared/MapData.json`에 반영했다.
+- 모든 link 길이는 4 map-unit이고 heading은 0/±90/180도다.
+- 실제 운용 scale `50 mm/map-unit`에서 link 하나는 200 mm, 전체 격자는 약 `800 x 400 mm`다.
 - `--physical-fleet`은 node 1의 실제 AGV 1대만 만들고, COMMAND HELLO 뒤 실제 TaskManager/RoutePlanner 자동 배차를 시작한다.
 - 자동 경로는 `50 mm/map-unit`, `80 mm/s`, LINE endpoint와 제자리 회전 waypoint로 변환된다.
 - ESP32는 실제 node boundary마다 ARRIVED를 한 번 보고해야 한다. Server CMake build는 통과했으며 실제 주행은 아직 수행하지 않았다.

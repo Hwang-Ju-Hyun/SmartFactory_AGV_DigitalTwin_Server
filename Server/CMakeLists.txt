@@ -47,7 +47,7 @@ if(BUILD_TESTING)
             1 2
     )
     set_tests_properties(
-        trajectory_testcase03_bezier_preview
+        trajectory_testcase0_line_preview
         PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
 endif()
