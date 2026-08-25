@@ -1,5 +1,7 @@
 #include "TCPSession.hpp"
 #include "MemoryStream.hpp"
+#include <cstring>
+#include <limits>
 
 bool TCPSession::ProcessIncomingData()
 {
@@ -19,7 +21,14 @@ bool TCPSession::ProcessIncomingData()
         }
 
         // 버퍼 맨 앞 2바이트를 읽어 이 패킷의 총 길이를 파악합니다.
-        uint16_t packetSize = *reinterpret_cast<uint16_t*>(m_ReceiveBuffer.data());
+        uint16_t packetSize = 0;
+        std::memcpy(&packetSize, m_ReceiveBuffer.data(), sizeof(packetSize));
+
+        // A frame always contains the two-byte size field and at least one
+        // protocol discriminator byte. Treat impossible lengths as a broken
+        // connection instead of underflowing payloadSize or spinning forever.
+        if (packetSize < sizeof(uint16_t) + sizeof(uint8_t))
+            return false;
 
         // 조건 B: 파악한 길이보다 버퍼에 쌓인 데이터가 적다면 대기 (아직 덜 옴)
         if (m_ReceiveBuffer.size() < packetSize) 
@@ -49,7 +58,11 @@ bool TCPSession::ProcessIncomingData()
 
 void TCPSession::SendPacket(OutputMemoryStream& _inStream)
 {
-    uint16_t total_size = static_cast<uint16_t>(sizeof(uint16_t))+_inStream.GetLength();
+    const uint32_t totalSize = sizeof(uint16_t) + _inStream.GetLength();
+    if (totalSize > std::numeric_limits<uint16_t>::max())
+        return;
+
+    const uint16_t total_size = static_cast<uint16_t>(totalSize);
     OutputMemoryStream finalStream;
 
     finalStream.Write(total_size);

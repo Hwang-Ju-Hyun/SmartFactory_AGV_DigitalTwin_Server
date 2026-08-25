@@ -7,11 +7,21 @@
 
 class OutputMemoryStream;
 
+enum class ClientProtocolIdentity
+{
+    Unknown,
+    Unity,
+    Robot,
+    Vision,
+    Rejected
+};
+
 class ClientProxy
 {
 private:
     TCPSessionPtr m_TCPSession;
     uint32_t m_SessionID;
+    ClientProtocolIdentity m_ProtocolIdentity = ClientProtocolIdentity::Unknown;
     ReplicationManagerServer m_ReplicationManagerServer;    
 public:
     ClientProxy(TCPSessionPtr _session,uint32_t _sessionID);
@@ -20,6 +30,19 @@ public:
 public:
     void SetSessionID(uint32_t _sessionID){m_SessionID=_sessionID;}
     const uint32_t GetSessionID()const{return m_SessionID;}
+    ClientProtocolIdentity GetProtocolIdentity() const { return m_ProtocolIdentity; }
+    bool TryBindProtocolIdentity(ClientProtocolIdentity _identity)
+    {
+        if (_identity == ClientProtocolIdentity::Unknown)
+            return false;
+        if (m_ProtocolIdentity == ClientProtocolIdentity::Unknown)
+        {
+            m_ProtocolIdentity = _identity;
+            return true;
+        }
+        return m_ProtocolIdentity == _identity;
+    }
+    void RejectProtocol() { m_ProtocolIdentity = ClientProtocolIdentity::Rejected; }
     void SendPacket(OutputMemoryStream& _inStream);  
     TCPSessionPtr GetSession(){return m_TCPSession;}
 

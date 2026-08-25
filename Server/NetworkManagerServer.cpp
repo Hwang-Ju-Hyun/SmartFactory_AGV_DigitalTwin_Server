@@ -24,6 +24,11 @@
 #include "OccupancyProvider.hpp"
 #include "PacketSerializer.hpp"
 #include "TrajectoryBuilder.hpp"
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 std::unique_ptr<NetworkManagerServer> NetworkManagerServer::sInstance=nullptr;
@@ -46,27 +51,208 @@ namespace
     constexpr uint32_t kPhysicalFleetStartNodeID = 1;
     constexpr float kPhysicalFleetScaleMmPerMapUnit = 50.0f;
     constexpr float kPhysicalFleetCruiseSpeedMmPerSecond = 80.0f;
+    constexpr float kVisionScaleMmPerMapUnit = 50.0f;
+    constexpr float kVisionLocalOriginServerX = 50.0f;
+    constexpr float kVisionLocalOriginServerZ = -36.0f;
+    constexpr float kVisionAllowedMapMarginMm = 100.0f;
+
+    struct ExpectedVisionMapNode
+    {
+        uint32_t id;
+        float x;
+        float z;
+    };
+
+    constexpr std::array<ExpectedVisionMapNode, 15> kExpectedVisionMapNodes{{
+        {1, 50.0f, -36.0f}, {2, 54.0f, -36.0f},
+        {3, 58.0f, -36.0f}, {4, 62.0f, -36.0f},
+        {5, 66.0f, -36.0f}, {6, 50.0f, -32.0f},
+        {7, 54.0f, -32.0f}, {8, 58.0f, -32.0f},
+        {9, 62.0f, -32.0f}, {10, 66.0f, -32.0f},
+        {11, 50.0f, -28.0f}, {12, 54.0f, -28.0f},
+        {13, 58.0f, -28.0f}, {14, 62.0f, -28.0f},
+        {15, 66.0f, -28.0f}
+    }};
+
+    bool MatchesExpectedVisionMapContract(
+        const std::unordered_map<uint32_t, MapNode>& nodes)
+    {
+        if (nodes.size() != kExpectedVisionMapNodes.size())
+            return false;
+
+        for (const ExpectedVisionMapNode& expected : kExpectedVisionMapNodes)
+        {
+            const auto nodeIt = nodes.find(expected.id);
+            if (nodeIt == nodes.end() ||
+                std::abs(nodeIt->second.m_PosX - expected.x) > 0.001f ||
+                std::abs(nodeIt->second.m_PosZ - expected.z) > 0.001f)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    uint64_t MonotonicMilliseconds()
+    {
+        return static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
+
+    const char* VisionStoreResultName(VisionObservationStoreResult result)
+    {
+        switch (result)
+        {
+        case VisionObservationStoreResult::ACCEPTED: return "ACCEPTED";
+        case VisionObservationStoreResult::AGV_REGISTRATION_CHECK_UNAVAILABLE: return "AGV_REGISTRATION_CHECK_UNAVAILABLE";
+        case VisionObservationStoreResult::UNKNOWN_AGV: return "UNKNOWN_AGV";
+        case VisionObservationStoreResult::INVALID_SOURCE_ID: return "INVALID_SOURCE_ID";
+        case VisionObservationStoreResult::SOURCE_ID_MISMATCH: return "SOURCE_ID_MISMATCH";
+        case VisionObservationStoreResult::INVALID_SESSION_ID: return "INVALID_SESSION_ID";
+        case VisionObservationStoreResult::INVALID_SEQUENCE: return "INVALID_SEQUENCE";
+        case VisionObservationStoreResult::INVALID_TRACKING_STATE: return "INVALID_TRACKING_STATE";
+        case VisionObservationStoreResult::INVALID_VERIFICATION_STATE: return "INVALID_VERIFICATION_STATE";
+        case VisionObservationStoreResult::MEASURED_NOT_VERIFIED: return "MEASURED_NOT_VERIFIED";
+        case VisionObservationStoreResult::INVALID_CALIBRATION_ID: return "INVALID_CALIBRATION_ID";
+        case VisionObservationStoreResult::CALIBRATION_ID_MISMATCH: return "CALIBRATION_ID_MISMATCH";
+        case VisionObservationStoreResult::INVALID_MAP_CONTRACT_ID: return "INVALID_MAP_CONTRACT_ID";
+        case VisionObservationStoreResult::MAP_CONTRACT_ID_MISMATCH: return "MAP_CONTRACT_ID_MISMATCH";
+        case VisionObservationStoreResult::INVALID_POSE_CONTRACT_ID: return "INVALID_POSE_CONTRACT_ID";
+        case VisionObservationStoreResult::POSE_CONTRACT_ID_MISMATCH: return "POSE_CONTRACT_ID_MISMATCH";
+        case VisionObservationStoreResult::INVALID_STATE_POSE_COMBINATION: return "INVALID_STATE_POSE_COMBINATION";
+        case VisionObservationStoreResult::NON_FINITE_POSE: return "NON_FINITE_POSE";
+        case VisionObservationStoreResult::HEADING_OUT_OF_RANGE: return "HEADING_OUT_OF_RANGE";
+        case VisionObservationStoreResult::INVALID_QUALITY_METADATA: return "INVALID_QUALITY_METADATA";
+        case VisionObservationStoreResult::OUT_OF_MAP: return "OUT_OF_MAP";
+        case VisionObservationStoreResult::STALE_REPORTED_AGE: return "STALE_REPORTED_AGE";
+        case VisionObservationStoreResult::RECEIVE_TIME_IN_FUTURE: return "RECEIVE_TIME_IN_FUTURE";
+        case VisionObservationStoreResult::STALE_RECEIVE_TIME: return "STALE_RECEIVE_TIME";
+        case VisionObservationStoreResult::DUPLICATE_OR_OUT_OF_ORDER_SEQUENCE: return "DUPLICATE_OR_OUT_OF_ORDER_SEQUENCE";
+        }
+        return "UNKNOWN";
+    }
 }
 
-NetworkManagerServer::NetworkManagerServer(ServerRunMode _runMode)
+NetworkManagerServer::NetworkManagerServer(
+    ServerRunMode _runMode,
+    VisionObservationServerConfig _visionConfig)
     : m_TotalElapsedServerTime(0.0f)
     , m_RunMode(_runMode)
+    , m_VisionConfig(std::move(_visionConfig))
 {
     m_LinkingContext = new LinkingContext;
 }
 
-void NetworkManagerServer::StaticInit(ServerRunMode _runMode)
+void NetworkManagerServer::StaticInit(
+    ServerRunMode _runMode,
+    VisionObservationServerConfig _visionConfig)
 {
-    sInstance.reset(new NetworkManagerServer(_runMode));
+    sInstance.reset(new NetworkManagerServer(_runMode, std::move(_visionConfig)));
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
     srand((unsigned int)time(NULL));
     sInstance->CreateSimulationWorld();
+    sInstance->InitializeVisionObservationStore();
     sInstance->StartSimulation();
 }
 
 void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream& _inStream) 
 {
-    if (TryProcessRobotProtocolPacket(_session, _inStream))
+    if (!_session)
+        return;
+
+    RobotProtocol::PacketID packetID;
+    const bool hasRobotProtocolID =
+        RobotProtocol::PeekPacketID(_inStream, packetID);
+    const ClientProtocolIdentity identity = _session->GetProtocolIdentity();
+
+    if (identity == ClientProtocolIdentity::Rejected)
+        return;
+
+    if (identity == ClientProtocolIdentity::Robot)
+    {
+        if (!hasRobotProtocolID ||
+            !RobotProtocol::IsKnownRobotPacketID(
+                static_cast<uint16_t>(packetID)))
+        {
+            std::cout << "[Protocol] Robot client attempted protocol switch\n";
+            return;
+        }
+        TryProcessRobotProtocolPacket(_session, _inStream);
+        return;
+    }
+
+    if (identity == ClientProtocolIdentity::Vision)
+    {
+        if (!hasRobotProtocolID ||
+            !RobotProtocol::IsKnownVisionPacketID(
+                static_cast<uint16_t>(packetID)))
+        {
+            std::cout << "[Protocol] Vision client attempted protocol switch\n";
+            return;
+        }
+        TryProcessVisionProtocolPacket(_session, _inStream);
+        return;
+    }
+
+    if (identity == ClientProtocolIdentity::Unity)
+    {
+        if (hasRobotProtocolID)
+        {
+            std::cout << "[Protocol] Unity client attempted protocol switch\n";
+            return;
+        }
+        ProcessUnityPacket(_session, _inStream);
+        return;
+    }
+
+    // An unclassified socket may select a protocol only with that protocol's
+    // first HELLO. This prevents malformed Vision frames from falling through
+    // to the legacy one-byte Unity parser.
+    if (hasRobotProtocolID)
+    {
+        if (RobotProtocol::IsKnownVisionPacketID(
+                static_cast<uint16_t>(packetID)))
+        {
+            if (packetID != RobotProtocol::PacketID::VISION_HELLO)
+            {
+                std::cout << "[Vision] Packet before VISION_HELLO rejected\n";
+                _session->RejectProtocol();
+                return;
+            }
+            TryProcessVisionProtocolPacket(_session, _inStream);
+            return;
+        }
+
+        if (packetID != RobotProtocol::PacketID::HELLO)
+        {
+            std::cout << "[RobotProtocol] Packet before HELLO rejected\n";
+            _session->RejectProtocol();
+            return;
+        }
+        _session->TryBindProtocolIdentity(ClientProtocolIdentity::Robot);
+        TryProcessRobotProtocolPacket(_session, _inStream);
+        return;
+    }
+
+    if (_inStream.GetRemainDataSize() == 0 ||
+        static_cast<uint8_t>(_inStream.GetBuffer()[0]) !=
+            static_cast<uint8_t>(UPT_HELLO))
+    {
+        std::cout << "[Protocol] First packet was not a recognized HELLO\n";
+        _session->RejectProtocol();
+        return;
+    }
+
+    _session->TryBindProtocolIdentity(ClientProtocolIdentity::Unity);
+    ProcessUnityPacket(_session, _inStream);
+}
+
+void NetworkManagerServer::ProcessUnityPacket(
+    ClientProxy* _session,
+    InputMemoryStream& _inStream)
+{
+    if (_inStream.GetRemainDataSize() == 0)
         return;
 
     uint8_t packet_type;
@@ -99,7 +285,9 @@ void NetworkManagerServer::ProcessPacket(ClientProxy* _session,InputMemoryStream
 bool NetworkManagerServer::TryProcessRobotProtocolPacket(ClientProxy* _proxy, InputMemoryStream& _stream)
 {
     RobotProtocol::PacketID packetID;
-    if (!RobotProtocol::PeekPacketID(_stream, packetID))
+    if (!RobotProtocol::PeekPacketID(_stream, packetID) ||
+        !RobotProtocol::IsKnownRobotPacketID(
+            static_cast<uint16_t>(packetID)))
         return false;
 
     RobotProtocol::PacketBodyHeader header;
@@ -124,6 +312,42 @@ bool NetworkManagerServer::TryProcessRobotProtocolPacket(ClientProxy* _proxy, In
     }
 
     robotSession->ProcessPacket(header, _stream);
+    return true;
+}
+
+bool NetworkManagerServer::TryProcessVisionProtocolPacket(
+    ClientProxy* _proxy,
+    InputMemoryStream& _stream)
+{
+    RobotProtocol::PacketID packetID;
+    if (!RobotProtocol::PeekPacketID(_stream, packetID) ||
+        !RobotProtocol::IsKnownVisionPacketID(
+            static_cast<uint16_t>(packetID)))
+    {
+        return false;
+    }
+
+    RobotProtocol::PacketBodyHeader header;
+    if (!RobotProtocol::ReadPacketBodyHeader(_stream, header))
+    {
+        std::cout << "[Vision] Invalid packet header\n";
+        return true;
+    }
+
+    switch (packetID)
+    {
+    case RobotProtocol::PacketID::VISION_HELLO:
+        HandleVisionHelloPacket(_proxy, header, _stream);
+        break;
+    case RobotProtocol::PacketID::VISION_OBSERVATION:
+        HandleVisionObservationPacket(_proxy, header, _stream);
+        break;
+    case RobotProtocol::PacketID::VISION_HELLO_ACK:
+        std::cout << "[Vision] Unexpected client VISION_HELLO_ACK rejected\n";
+        break;
+    default:
+        break;
+    }
     return true;
 }
 
@@ -247,6 +471,240 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
     {
         std::cout << "[RoutePlanner] No active route to resend for AGV " << assignedAgvID << "\n";
     }
+}
+
+void NetworkManagerServer::HandleVisionHelloPacket(
+    ClientProxy* _proxy,
+    const RobotProtocol::PacketBodyHeader& _header,
+    InputMemoryStream& _stream)
+{
+    RobotProtocol::VisionHelloPayload hello;
+    RobotProtocol::VisionHelloAckPayload ack;
+    ack.protocolVersion = RobotProtocol::kProtocolVersion;
+    const bool alreadyAccepted = m_ProxyToVisionSessionMap.contains(_proxy);
+
+    if (!RobotProtocol::ReadVisionHelloPayload(_stream, hello))
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::MALFORMED_HANDSHAKE;
+        SendVisionHelloAck(_proxy, _header.sequence, ack);
+        if (!alreadyAccepted)
+            _proxy->RejectProtocol();
+        std::cout << "[Vision] Malformed VISION_HELLO rejected\n";
+        return;
+    }
+
+    ack.sourceID = hello.sourceID;
+    ack.sessionID = hello.sessionID;
+
+    if (!m_VisionConfig.enabled)
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::FEATURE_DISABLED;
+    }
+    else if (_header.agvID != 0 ||
+             hello.protocolVersion != RobotProtocol::kProtocolVersion)
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::PROTOCOL_MISMATCH;
+    }
+    else if (hello.sourceID == 0 || hello.sessionID == 0 ||
+             hello.sourceID != m_VisionConfig.expectedSourceID)
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::INVALID_SOURCE;
+    }
+    else if (hello.mapContractID != m_VisionConfig.expectedMapContractID)
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::MAP_CONTRACT_MISMATCH;
+    }
+    else if (hello.poseContractID != m_VisionConfig.expectedPoseContractID)
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::POSE_CONTRACT_MISMATCH;
+    }
+    else if (alreadyAccepted ||
+             m_VisionSourceToProxyMap.contains(hello.sourceID))
+    {
+        ack.accepted = 0;
+        ack.rejectionReason =
+            RobotProtocol::VisionHelloRejectionReason::DUPLICATE_SESSION;
+    }
+    else
+    {
+        ack.accepted = 1;
+        ack.rejectionReason = RobotProtocol::VisionHelloRejectionReason::NONE;
+    }
+
+    SendVisionHelloAck(_proxy, _header.sequence, ack);
+    if (ack.accepted == 0)
+    {
+        // Re-HELLO on an already authenticated socket is rejected without
+        // poisoning or orphaning the original accepted session.
+        if (!alreadyAccepted)
+            _proxy->RejectProtocol();
+        std::cout << "[Vision] VISION_HELLO rejected reason="
+                  << static_cast<uint16_t>(ack.rejectionReason) << "\n";
+        return;
+    }
+
+    if (!_proxy->TryBindProtocolIdentity(ClientProtocolIdentity::Vision))
+    {
+        _proxy->RejectProtocol();
+        std::cout << "[Vision] Protocol identity binding failed\n";
+        return;
+    }
+
+    VisionClientSession session;
+    session.sourceID = hello.sourceID;
+    session.sessionID = hello.sessionID;
+    session.mapContractID = std::move(hello.mapContractID);
+    session.poseContractID = std::move(hello.poseContractID);
+    m_ProxyToVisionSessionMap[_proxy] = session;
+    m_VisionSourceToProxyMap[session.sourceID] = _proxy;
+
+    std::cout << "[Vision] Observation-only source connected. sourceID="
+              << session.sourceID << " sessionID=" << session.sessionID << "\n";
+}
+
+void NetworkManagerServer::HandleVisionObservationPacket(
+    ClientProxy* _proxy,
+    const RobotProtocol::PacketBodyHeader& _header,
+    InputMemoryStream& _stream)
+{
+    auto sessionIt = m_ProxyToVisionSessionMap.find(_proxy);
+    if (sessionIt == m_ProxyToVisionSessionMap.end() ||
+        _proxy->GetProtocolIdentity() != ClientProtocolIdentity::Vision ||
+        !m_VisionObservationStore)
+    {
+        std::cout << "[Vision] Observation before accepted VISION_HELLO rejected\n";
+        return;
+    }
+
+    if (_header.sequence == 0)
+    {
+        std::cout << "[Vision] Observation sequence 0 rejected\n";
+        return;
+    }
+
+    VisionClientSession& session = sessionIt->second;
+    if (session.hasReceivedObservation &&
+        _header.sequence <= session.lastObservationSequence)
+    {
+        std::cout << "[Vision] Duplicate/out-of-order transport sequence rejected\n";
+        return;
+    }
+    // Consume a well-formed body header sequence even when the payload or its
+    // semantic values are later rejected. A sender must never reuse it.
+    session.hasReceivedObservation = true;
+    session.lastObservationSequence = _header.sequence;
+
+    RobotProtocol::VisionObservationPayload payload;
+    if (!RobotProtocol::ReadVisionObservationPayload(_stream, payload))
+    {
+        std::cout << "[Vision] Malformed VISION_OBSERVATION rejected\n";
+        return;
+    }
+
+    VisionObservationInput input;
+    input.agvID = _header.agvID;
+    input.sourceID = session.sourceID;
+    input.sessionID = session.sessionID;
+    input.sequence = _header.sequence;
+    input.sourceTimestampMicroseconds = payload.sourceTimestampUs;
+    input.reportedAgeMilliseconds = payload.reportedAgeMs;
+    input.state = payload.state;
+    if (payload.pose.has_value())
+    {
+        input.pose = VisionMetricPose{
+            payload.pose->xMm,
+            payload.pose->zMm,
+            payload.pose->headingDeg
+        };
+    }
+    input.calibrationID = std::move(payload.calibrationID);
+    input.mapContractID = session.mapContractID;
+    input.poseContractID = session.poseContractID;
+    input.verificationState = payload.verificationState;
+    input.quality = payload.quality;
+
+    const uint64_t receivedAtMs = MonotonicMilliseconds();
+    const VisionObservationStoreResult result =
+        m_VisionObservationStore->TryStore(
+            input,
+            receivedAtMs,
+            receivedAtMs,
+            [this](uint32_t agvID)
+            {
+                const ObjectPtr object = m_LinkingContext->GetObject(agvID);
+                return object && object->GetClassID() == ClassID::OBJ_AGV;
+            });
+
+    if (result != VisionObservationStoreResult::ACCEPTED)
+    {
+        std::cout << "[Vision] Observation rejected. agvID=" << _header.agvID
+                  << " sequence=" << _header.sequence
+                  << " reason=" << VisionStoreResultName(result) << "\n";
+        return;
+    }
+
+    std::cout << "[Vision] Observation stored separately. agvID=" << _header.agvID
+              << " sequence=" << _header.sequence
+              << " state=" << static_cast<uint16_t>(payload.state) << "\n";
+}
+
+void NetworkManagerServer::SendVisionHelloAck(
+    ClientProxy* _proxy,
+    uint32_t _sequence,
+    const RobotProtocol::VisionHelloAckPayload& _payload)
+{
+    OutputMemoryStream outStream;
+    RobotProtocol::WritePacketBodyHeader(
+        outStream,
+        RobotProtocol::PacketID::VISION_HELLO_ACK,
+        0,
+        _sequence);
+    if (!RobotProtocol::WriteVisionHelloAckPayload(outStream, _payload))
+    {
+        std::cout << "[Vision] Failed to serialize VISION_HELLO_ACK\n";
+        return;
+    }
+    _proxy->SendPacket(outStream);
+}
+
+void NetworkManagerServer::InitializeVisionObservationStore()
+{
+    if (!m_VisionConfig.enabled)
+        return;
+
+    const auto nodes = MapManager::GetInstance().GetNodes();
+    if (!MatchesExpectedVisionMapContract(nodes))
+    {
+        throw std::runtime_error(
+            "Vision observation active map does not match contract dd2c1523295b02ee");
+    }
+
+    VisionObservationStoreConfig storeConfig;
+    storeConfig.map = VisionMapCoordinateContract::FromCanonicalMap(
+        kVisionScaleMmPerMapUnit,
+        kVisionLocalOriginServerX,
+        kVisionLocalOriginServerZ,
+        kVisionAllowedMapMarginMm);
+    storeConfig.expectedCalibrationID = m_VisionConfig.expectedCalibrationID;
+    storeConfig.expectedMapContractID = m_VisionConfig.expectedMapContractID;
+    storeConfig.expectedPoseContractID = m_VisionConfig.expectedPoseContractID;
+    storeConfig.expectedSourceID = m_VisionConfig.expectedSourceID;
+    m_VisionObservationStore =
+        std::make_unique<VisionObservationStore>(std::move(storeConfig));
+
+    std::cout << "[Vision] Observation-only receiver enabled; control integration remains OFF\n";
 }
 
 void NetworkManagerServer::SendTrajectoryPreview(
@@ -392,12 +850,11 @@ void NetworkManagerServer::SendPhysicalDemoRoute(uint32_t _agvID)
 RobotSessionPtr NetworkManagerServer::FindRobotSession(ClientProxy* _proxy, uint32_t _agvID)
 {
     auto proxyIt = m_ProxyToRobotSessionMap.find(_proxy);
-    if (proxyIt != m_ProxyToRobotSessionMap.end())
+    if (proxyIt != m_ProxyToRobotSessionMap.end() &&
+        proxyIt->second->GetAgvID() == _agvID)
+    {
         return proxyIt->second;
-
-    auto agvIt = m_AgvIdToRobotSessionMap.find(_agvID);
-    if (agvIt != m_AgvIdToRobotSessionMap.end())
-        return agvIt->second;
+    }
 
     return nullptr;
 }
@@ -460,6 +917,60 @@ void NetworkManagerServer::OnClientAccepted(TCPSocketPtr _tcpSocket)
     ClientProxyPtr newClientProxy=std::make_shared<ClientProxy>(newClientSession,0);
 
     m_PendingProxies.push_back(newClientProxy); 
+}
+
+void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
+{
+    if (!_proxy)
+        return;
+
+    auto robotProxyIt = m_ProxyToRobotSessionMap.find(_proxy);
+    if (robotProxyIt != m_ProxyToRobotSessionMap.end())
+    {
+        const RobotSessionPtr disconnectedSession = robotProxyIt->second;
+        const uint32_t agvID = disconnectedSession->GetAgvID();
+        auto agvSessionIt = m_AgvIdToRobotSessionMap.find(agvID);
+        if (agvSessionIt != m_AgvIdToRobotSessionMap.end() &&
+            agvSessionIt->second == disconnectedSession)
+        {
+            m_AgvIdToRobotSessionMap.erase(agvSessionIt);
+        }
+        m_ProxyToRobotSessionMap.erase(robotProxyIt);
+    }
+
+    auto visionProxyIt = m_ProxyToVisionSessionMap.find(_proxy);
+    if (visionProxyIt != m_ProxyToVisionSessionMap.end())
+    {
+        const uint32_t sourceID = visionProxyIt->second.sourceID;
+        auto sourceIt = m_VisionSourceToProxyMap.find(sourceID);
+        if (sourceIt != m_VisionSourceToProxyMap.end() &&
+            sourceIt->second == _proxy)
+        {
+            m_VisionSourceToProxyMap.erase(sourceIt);
+        }
+        m_ProxyToVisionSessionMap.erase(visionProxyIt);
+        std::cout << "[Vision] Source disconnected; latest observation retained as historical data\n";
+    }
+
+    for (auto it = m_SessionIdToProxyMap.begin();
+         it != m_SessionIdToProxyMap.end();)
+    {
+        if (it->second == _proxy)
+            it = m_SessionIdToProxyMap.erase(it);
+        else
+            ++it;
+    }
+
+    m_PendingProxies.erase(
+        std::remove_if(
+            m_PendingProxies.begin(), m_PendingProxies.end(),
+            [_proxy](const ClientProxyPtr& proxy)
+            {
+                return proxy.get() == _proxy;
+            }),
+        m_PendingProxies.end());
+
+    std::cout << "[Server] Disconnected client session cleaned up\n";
 }
 
 void NetworkManagerServer::RegisterObject(ObjectPtr _obj)

@@ -1,4 +1,5 @@
 #include "PacketSerializer.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <utility>
@@ -39,9 +40,121 @@ namespace RobotProtocol
             inStream.Read(value);
             return true;
         }
+
+        void WriteUInt64(OutputMemoryStream& outStream, uint64_t value)
+        {
+            outStream.Write(static_cast<uint32_t>(value & 0xffffffffu));
+            outStream.Write(static_cast<uint32_t>(value >> 32u));
+        }
+
+        bool ReadUInt64(InputMemoryStream& inStream, uint64_t& value)
+        {
+            uint32_t low = 0;
+            uint32_t high = 0;
+            if (!ReadUInt32(inStream, low)) return false;
+            if (!ReadUInt32(inStream, high)) return false;
+            value = static_cast<uint64_t>(low) |
+                (static_cast<uint64_t>(high) << 32u);
+            return true;
+        }
+
+        bool IsValidVisionIdentity(const std::string& value)
+        {
+            return !value.empty() &&
+                value.size() <= kMaxVisionIdentityBytes &&
+                std::all_of(
+                    value.begin(), value.end(),
+                    [](unsigned char byte)
+                    {
+                        return byte >= 0x21u && byte <= 0x7eu;
+                    });
+        }
+
+        bool WriteVisionIdentity(OutputMemoryStream& outStream,
+                                 const std::string& value)
+        {
+            if (!IsValidVisionIdentity(value)) return false;
+
+            const uint16_t length = static_cast<uint16_t>(value.size());
+            outStream.Write(length);
+            outStream.Write(value.data(), length);
+            return true;
+        }
+
+        bool ReadVisionIdentity(InputMemoryStream& inStream,
+                                std::string& value)
+        {
+            uint16_t length = 0;
+            if (!ReadUInt16(inStream, length)) return false;
+            if (length == 0 || length > kMaxVisionIdentityBytes ||
+                !HasBytes(inStream, length)) return false;
+
+            std::string decoded(length, '\0');
+            inStream.Read(decoded.data(), length);
+            if (!IsValidVisionIdentity(decoded)) return false;
+            value = std::move(decoded);
+            return true;
+        }
+
+        bool IsKnownVisionHelloRejectionReason(uint16_t rawReason)
+        {
+            switch (static_cast<VisionHelloRejectionReason>(rawReason))
+            {
+            case VisionHelloRejectionReason::NONE:
+            case VisionHelloRejectionReason::PROTOCOL_MISMATCH:
+            case VisionHelloRejectionReason::FEATURE_DISABLED:
+            case VisionHelloRejectionReason::INVALID_SOURCE:
+            case VisionHelloRejectionReason::MAP_CONTRACT_MISMATCH:
+            case VisionHelloRejectionReason::POSE_CONTRACT_MISMATCH:
+            case VisionHelloRejectionReason::DUPLICATE_SESSION:
+            case VisionHelloRejectionReason::MALFORMED_HANDSHAKE:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsKnownVisionTrackingState(uint8_t rawState)
+        {
+            switch (static_cast<VisionTrackingState>(rawState))
+            {
+            case VisionTrackingState::MEASURED:
+            case VisionTrackingState::HELD:
+            case VisionTrackingState::LOST:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsKnownVisionVerificationState(uint8_t rawState)
+        {
+            switch (static_cast<VisionVerificationState>(rawState))
+            {
+            case VisionVerificationState::UNKNOWN:
+            case VisionVerificationState::VERIFIED:
+            case VisionVerificationState::AWAITING_VERIFICATION:
+            case VisionVerificationState::REFERENCES_MISSING:
+            case VisionVerificationState::MISMATCH:
+            case VisionVerificationState::STALE:
+            case VisionVerificationState::INVALID:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        constexpr uint16_t kKnownVisionQualityFields =
+            VISION_QUALITY_DECISION_MARGIN |
+            VISION_QUALITY_CALIBRATION_RMS_ERROR |
+            VISION_QUALITY_VERIFICATION_REFERENCE_COUNT |
+            VISION_QUALITY_VERIFICATION_RMS_ERROR |
+            VISION_QUALITY_VERIFICATION_MAX_ERROR |
+            VISION_QUALITY_VERIFICATION_COVERAGE |
+            VISION_QUALITY_VERIFICATION_AGE;
     }
 
-    bool IsKnownPacketID(uint16_t rawPacketID)
+    bool IsKnownRobotPacketID(uint16_t rawPacketID)
     {
         switch (static_cast<PacketID>(rawPacketID))
         {
@@ -60,6 +173,25 @@ namespace RobotProtocol
         default:
             return false;
         }
+    }
+
+    bool IsKnownVisionPacketID(uint16_t rawPacketID)
+    {
+        switch (static_cast<PacketID>(rawPacketID))
+        {
+        case PacketID::VISION_HELLO:
+        case PacketID::VISION_HELLO_ACK:
+        case PacketID::VISION_OBSERVATION:
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    bool IsKnownPacketID(uint16_t rawPacketID)
+    {
+        return IsKnownRobotPacketID(rawPacketID) ||
+            IsKnownVisionPacketID(rawPacketID);
     }
 
     bool PeekPacketID(InputMemoryStream& inStream, PacketID& outPacketID)
@@ -343,5 +475,170 @@ namespace RobotProtocol
     bool ReadTimePayload(InputMemoryStream& inStream, TimePayload& outPayload)
     {
         return ReadUInt32(inStream, outPayload.timestampMs);
+    }
+
+    bool WriteVisionHelloPayload(OutputMemoryStream& outStream,
+                                 const VisionHelloPayload& payload)
+    {
+        if (!IsValidVisionIdentity(payload.mapContractID) ||
+            !IsValidVisionIdentity(payload.poseContractID)) return false;
+
+        outStream.Write(payload.protocolVersion);
+        outStream.Write(payload.sourceID);
+        WriteUInt64(outStream, payload.sessionID);
+        if (!WriteVisionIdentity(outStream, payload.mapContractID)) return false;
+        return WriteVisionIdentity(outStream, payload.poseContractID);
+    }
+
+    bool ReadVisionHelloPayload(InputMemoryStream& inStream,
+                                VisionHelloPayload& outPayload)
+    {
+        VisionHelloPayload decoded;
+        if (!ReadUInt16(inStream, decoded.protocolVersion)) return false;
+        if (!ReadUInt32(inStream, decoded.sourceID)) return false;
+        if (!ReadUInt64(inStream, decoded.sessionID)) return false;
+        if (!ReadVisionIdentity(inStream, decoded.mapContractID)) return false;
+        if (!ReadVisionIdentity(inStream, decoded.poseContractID)) return false;
+        if (inStream.GetRemainDataSize() != 0) return false;
+
+        outPayload = std::move(decoded);
+        return true;
+    }
+
+    bool WriteVisionHelloAckPayload(OutputMemoryStream& outStream,
+                                    const VisionHelloAckPayload& payload)
+    {
+        const uint16_t rawReason =
+            static_cast<uint16_t>(payload.rejectionReason);
+        if (payload.accepted > 1 ||
+            !IsKnownVisionHelloRejectionReason(rawReason) ||
+            (payload.accepted == 1 &&
+             payload.rejectionReason != VisionHelloRejectionReason::NONE) ||
+            (payload.accepted == 0 &&
+             payload.rejectionReason == VisionHelloRejectionReason::NONE))
+        {
+            return false;
+        }
+
+        outStream.Write(payload.protocolVersion);
+        outStream.Write(payload.accepted);
+        outStream.Write(rawReason);
+        outStream.Write(payload.sourceID);
+        WriteUInt64(outStream, payload.sessionID);
+        return true;
+    }
+
+    bool ReadVisionHelloAckPayload(InputMemoryStream& inStream,
+                                   VisionHelloAckPayload& outPayload)
+    {
+        VisionHelloAckPayload decoded;
+        uint16_t rawReason = 0;
+        if (!ReadUInt16(inStream, decoded.protocolVersion)) return false;
+        if (!ReadUInt8(inStream, decoded.accepted)) return false;
+        if (!ReadUInt16(inStream, rawReason)) return false;
+        if (!IsKnownVisionHelloRejectionReason(rawReason)) return false;
+        if (!ReadUInt32(inStream, decoded.sourceID)) return false;
+        if (!ReadUInt64(inStream, decoded.sessionID)) return false;
+        if (inStream.GetRemainDataSize() != 0) return false;
+
+        decoded.rejectionReason =
+            static_cast<VisionHelloRejectionReason>(rawReason);
+        if (decoded.accepted > 1 ||
+            (decoded.accepted == 1 &&
+             decoded.rejectionReason != VisionHelloRejectionReason::NONE) ||
+            (decoded.accepted == 0 &&
+             decoded.rejectionReason == VisionHelloRejectionReason::NONE))
+        {
+            return false;
+        }
+
+        outPayload = decoded;
+        return true;
+    }
+
+    bool WriteVisionObservationPayload(OutputMemoryStream& outStream,
+                                       const VisionObservationPayload& payload)
+    {
+        const uint8_t rawState = static_cast<uint8_t>(payload.state);
+        const uint8_t rawVerificationState =
+            static_cast<uint8_t>(payload.verificationState);
+        const bool stateHasPose =
+            payload.state == VisionTrackingState::MEASURED ||
+            payload.state == VisionTrackingState::HELD;
+        if (!IsKnownVisionTrackingState(rawState) ||
+            !IsKnownVisionVerificationState(rawVerificationState) ||
+            stateHasPose != payload.pose.has_value() ||
+            !IsValidVisionIdentity(payload.calibrationID) ||
+            (payload.quality.qualityFields &
+             static_cast<uint16_t>(~kKnownVisionQualityFields)) != 0)
+        {
+            return false;
+        }
+
+        WriteUInt64(outStream, payload.sourceTimestampUs);
+        outStream.Write(payload.reportedAgeMs);
+        outStream.Write(rawState);
+        if (payload.pose.has_value())
+        {
+            outStream.Write(payload.pose->xMm);
+            outStream.Write(payload.pose->zMm);
+            outStream.Write(payload.pose->headingDeg);
+        }
+        if (!WriteVisionIdentity(outStream, payload.calibrationID)) return false;
+        outStream.Write(rawVerificationState);
+        outStream.Write(payload.quality.qualityFields);
+        outStream.Write(payload.quality.decisionMargin);
+        outStream.Write(payload.quality.calibrationRmsErrorMm);
+        outStream.Write(payload.quality.verificationReferenceCount);
+        outStream.Write(payload.quality.verificationRmsErrorMm);
+        outStream.Write(payload.quality.verificationMaxErrorMm);
+        outStream.Write(payload.quality.verificationCoverageRatio);
+        outStream.Write(payload.quality.verificationAgeMs);
+        return true;
+    }
+
+    bool ReadVisionObservationPayload(InputMemoryStream& inStream,
+                                      VisionObservationPayload& outPayload)
+    {
+        VisionObservationPayload decoded;
+        uint8_t rawState = 0;
+        uint8_t rawVerificationState = 0;
+        if (!ReadUInt64(inStream, decoded.sourceTimestampUs)) return false;
+        if (!ReadUInt32(inStream, decoded.reportedAgeMs)) return false;
+        if (!ReadUInt8(inStream, rawState) ||
+            !IsKnownVisionTrackingState(rawState)) return false;
+        decoded.state = static_cast<VisionTrackingState>(rawState);
+
+        if (decoded.state == VisionTrackingState::MEASURED ||
+            decoded.state == VisionTrackingState::HELD)
+        {
+            VisionPose pose;
+            if (!ReadFloat(inStream, pose.xMm)) return false;
+            if (!ReadFloat(inStream, pose.zMm)) return false;
+            if (!ReadFloat(inStream, pose.headingDeg)) return false;
+            decoded.pose = pose;
+        }
+
+        if (!ReadVisionIdentity(inStream, decoded.calibrationID)) return false;
+        if (!ReadUInt8(inStream, rawVerificationState) ||
+            !IsKnownVisionVerificationState(rawVerificationState)) return false;
+        decoded.verificationState =
+            static_cast<VisionVerificationState>(rawVerificationState);
+        if (!ReadUInt16(inStream, decoded.quality.qualityFields)) return false;
+        if ((decoded.quality.qualityFields &
+             static_cast<uint16_t>(~kKnownVisionQualityFields)) != 0) return false;
+        if (!ReadFloat(inStream, decoded.quality.decisionMargin)) return false;
+        if (!ReadFloat(inStream, decoded.quality.calibrationRmsErrorMm)) return false;
+        if (!ReadUInt16(inStream,
+                        decoded.quality.verificationReferenceCount)) return false;
+        if (!ReadFloat(inStream, decoded.quality.verificationRmsErrorMm)) return false;
+        if (!ReadFloat(inStream, decoded.quality.verificationMaxErrorMm)) return false;
+        if (!ReadFloat(inStream,
+                       decoded.quality.verificationCoverageRatio)) return false;
+        if (!ReadUInt32(inStream, decoded.quality.verificationAgeMs)) return false;
+        if (inStream.GetRemainDataSize() != 0) return false;
+
+        outPayload = std::move(decoded);
+        return true;
     }
 }

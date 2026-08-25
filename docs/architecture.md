@@ -1,8 +1,8 @@
 # System architecture
 
-Last verified: 2026-08-07
+Last verified: 2026-08-25
 
-Implementation base: `e193f64` (`old-new-combined`) plus the physical-demo working tree
+Implementation base: `old-new-combined` 2026-08-25 working tree
 
 ## 한 문장 요약
 
@@ -13,6 +13,7 @@ flowchart LR
     Unity[Unity Digital Twin Viewer]
     ESP[ESP32 Physical AGV]
     Fake[FakeRobot]
+    Vision[AprilTag VisionTracker]
 
     subgraph Server[AGV_Server - Source of Truth]
         Net[NetworkManagerServer]
@@ -36,6 +37,7 @@ flowchart LR
     Repl --> Unity
     ESP <-->|RobotProtocol| Net
     Fake <-->|RobotProtocol| Net
+    Vision -->|Observation-only Vision protocol| Net
 ```
 
 ## 구성요소와 책임
@@ -55,18 +57,22 @@ flowchart LR
 | `ESP32RobotController` | route/cancel 전송, STATUS/ARRIVED를 서버 controller interface로 변환 | ESP32의 저수준 motor 제어 |
 | `ReplicationManagerServer` | 서버 object의 create/update 상태를 Unity로 전송 | route 명령 전송 |
 | `EventManager` | frame 사이에서 task/route 이벤트 전달 | network packet framing |
+| `VisionObservationStore` | 검증된 최신 Vision 관측을 AGV별로 별도 저장 | AGV pose 덮어쓰기, ARRIVED, 재계획, 예약, ESP32 명령 |
 
 ## 프로세스 시작과 tick 흐름
 
 ```text
 ServerMain
-  -> runtime mode 선택 (기본 AutomaticFleet, --physical-demo, --trajectory-preview)
+  -> runtime mode 선택 (기본 AutomaticFleet, --physical-fleet, --physical-demo,
+     --trajectory-preview, --trajectory-raised-wheel)
+  -> 독립 옵션 --vision-observation은 위 mode와 함께 observation-only receiver 활성화
   -> 기본 TCP 0.0.0.0:6666 bind/listen (--listen으로 test endpoint 변경 가능)
   -> ObjectRegistry 초기화
   -> NetworkManagerServer 초기화
-     -> AutomaticFleet: map/warehouse/route/task 초기화, TESTCASE3 AGV 5대 생성
+     -> AutomaticFleet: map/warehouse/route/task 초기화, TESTCASE0 AGV 4대 생성
+     -> PhysicalFleet: node 1의 실제 AGV 1대, command HELLO 뒤 자동 배차
      -> PhysicalDemo: route 초기화, node 1의 AGV 1대 생성, 자동 task 비활성화
-     -> TrajectoryPreview: node 1의 AGV 1대, 자동 task 비활성화, preview-only zero-speed [1 -> 4]
+     -> TrajectoryPreview/RaisedWheel: node 1의 AGV 1대, 자동 task 비활성화
      -> UnityRobotController 등록
   -> select() 기반 loop
      -> accept/read packet
@@ -74,7 +80,7 @@ ServerMain
      -> SendOutgoingReplicationPackets()
 ```
 
-현재 `_TESTCASE3`은 AGV 5대를 map node `1, 2, 3, 4, 5`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`와 `Shared/DispatchManager.hpp`의 compile-time test 설정이다.
+현재 `_TESTCASE0`은 기본 automatic mode의 AGV 4대를 map node `1, 2, 3, 4`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`와 `Shared/DispatchManager.hpp`의 compile-time test 설정이다.
 
 `--physical-demo`는 이 기본 world를 바꾸지 않는 별도 runtime mode다. 이 mode는 AGV 1의 RobotProtocol `HELLO` 이후 RoutePlanner를 통해 exact `[1 -> 2]` route만 만들며, 경로·예약·ARRIVED 수명주기를 그대로 사용한다. 목적은 motor-disabled 단일 실차 연동이다. Unity는 같은 server에 연결해 map과 AGV 1대의 상태를 렌더링할 수 있지만 route의 source of truth가 되지는 않는다.
 
@@ -100,12 +106,15 @@ EventManager
 
 ## 통신 경계
 
-서버는 한 TCP 포트에서 두 protocol을 처리한다.
+서버는 한 TCP 포트에서 세 protocol을 처리하며 최초 HELLO 뒤 client identity를 고정한다.
 
 - Unity legacy protocol: session, map, object replication
 - RobotProtocol v1: ESP32/FakeRobot의 HELLO, ROUTE, STATUS, ARRIVED, error/safety packet
+- Vision observation protocol: source/session/좌표 계약 HELLO와 MEASURED/HELD/LOST 관측. 기본 OFF이며 명시적 옵션에서만 수신
 
-TCP는 byte stream이므로 두 protocol 모두 frame 맨 앞의 `uint16 packetSize`로 메시지 경계를 구분한다. RobotProtocol의 상세 wire format은 [CommunicationProtocol.md](CommunicationProtocol.md)를 따른다.
+TCP는 byte stream이므로 세 protocol 모두 frame 맨 앞의 `uint16 packetSize`로 메시지 경계를 구분한다. Robot/Vision wire format은 [CommunicationProtocol.md](CommunicationProtocol.md)를 따른다.
+
+Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManagerServer::UpdateWorld()`는 Vision store를 읽지 않으므로 관측 수신만으로 AGV 위치, 경로, 점유 또는 제어 결과가 바뀌지 않는다.
 
 ## 물리 로봇 책임
 
@@ -121,8 +130,8 @@ TCP는 byte stream이므로 두 protocol 모두 frame 맨 앞의 `uint16 packetS
 ## 현재 구조의 명시적 한계
 
 - network loop는 `select()` 기반이며 생산 환경용 대규모 동시 접속 설계가 아니다.
-- reconnect 시 이전 robot session 정리와 offline timeout 보강이 남아 있다.
+- Vision 관측의 Unity 비교 표시와 실제 카메라 정확도 검증은 아직 연결하지 않았다.
 - native Windows socket build는 지원하지 않는다. 서버는 Linux/WSL에서 빌드한다.
 - Unity 프로젝트와 정식 ESP32 firmware 프로젝트가 이 저장소에 buildable source tree로 들어와 있지 않다.
 - `TrafficControlManager`, WPF/HMI는 현재 구현이 아니다.
-- 자동화된 unit/integration test target이 없다. FakeRobot 실행이 현재 대표 smoke test다.
+- `TrajectorySmokeTest`, trajectory preview와 `VisionObservationTest`가 CTest에 등록돼 있다. 전체 fleet TCP E2E는 여전히 FakeRobot smoke test가 대표 검증이다.

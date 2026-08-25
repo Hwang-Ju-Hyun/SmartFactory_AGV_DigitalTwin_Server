@@ -10,6 +10,7 @@ add_executable(AGV_Server
     RobotSession.cpp
     ESP32RobotController.cpp
     UnityRobotController.cpp
+    VisionObservationStore.cpp
 )
 
 #  정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
@@ -34,8 +35,16 @@ add_executable(TrajectoryPreview
 
 target_link_libraries(TrajectoryPreview PRIVATE Shared)
 
+add_executable(VisionObservationTest
+    VisionObservationTest.cpp
+    VisionObservationStore.cpp
+)
+
+target_link_libraries(VisionObservationTest PRIVATE Shared)
+
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
+    add_test(NAME vision_observation COMMAND VisionObservationTest)
     add_test(
         NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview

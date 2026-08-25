@@ -1,8 +1,8 @@
 # AGV Communication Protocol
 
-> 상태 안내(2026-08-06): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
+> 상태 안내(2026-08-25): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
 
-이 문서는 AGV Fleet Control System에서 Server, Unity Digital Twin, ESP32 Robot, FakeRobot이 어떻게 통신하는지 설명한다. 포트폴리오에서는 이 문서를 통해 "단순히 소켓을 연결했다"가 아니라, 실제 로봇 확장을 고려해서 프로토콜 경계와 책임을 분리했다는 점을 보여준다.
+이 문서는 AGV Fleet Control System에서 Server, Unity Digital Twin, ESP32 Robot, FakeRobot과 observation-only VisionTracker가 어떻게 통신하는지 설명한다. 포트폴리오에서는 이 문서를 통해 "단순히 소켓을 연결했다"가 아니라, 실제 로봇 확장을 고려해서 프로토콜 경계와 책임을 분리했다는 점을 보여준다.
 
 ## 1. 목표
 
@@ -80,12 +80,15 @@ flowchart LR
 
 ## 3. 통신 채널 구분
 
-이 프로젝트에는 통신 채널이 두 종류 있다.
+이 프로젝트에는 같은 TCP listener에서 식별 후 고정되는 통신 채널이 세 종류 있다.
 
 | 채널 | 사용 주체 | 목적 | 관련 코드 |
 |---|---|---|---|
 | Unity protocol | Server <-> Unity | 맵 전송, 오브젝트 생성/업데이트 replication | `Shared/header.hpp`, `NetworkManagerServer`, Unity `NetworkManagerClient.cs` |
 | RobotProtocol | Server <-> ESP32/FakeRobot | 로봇 등록, route 명령, 상태 보고, 도착 보고, 에러/정지 | `Shared/Protocol.hpp`, `Shared/PacketSerializer.*`, `Server/RobotSession.*`, ESP32 `RobotProtocol.*` |
+| Vision observation protocol | VisionTracker -> Server | 보정된 물리 pose 관측의 수신·검증·별도 보관 | `Shared/Protocol.hpp`, `Shared/PacketSerializer.*`, `Server/VisionObservationStore.*` |
+
+첫 frame은 각 protocol의 HELLO여야 한다. 연결이 Unity, Robot 또는 Vision으로 식별되면 같은 socket에서 다른 protocol로 전환할 수 없다. Vision 관측은 RobotSession이나 Unity replication session에 등록되지 않는다.
 
 포트폴리오에서는 RobotProtocol을 중심으로 설명하는 것이 좋다. 실제 AGV 연동의 핵심이 여기에 있기 때문이다.
 
@@ -218,6 +221,9 @@ Server의 `TCPSession`은 앞의 `packetSize` 2 byte를 기준으로 frame을 �
 | HELLO_ACK | 401 | Server -> Client | HELLO 승인/거절 |
 | ERROR_PACKET | 500 | Robot -> Server | 모터/배터리/장애물 등 에러 보고 |
 | EMERGENCY_STOP | 501 | Server -> Robot 또는 Robot -> Server | 비상정지 |
+| VISION_HELLO | 600 | VisionTracker -> Server | source/session 및 좌표 계약 등록 |
+| VISION_HELLO_ACK | 601 | Server -> VisionTracker | 기능/계약 승인 또는 거절 |
+| VISION_OBSERVATION | 602 | VisionTracker -> Server | 관측 전용 `MEASURED/HELD/LOST` 보고 |
 
 ## 7. ClientType
 
@@ -228,6 +234,7 @@ Server의 `TCPSession`은 앞의 `packetSize` 2 byte를 기준으로 frame을 �
 | ESP32 | 2 | 실제 ESP32 로봇 |
 | TOOL | 3 | 디버깅/관리 도구 확장용 |
 | FAKE_ROBOT | 4 | FakeRobot TCP emulator |
+| VISION_TRACKER | 5 | AprilTag 관측 source. Robot HELLO에는 사용하지 않음 |
 
 ESP32 쪽 코드에서는 Arduino 환경의 `ESP32` 매크로 이름 충돌을 피하기 위해 `ESP32_ROBOT` 이름을 사용하지만, wire value는 Server의 `ESP32 = 2`와 같다.
 
@@ -356,6 +363,67 @@ Server sampler는 directed node link를 순서대로 확인한 뒤 다음처럼 
 - 접선이 이어지는 LINE/BEZIER 경계는 정지 없이 연속 waypoint 생성
 
 2026-08-11 기준 `60 mm/map-unit` TestCase03 `[1 -> 4]` preview와 ESP32 motor-disabled follower trace가 통과했다. `--trajectory-preview`는 preview-only client에 speed 0만 보내고, `--trajectory-raised-wheel`은 command-capable client에만 `80 mm/s` 실행 trajectory를 보낸다. 두 mode 모두 자동 배차와 RoutePlanner를 사용하지 않으며, 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
+
+### 10.3.2 Vision observation packets
+
+Vision receiver는 기본값이 OFF다. 실제 카메라 보정 뒤 다음처럼 calibration identity를 명시한 경우에만 활성화한다.
+
+```bash
+./build/Server/AGV_Server --vision-observation \
+  --vision-calibration-id <LOCKED_CALIBRATION_ID>
+```
+
+현재 검토 기준은 VisionTracker commit `278cc431`의 TestCase0 계약이다.
+
+- source ID 기본값: `1` (`--vision-source-id`로 변경 가능)
+- map contract: `dd2c1523295b02ee`
+- pose contract: `f84eb43ebb6cf7ff`
+- 좌표: node 1 `(50,-36)` 원점, `50 mm/map-unit`, `0 deg=+x`, 반시계가 양수
+
+기능을 켤 때 Server는 active map의 node 1~15 ID와 좌표 전체가 이 canonical contract와 일치하는지도 확인한다. 한 node라도 다르면 main loop 진입 전에 startup을 실패시켜 이전 digest를 잘못 승인하지 않는다.
+
+`VISION_HELLO` payload:
+
+| Field | Type | 설명 |
+|---|---|---|
+| protocolVersion | uint16 | 현재 1 |
+| sourceID | uint32 | 카메라/프로세스 source identity, 0 금지 |
+| sessionID | uint64 | 프로세스 재시작마다 새 값, low uint32 뒤 high uint32 순서 |
+| mapContractID | uint16 length + bytes | 1~64자 visible ASCII |
+| poseContractID | uint16 length + bytes | 1~64자 visible ASCII |
+
+`VISION_HELLO_ACK`은 version, accepted, rejection reason, sourceID와 sessionID를 돌려준다. 기능 OFF, protocol/source 오류, map/pose 계약 불일치와 중복 session을 구분해 거절한다.
+
+`VISION_OBSERVATION`의 공통 header `agvID`는 관측 대상 AGV이며 `sequence`는 승인된 source/session에서 엄격히 증가해야 한다. 이 값은 Python `PoseEstimate.source_sequence`와 별도인 transport sequence다. MEASURED뿐 아니라 HELD/LOST를 보낼 때도 packet마다 증가시키며, Server가 payload를 거부했더라도 같은 sequence를 재사용하지 않는다. source/session과 map/pose 계약은 TCP session의 승인된 HELLO에서 가져오며 packet마다 다시 신뢰하지 않는다.
+
+| Field | Type | 설명 |
+|---|---|---|
+| sourceTimestampUs | uint64 | sender process-local monotonic metadata. Server 시계와 직접 비교 금지 |
+| reportedAgeMs | uint32 | sender가 계산한 관측 age |
+| trackingState | uint8 | `MEASURED=1`, `HELD=2`, `LOST=3` |
+| xMm, zMm, headingDeg | float x3, conditional | MEASURED/HELD에만 존재. LOST에는 byte 자체가 없음 |
+| calibrationID | uint16 length + bytes | 실행 옵션의 locked calibration ID와 일치해야 함 |
+| verificationState | uint8 | verified/awaiting/missing/mismatch/stale/invalid 상태 |
+| qualityFields | uint16 | 뒤 quality 값의 유효 필드 mask |
+| decisionMargin | float | quality bit 0 |
+| calibrationRmsErrorMm | float | quality bit 1 |
+| verificationReferenceCount | uint16 | quality bit 2 |
+| verificationRmsErrorMm | float | quality bit 3 |
+| verificationMaxErrorMm | float | quality bit 4 |
+| verificationCoverageRatio | float | quality bit 5, 0~1 |
+| verificationAgeMs | uint32 | quality bit 6 |
+
+quality scalar는 위 순서로 항상 모두 전송한다. 대응 bit가 없는 scalar는 canonical `0`이어야 하며 Server는 non-zero/NaN placeholder를 거부한다.
+
+실제 sender transport는 locked calibration이 생긴 뒤에만 활성화한다. 따라서 LOST도 승인된 calibration ID를 보낸다. 아직 한 번도 측정되지 않은 초기 LOST는 `sourceTimestampUs=0`, `reportedAgeMs=0`, pose 없음으로 인코딩한다. 측정 이후 LOST의 sender timestamp/age는 진단용일 뿐이며 Server는 pose로 재사용하지 않는다.
+
+Server는 non-finite/범위 밖 pose, 잘못된 AGV·identity, stale age, 역순 sequence, 잘못된 state/pose 조합과 quality를 거부한다. freshness는 sender timestamp가 아니라 Server의 monotonic receive time으로 판단한다. 저장 위치는 `VisionObservationStore`이며 다음 값과 섞지 않는다.
+
+- Server 계획/authoritative pose
+- ESP32 encoder/status pose
+- ARRIVED, RoutePlanner, ReservationTable, OccupancyProvider, TaskManager
+
+따라서 이 단계의 Vision packet은 로봇 명령, 도착 판정, 재계획 또는 Unity의 기존 AGV 위치를 변경하지 않는다.
 
 ### 10.4 STATUS
 

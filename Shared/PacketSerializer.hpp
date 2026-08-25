@@ -34,6 +34,8 @@ namespace RobotProtocol
         std::vector<TrajectoryWaypoint> waypoints;
     };
 
+    bool IsKnownRobotPacketID(uint16_t rawPacketID);
+    bool IsKnownVisionPacketID(uint16_t rawPacketID);
     bool IsKnownPacketID(uint16_t rawPacketID);
     bool PeekPacketID(InputMemoryStream& inStream, PacketID& outPacketID);
 
@@ -63,4 +65,13 @@ namespace RobotProtocol
 
     void WriteTimePayload(OutputMemoryStream& outStream, const TimePayload& payload);
     bool ReadTimePayload(InputMemoryStream& inStream, TimePayload& outPayload);
+
+    bool WriteVisionHelloPayload(OutputMemoryStream& outStream, const VisionHelloPayload& payload);
+    bool ReadVisionHelloPayload(InputMemoryStream& inStream, VisionHelloPayload& outPayload);
+
+    bool WriteVisionHelloAckPayload(OutputMemoryStream& outStream, const VisionHelloAckPayload& payload);
+    bool ReadVisionHelloAckPayload(InputMemoryStream& inStream, VisionHelloAckPayload& outPayload);
+
+    bool WriteVisionObservationPayload(OutputMemoryStream& outStream, const VisionObservationPayload& payload);
+    bool ReadVisionObservationPayload(InputMemoryStream& inStream, VisionObservationPayload& outPayload);
 }

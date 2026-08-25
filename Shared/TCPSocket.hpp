@@ -9,6 +9,7 @@ using TCPSocketPtr=std::shared_ptr<TCPSocket>;
 class TCPSocket
 {
 public:
+    ~TCPSocket();
     int Bind(const SocketAddress& _inAddr);    
     int Listen(int _inBackLog=32);
     int Connect(const SocketAddress& _inAddress);    

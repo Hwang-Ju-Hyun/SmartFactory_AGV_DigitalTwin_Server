@@ -134,6 +134,9 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
     case RobotProtocol::PacketID::ROUTE_COMMAND:
     case RobotProtocol::PacketID::TRAJECTORY_COMMAND:
     case RobotProtocol::PacketID::CANCEL_ROUTE:
+    case RobotProtocol::PacketID::VISION_HELLO:
+    case RobotProtocol::PacketID::VISION_HELLO_ACK:
+    case RobotProtocol::PacketID::VISION_OBSERVATION:
         break;
     }
 }

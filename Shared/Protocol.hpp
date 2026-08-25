@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <optional>
+#include <string>
 
 namespace RobotProtocol
 {
@@ -7,6 +9,10 @@ namespace RobotProtocol
     constexpr uint16_t kMaxRouteNodes = 64;
     constexpr uint8_t kTrajectoryFormatVersion = 1;
     constexpr uint16_t kMaxTrajectoryWaypoints = 64;
+    // Vision identities are length-prefixed byte strings on the wire. The
+    // current VisionTracker uses 16-character digest IDs, while this limit
+    // leaves room for a full SHA-256 hex digest without unbounded allocation.
+    constexpr uint16_t kMaxVisionIdentityBytes = 64;
 
     enum ClientCapability : uint32_t
     {
@@ -23,7 +29,8 @@ namespace RobotProtocol
         UNITY = 1,
         ESP32 = 2,
         TOOL = 3,
-        FAKE_ROBOT = 4
+        FAKE_ROBOT = 4,
+        VISION_TRACKER = 5
     };
 
     enum class PacketID : uint16_t
@@ -42,7 +49,11 @@ namespace RobotProtocol
         HELLO_ACK = 401,
 
         ERROR_PACKET = 500,
-        EMERGENCY_STOP = 501
+        EMERGENCY_STOP = 501,
+
+        VISION_HELLO = 600,
+        VISION_HELLO_ACK = 601,
+        VISION_OBSERVATION = 602
     };
 
     enum class RobotState : uint8_t
@@ -65,6 +76,51 @@ namespace RobotProtocol
         MOTOR_FAULT = 100,
         LOW_BATTERY = 101,
         OBSTACLE_DETECTED = 102
+    };
+
+    enum class VisionHelloRejectionReason : uint16_t
+    {
+        NONE = 0,
+        PROTOCOL_MISMATCH = 1,
+        FEATURE_DISABLED = 2,
+        INVALID_SOURCE = 3,
+        MAP_CONTRACT_MISMATCH = 4,
+        POSE_CONTRACT_MISMATCH = 5,
+        DUPLICATE_SESSION = 6,
+        MALFORMED_HANDSHAKE = 7
+    };
+
+    enum class VisionTrackingState : uint8_t
+    {
+        MEASURED = 1,
+        HELD = 2,
+        LOST = 3
+    };
+
+    // Mirrors the locked-calibration guard states emitted by VisionTracker.
+    // A pose must still be rejected by the Server unless the observation and
+    // its associated session satisfy the Server's validation policy.
+    enum class VisionVerificationState : uint8_t
+    {
+        UNKNOWN = 0,
+        VERIFIED = 1,
+        AWAITING_VERIFICATION = 2,
+        REFERENCES_MISSING = 3,
+        MISMATCH = 4,
+        STALE = 5,
+        INVALID = 6
+    };
+
+    enum VisionQualityField : uint16_t
+    {
+        VISION_QUALITY_NONE = 0,
+        VISION_QUALITY_DECISION_MARGIN = 1u << 0,
+        VISION_QUALITY_CALIBRATION_RMS_ERROR = 1u << 1,
+        VISION_QUALITY_VERIFICATION_REFERENCE_COUNT = 1u << 2,
+        VISION_QUALITY_VERIFICATION_RMS_ERROR = 1u << 3,
+        VISION_QUALITY_VERIFICATION_MAX_ERROR = 1u << 4,
+        VISION_QUALITY_VERIFICATION_COVERAGE = 1u << 5,
+        VISION_QUALITY_VERIFICATION_AGE = 1u << 6
     };
 
 #pragma pack(push, 1)
@@ -129,6 +185,63 @@ namespace RobotProtocol
     struct TimePayload
     {
         uint32_t timestampMs = 0;
+    };
+
+    struct VisionHelloPayload
+    {
+        uint16_t protocolVersion = kProtocolVersion;
+        uint32_t sourceID = 0;
+        uint64_t sessionID = 0;
+        std::string mapContractID;
+        std::string poseContractID;
+    };
+
+    struct VisionHelloAckPayload
+    {
+        uint16_t protocolVersion = kProtocolVersion;
+        uint8_t accepted = 0;
+        VisionHelloRejectionReason rejectionReason =
+            VisionHelloRejectionReason::NONE;
+        uint32_t sourceID = 0;
+        uint64_t sessionID = 0;
+    };
+
+    struct VisionPose
+    {
+        float xMm = 0.0f;
+        float zMm = 0.0f;
+        float headingDeg = 0.0f;
+    };
+
+    struct VisionQualityMetadata
+    {
+        // qualityFields identifies which numeric values are available. The
+        // scalar fields remain fixed-width to keep parsing deterministic.
+        uint16_t qualityFields = VISION_QUALITY_NONE;
+        float decisionMargin = 0.0f;
+        float calibrationRmsErrorMm = 0.0f;
+        uint16_t verificationReferenceCount = 0;
+        float verificationRmsErrorMm = 0.0f;
+        float verificationMaxErrorMm = 0.0f;
+        float verificationCoverageRatio = 0.0f;
+        uint32_t verificationAgeMs = 0;
+    };
+
+    struct VisionObservationPayload
+    {
+        // Sender-process monotonic metadata. It is not comparable to the
+        // Server clock and must never drive Server freshness decisions; use
+        // Server receive time for that purpose.
+        uint64_t sourceTimestampUs = 0;
+        uint32_t reportedAgeMs = 0;
+        VisionTrackingState state = VisionTrackingState::LOST;
+        // MEASURED and HELD require a pose; LOST requires no pose. The wire
+        // format omits x/z/heading entirely for LOST observations.
+        std::optional<VisionPose> pose;
+        std::string calibrationID;
+        VisionVerificationState verificationState =
+            VisionVerificationState::UNKNOWN;
+        VisionQualityMetadata quality;
     };
 
     enum TrajectoryWaypointFlag : uint8_t

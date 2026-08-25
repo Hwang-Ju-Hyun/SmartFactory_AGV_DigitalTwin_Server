@@ -9,8 +9,11 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <utility>
 bool g_LOOP=true;
 
 namespace
@@ -33,11 +36,48 @@ namespace
         return "UNKNOWN";
     }
 
+    bool IsValidVisionIdentity(std::string_view identity)
+    {
+        if (identity.empty() ||
+            identity.size() > RobotProtocol::kMaxVisionIdentityBytes)
+        {
+            return false;
+        }
+        return std::all_of(identity.begin(), identity.end(), [](char value)
+        {
+            const unsigned char character = static_cast<unsigned char>(value);
+            return character >= 0x21 && character <= 0x7e;
+        });
+    }
+
+    bool TryParsePositiveUInt32(std::string_view text, uint32_t& outValue)
+    {
+        try
+        {
+            std::size_t consumed = 0;
+            const unsigned long parsed = std::stoul(std::string(text), &consumed, 10);
+            if (consumed != text.size() || parsed == 0 ||
+                parsed > std::numeric_limits<uint32_t>::max())
+            {
+                return false;
+            }
+            outValue = static_cast<uint32_t>(parsed);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
     bool TryParseOptions(int argc, char** argv, ServerRunMode& outRunMode,
-                         std::string& outListenAddress, bool& outHelpRequested)
+                         std::string& outListenAddress,
+                         VisionObservationServerConfig& outVisionConfig,
+                         bool& outHelpRequested)
     {
         outRunMode = ServerRunMode::AutomaticFleet;
         outListenAddress = "0.0.0.0:6666";
+        outVisionConfig = {};
         outHelpRequested = false;
         bool explicitModeSelected = false;
 
@@ -88,13 +128,17 @@ namespace
             {
                 outHelpRequested = true;
                 std::cout << "Usage: AGV_Server [--physical-fleet | --physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
-                             " [--listen ADDRESS:PORT]\n"
+                             " [--listen ADDRESS:PORT] [--vision-observation --vision-calibration-id ID]"
+                             " [--vision-source-id ID]\n"
                           << "  no option             Run the TestCase0 automatic simulated world\n"
                           << "  --physical-fleet      Run the real TestCase0 LINE fleet with physical AGV 1\n"
                           << "  --physical-demo       Run one AGV and issue only logical route [1 -> 2]\n"
                           << "  --trajectory-preview  Send motor-locked preview [1 -> 4] only to a preview-capable robot\n"
                           << "  --trajectory-raised-wheel  Send executable 80 mm/s [1 -> 4] only to a command-capable robot\n"
-                          << "  --listen ADDRESS:PORT Override the default 0.0.0.0:6666 listener\n";
+                          << "  --listen ADDRESS:PORT Override the default 0.0.0.0:6666 listener\n"
+                          << "  --vision-observation Enable observation-only VisionTracker input (default OFF)\n"
+                          << "  --vision-calibration-id ID Require this locked calibration identity\n"
+                          << "  --vision-source-id ID Require this non-zero source identity (default 1)\n";
                 return false;
             }
             else if (argument == "--listen")
@@ -106,13 +150,50 @@ namespace
                 }
                 outListenAddress = argv[++i];
             }
+            else if (argument == "--vision-observation")
+            {
+                outVisionConfig.enabled = true;
+            }
+            else if (argument == "--vision-calibration-id")
+            {
+                if (i + 1 >= argc)
+                {
+                    std::cerr << "--vision-calibration-id requires ID\n";
+                    return false;
+                }
+                outVisionConfig.expectedCalibrationID = argv[++i];
+            }
+            else if (argument == "--vision-source-id")
+            {
+                if (i + 1 >= argc ||
+                    !TryParsePositiveUInt32(argv[++i], outVisionConfig.expectedSourceID))
+                {
+                    std::cerr << "--vision-source-id requires a non-zero uint32 value\n";
+                    return false;
+                }
+            }
             else
             {
                 std::cerr << "Unknown option: " << argument << "\n"
                           << "Usage: AGV_Server [--physical-fleet | --physical-demo | --trajectory-preview | --trajectory-raised-wheel]"
-                             " [--listen ADDRESS:PORT]\n";
+                             " [--listen ADDRESS:PORT] [--vision-observation --vision-calibration-id ID]"
+                             " [--vision-source-id ID]\n";
                 return false;
             }
+        }
+
+        if (outVisionConfig.enabled &&
+            !IsValidVisionIdentity(outVisionConfig.expectedCalibrationID))
+        {
+            std::cerr << "--vision-observation requires a 1-64 character visible-ASCII"
+                         " --vision-calibration-id\n";
+            return false;
+        }
+        if (!outVisionConfig.enabled &&
+            !outVisionConfig.expectedCalibrationID.empty())
+        {
+            std::cerr << "--vision-calibration-id requires --vision-observation\n";
+            return false;
         }
 
         return true;
@@ -123,12 +204,16 @@ int main(int argc, char** argv)
 {
     ServerRunMode runMode;
     std::string listenAddress;
+    VisionObservationServerConfig visionConfig;
     bool helpRequested = false;
-    if (!TryParseOptions(argc, argv, runMode, listenAddress, helpRequested))
+    if (!TryParseOptions(
+            argc, argv, runMode, listenAddress, visionConfig, helpRequested))
         return helpRequested ? 0 : 2;
 
     std::cout << "[Server] mode=" << RunModeName(runMode)
-              << " listen=" << listenAddress << "\n";
+              << " listen=" << listenAddress
+              << " vision=" << (visionConfig.enabled ? "OBSERVATION_ONLY" : "OFF")
+              << "\n";
 
     SocketAddressPtr serverAddr = SocketAddressFactory::CreateIPv4FromString(listenAddress);
     if (!serverAddr)
@@ -152,7 +237,16 @@ int main(int argc, char** argv)
 
     ObjectRegistry::sInstance->StaticInit();
     
-    NetworkManagerServer::sInstance->StaticInit(runMode);
+    try
+    {
+        NetworkManagerServer::sInstance->StaticInit(
+            runMode, std::move(visionConfig));
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "Server initialization failed: " << error.what() << "\n";
+        return 2;
+    }
     
     const std::chrono::duration<double> kTickDuration(1.0 / 30.0); 
     auto lastUpdateTime = std::chrono::high_resolution_clock::now();
@@ -211,6 +305,8 @@ int main(int argc, char** argv)
                         {
                             std::cout<<"Client disconnected"<<std::endl;
                             closedSockets.push_back(socket);
+                            NetworkManagerServer::sInstance->OnClientDisconnected(
+                                currentClientPtr.get());
                         }                    
                     }                
                 }        

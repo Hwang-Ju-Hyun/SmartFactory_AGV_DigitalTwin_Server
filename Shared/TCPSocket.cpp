@@ -8,6 +8,15 @@ TCPSocket::TCPSocket(SOCKET _socket)
 {
 }
 
+TCPSocket::~TCPSocket()
+{
+    if (m_Socket != static_cast<SOCKET>(-1))
+    {
+        close(m_Socket);
+        m_Socket = static_cast<SOCKET>(-1);
+    }
+}
+
 int TCPSocket::Bind(const SocketAddress& _inAddress)
 {
     int result = bind(m_Socket,&_inAddress.m_sockAddr,_inAddress.GetSize());
@@ -75,13 +84,28 @@ UDP의 SendTo / ReceiveFrom과 달리 주소 인자가 없습니다.
 
 int TCPSocket::Send(const void* _inData,size_t _inLen)
 {
-    int SendBytes=send(m_Socket,static_cast<const char*>(_inData),_inLen,0);
-    if(SendBytes<0)
+    const char* data = static_cast<const char*>(_inData);
+    size_t totalSent = 0;
+    while (totalSent < _inLen)
     {
-        std::cout<<"Semd Error : "<<strerror(errno)<<std::endl;
-        return ERROR;
-    }        
-    return SendBytes;
+        const ssize_t sendBytes = send(
+            m_Socket, data + totalSent, _inLen - totalSent, MSG_NOSIGNAL);
+        if (sendBytes < 0)
+        {
+            if (errno == EINTR)
+                continue;
+
+            std::cout << "Send Error : " << strerror(errno) << std::endl;
+            return ERROR;
+        }
+        if (sendBytes == 0)
+        {
+            std::cout << "Send Error : connection closed" << std::endl;
+            return ERROR;
+        }
+        totalSent += static_cast<size_t>(sendBytes);
+    }
+    return static_cast<int>(totalSent);
 }
 
 int TCPSocket::Receive(void* _outData,size_t _inLen)

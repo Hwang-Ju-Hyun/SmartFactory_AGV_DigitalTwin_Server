@@ -1,8 +1,8 @@
 # Current project status
 
-Last verified: 2026-08-13
+Last verified: 2026-08-25
 
-Implementation base: Server `df9d641` plus the TestCase0 map working tree, ESP32 `668622cf`, Unity `b821d0c2`
+Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
 Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
@@ -21,7 +21,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 | 영역 | 상태 | 근거/메모 |
 |---|---|---|
-| C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `TrajectorySmokeTest`, `TrajectoryPreview`, `AGV_Client` target |
+| C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `TrajectorySmokeTest`, `TrajectoryPreview`, `VisionObservationTest`, `AGV_Client` target |
 | Server-authoritative world | 구현됨 | TESTCASE0 및 실제 AGV 1용 `--physical-fleet` |
 | WHCA* 계열 route planning | 검증 완료 | smoke test에서 route 생성과 후속 route 재전송 확인 |
 | 시간 기반 node/edge/goal reservation | 검증 완료 | server/FakeRobot smoke flow에서 사용 |
@@ -30,10 +30,19 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
-| 자동화된 test target | 일부 구현 | synthetic `TrajectorySmokeTest`와 canonical-map `[1 -> 4]` preview test 통과; 전체 fleet test framework는 없음 |
+| Vision 관측 수신 기반 | 구현됨·실카메라 검증 필요 | 기본 OFF, source/session·계약·pose 검증 후 AGV별 별도 저장; 제어 반영 없음 |
+| 자동화된 test target | 일부 구현 | trajectory 2개와 Vision serializer/store CTest 통과; 전체 fleet test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-25 VisionTracker observation-only Server 기반
+
+- Windows VisionTracker `278cc431`의 TestCase0 좌표·pose 계약을 기준으로 `VISION_HELLO/ACK/OBSERVATION` field serializer와 client identity 고정을 추가했다.
+- 기능은 기본 OFF이며 `--vision-observation --vision-calibration-id <ID>`에서만 켜진다. 실제 calibration ID는 카메라 보정 전이므로 placeholder를 코드에 넣지 않았다.
+- 유효 관측은 planned/ESP32 상태와 분리된 `VisionObservationStore`에만 저장한다. AGV pose, ARRIVED, 경로·예약·TaskManager·ESP32 명령에는 사용하지 않는다.
+- malformed/NaN/Inf, unknown AGV, identity·map·pose contract 불일치, stale/out-of-order/out-of-map/state-pose 오류를 거부한다.
+- CMake build와 CTest 3개가 통과했다. 실제 카메라 TCP 송신과 Unity 실측 marker는 아직 구현·검증하지 않았다. 별도 가짜 Vision 송신기는 만들지 않았다.
 
 ### 2026-08-13 TestCase0 실제 LINE fleet
 
@@ -43,7 +52,8 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 - 실제 운용 scale `50 mm/map-unit`에서 link 하나는 200 mm, 전체 격자는 약 `800 x 400 mm`다.
 - `--physical-fleet`은 node 1의 실제 AGV 1대만 만들고, COMMAND HELLO 뒤 실제 TaskManager/RoutePlanner 자동 배차를 시작한다.
 - 자동 경로는 `50 mm/map-unit`, `80 mm/s`, LINE endpoint와 제자리 회전 waypoint로 변환된다.
-- ESP32는 실제 node boundary마다 ARRIVED를 한 번 보고해야 한다. Server CMake build는 통과했으며 실제 주행은 아직 수행하지 않았다.
+- ESP32는 실제 node boundary마다 ARRIVED를 한 번 보고한다. 자동 바닥 주행과 Unity 연동은 사용자 실차에서 동작했지만 직진·제자리 회전 오차가 커서 제어 보정 전 반복 운용은 중단한 상태다.
+- Unity 또는 portproxy 연결이 갑자기 끊겼을 때 Linux `SIGPIPE`로 Server가 종료되던 문제를 수정했다. TCP send는 `MSG_NOSIGNAL`과 전체-byte 전송을 사용하고, 끊어진 proxy/robot session을 명부에서 제거한다. localhost 강제 RST 재현에서 Server 생존과 session cleanup을 확인했다.
 
 ### 2026-08-11 TestCase03 map과 Bezier preview
 

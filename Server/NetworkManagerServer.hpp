@@ -3,6 +3,9 @@
 #include "TCPSocket.hpp"
 #include "ClientProxy.hpp"
 #include "RobotSession.hpp"
+#include "VisionObservationStore.hpp"
+#include <optional>
+#include <string>
 #include <unordered_map>
 
 class LinkingContext;
@@ -16,20 +19,58 @@ enum class ServerRunMode
     TrajectoryRaisedWheel
 };
 
+struct VisionObservationServerConfig
+{
+    bool enabled = false;
+    uint32_t expectedSourceID = 1;
+    std::string expectedCalibrationID;
+    std::string expectedMapContractID = "dd2c1523295b02ee";
+    std::string expectedPoseContractID = "f84eb43ebb6cf7ff";
+};
+
+struct VisionClientSession
+{
+    uint32_t sourceID = 0;
+    uint64_t sessionID = 0;
+    std::string mapContractID;
+    std::string poseContractID;
+    bool hasReceivedObservation = false;
+    uint32_t lastObservationSequence = 0;
+};
+
 class NetworkManagerServer
 {
 private:
-    explicit NetworkManagerServer(ServerRunMode _runMode);
+    NetworkManagerServer(ServerRunMode _runMode,
+                         VisionObservationServerConfig _visionConfig);
     float m_TotalElapsedServerTime;
     ServerRunMode m_RunMode;
+    VisionObservationServerConfig m_VisionConfig;
+    std::unique_ptr<VisionObservationStore> m_VisionObservationStore;
 public:
     static std::unique_ptr<NetworkManagerServer> sInstance;    
-    static void StaticInit(ServerRunMode _runMode = ServerRunMode::AutomaticFleet);
+    static void StaticInit(
+        ServerRunMode _runMode = ServerRunMode::AutomaticFleet,
+        VisionObservationServerConfig _visionConfig = {});
 public:
     void ProcessPacket(ClientProxy* _cs,InputMemoryStream& _stream);
 private:
+    void ProcessUnityPacket(ClientProxy* _proxy, InputMemoryStream& _stream);
     bool TryProcessRobotProtocolPacket(ClientProxy* _proxy, InputMemoryStream& _stream);
+    bool TryProcessVisionProtocolPacket(ClientProxy* _proxy, InputMemoryStream& _stream);
     void HandleRobotHelloPacket(ClientProxy* _proxy, const RobotProtocol::PacketBodyHeader& _header, InputMemoryStream& _stream);
+    void HandleVisionHelloPacket(ClientProxy* _proxy,
+                                 const RobotProtocol::PacketBodyHeader& _header,
+                                 InputMemoryStream& _stream);
+    void HandleVisionObservationPacket(
+        ClientProxy* _proxy,
+        const RobotProtocol::PacketBodyHeader& _header,
+        InputMemoryStream& _stream);
+    void SendVisionHelloAck(
+        ClientProxy* _proxy,
+        uint32_t _sequence,
+        const RobotProtocol::VisionHelloAckPayload& _payload);
+    void InitializeVisionObservationStore();
     RobotSessionPtr FindRobotSession(ClientProxy* _proxy, uint32_t _agvID);
     void HandleHello_Packet(ClientProxy* _proxy,InputMemoryStream& _instream);
     void SendHello_Packet(ClientProxy* _proxy);
@@ -46,14 +87,24 @@ private:
     std::unordered_map<uint32_t,ClientProxy*> m_SessionIdToProxyMap;
     std::unordered_map<uint32_t, RobotSessionPtr> m_AgvIdToRobotSessionMap;
     std::unordered_map<ClientProxy*, RobotSessionPtr> m_ProxyToRobotSessionMap;
+    std::unordered_map<ClientProxy*, VisionClientSession> m_ProxyToVisionSessionMap;
+    std::unordered_map<uint32_t, ClientProxy*> m_VisionSourceToProxyMap;
     static uint32_t nextSessionID;
 private:
     LinkingContext* m_LinkingContext; 
 public: 
     void OnClientAccepted(TCPSocketPtr _tcpSocket);
+    void OnClientDisconnected(ClientProxy* _proxy);
     std::vector<ClientProxyPtr> GetPendingProxies()const{return m_PendingProxies;}
 public:
     LinkingContext* GetLinkingContext()const{return m_LinkingContext;}
+    std::optional<StoredVisionObservation> GetLatestVisionObservation(
+        uint32_t _agvID) const
+    {
+        if (!m_VisionObservationStore)
+            return std::nullopt;
+        return m_VisionObservationStore->GetLatest(_agvID);
+    }
     void RegisterObject(ObjectPtr _obj);
     void SendOutgoingReplicationPackets();
 private:
