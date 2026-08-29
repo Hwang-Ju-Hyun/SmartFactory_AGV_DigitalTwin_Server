@@ -1,6 +1,6 @@
 # AGV Communication Protocol
 
-> 상태 안내(2026-08-25): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
+> 상태 안내(2026-08-29): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
 
 이 문서는 AGV Fleet Control System에서 Server, Unity Digital Twin, ESP32 Robot, FakeRobot과 observation-only VisionTracker가 어떻게 통신하는지 설명한다. 포트폴리오에서는 이 문서를 통해 "단순히 소켓을 연결했다"가 아니라, 실제 로봇 확장을 고려해서 프로토콜 경계와 책임을 분리했다는 점을 보여준다.
 
@@ -159,6 +159,7 @@ Unity protocol은 `packetSize` 뒤에 1 byte짜리 `UnityPacketType`을 둔다. 
 - `UPT_HELLO`: server가 Unity client에게 sessionID를 알려준다.
 - `UPT_MAZE_DATA`: map nodes, links를 전송한다.
 - `UPT_REPLICATION`: object create/update/destroy command를 전송한다.
+- `UPT_VISION_OBSERVATION`: 검증된 Vision pose를 기존 AGV와 분리된 비교 marker용으로 전송한다.
 - `UPT_READY_MAP`, `UPT_READY_OBJECT`: legacy 준비 완료 packet이다.
 
 `UPT_REPLICATION` payload는 다음 구조를 가진다.
@@ -373,10 +374,10 @@ Vision receiver는 기본값이 OFF다. 실제 카메라 보정 뒤 다음처럼
   --vision-calibration-id <LOCKED_CALIBRATION_ID>
 ```
 
-현재 검토 기준은 VisionTracker commit `278cc431`의 TestCase0 계약이다.
+현재 Server 기준은 350 mm node pitch로 갱신한 TestCase0 계약이다. VisionTracker 저장소의 계약 snapshot도 실제 송신 연결 전에 같은 좌표로 갱신해야 한다.
 
 - source ID 기본값: `1` (`--vision-source-id`로 변경 가능)
-- map contract: `dd2c1523295b02ee`
+- map contract: `67254eca75c55e5c`
 - pose contract: `f84eb43ebb6cf7ff`
 - 좌표: node 1 `(50,-36)` 원점, `50 mm/map-unit`, `0 deg=+x`, 반시계가 양수
 
@@ -423,7 +424,33 @@ Server는 non-finite/범위 밖 pose, 잘못된 AGV·identity, stale age, 역순
 - ESP32 encoder/status pose
 - ARRIVED, RoutePlanner, ReservationTable, OccupancyProvider, TaskManager
 
-따라서 이 단계의 Vision packet은 로봇 명령, 도착 판정, 재계획 또는 Unity의 기존 AGV 위치를 변경하지 않는다.
+따라서 Vision packet은 로봇 명령, 도착 판정, 재계획 또는 Unity의 기존 AGV 위치를 변경하지 않는다. Server는 검증된 최신 관측을 별도 비교 표시에만 쓰도록 Unity legacy channel의 `UPT_VISION_OBSERVATION=6`으로 중계한다.
+
+`UPT_VISION_OBSERVATION` direction은 Server -> Unity이며, outer `uint16 packetSize` 뒤 packet body는 다음 고정 27 byte다. `packetSize` 자체까지 포함한 전체 TCP frame은 29 byte다. 기존 Unity packet과 같이 little-endian field serializer를 사용하고 C++ 구조체 padding은 전송하지 않는다.
+
+| Field | Type | 설명 |
+|---|---|---|
+| packetType | uint8 | `6` (`UPT_VISION_OBSERVATION`) |
+| agvID | uint32 | 관측 대상. 기존 replication AGV의 network ID와 대응 |
+| transportSequence | uint32 | 승인된 원본 `VISION_OBSERVATION` sequence |
+| trackingState | uint8 | `MEASURED=1`, `HELD=2`, `LOST=3` |
+| poseValid | uint8 | 아래 pose를 그려도 되면 1, 숨겨야 하면 0 |
+| serverX | float | Server map X |
+| serverZ | float | Server map Z |
+| headingRadians | float | Server/Unity heading radian |
+| serverReceiveAgeMs | uint32 | Server monotonic receive 시점 기준 age |
+
+좌표 변환은 활성 Vision map 계약을 그대로 사용한다.
+
+```text
+serverX = 50 + xMm / 50
+serverZ = -36 + zMm / 50
+headingRadians = headingDeg * pi / 180
+```
+
+fresh MEASURED/HELD만 `poseValid=1`이다. 명시적 LOST이거나 Server receive age가 500 ms를 넘으면 `trackingState=LOST`, `poseValid=0`, 세 pose float는 canonical 0으로 보낸다. timeout LOST는 새 카메라 packet이 아니므로 원본 `transportSequence`를 유지한다. Unity는 같은 sequence라도 tracking state가 바뀐 timeout 전환을 받아들여 marker를 숨겨야 한다.
+
+Server는 Unity session별로 마지막 전달 상태를 기억한다. 새 transport sequence와 fresh-to-LOST 전환 때만 중계해 Server loop 속도로 같은 pose를 반복 전송하지 않는다. 이 relay는 `VisionObservationStore`를 읽기만 하며 `UPT_REPLICATION`, AGV object pose, controller와 예약 상태를 수정하지 않는다.
 
 ### 10.4 STATUS
 

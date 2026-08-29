@@ -4,6 +4,7 @@
 #include "ClientProxy.hpp"
 #include "RobotSession.hpp"
 #include "VisionObservationStore.hpp"
+#include "VisionObservationRelay.hpp"
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -24,7 +25,7 @@ struct VisionObservationServerConfig
     bool enabled = false;
     uint32_t expectedSourceID = 1;
     std::string expectedCalibrationID;
-    std::string expectedMapContractID = "dd2c1523295b02ee";
+    std::string expectedMapContractID = "67254eca75c55e5c";
     std::string expectedPoseContractID = "f84eb43ebb6cf7ff";
 };
 
@@ -81,6 +82,7 @@ private:
     void SendPhysicalDemoRoute(uint32_t _agvID);
     void SendTrajectoryPreview(uint32_t _agvID, const RobotSessionPtr& _robotSession);
     void SendTrajectoryRaisedWheel(uint32_t _agvID, const RobotSessionPtr& _robotSession);
+    void SendOutgoingVisionObservationPackets();
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    
@@ -89,6 +91,19 @@ private:
     std::unordered_map<ClientProxy*, RobotSessionPtr> m_ProxyToRobotSessionMap;
     std::unordered_map<ClientProxy*, VisionClientSession> m_ProxyToVisionSessionMap;
     std::unordered_map<uint32_t, ClientProxy*> m_VisionSourceToProxyMap;
+    struct VisionViewerDeliveryState
+    {
+        uint32_t transportSequence = 0;
+        RobotProtocol::VisionTrackingState trackingState =
+            RobotProtocol::VisionTrackingState::LOST;
+        bool poseValid = false;
+
+        bool operator==(const VisionViewerDeliveryState&) const = default;
+    };
+    std::unordered_map<
+        uint32_t,
+        std::unordered_map<uint32_t, VisionViewerDeliveryState>>
+        m_LastVisionDeliveryByUnitySession;
     static uint32_t nextSessionID;
 private:
     LinkingContext* m_LinkingContext; 

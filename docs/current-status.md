@@ -1,6 +1,6 @@
 # Current project status
 
-Last verified: 2026-08-25
+Last verified: 2026-08-29
 
 Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
@@ -31,10 +31,29 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
 | Vision 관측 수신 기반 | 구현됨·실카메라 검증 필요 | 기본 OFF, source/session·계약·pose 검증 후 AGV별 별도 저장; 제어 반영 없음 |
-| 자동화된 test target | 일부 구현 | trajectory 2개와 Vision serializer/store CTest 통과; 전체 fleet test framework는 없음 |
+| Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
+| 자동화된 test target | 일부 구현 | trajectory 2개와 Vision serializer/store/Unity relay CTest 통과; 전체 fleet test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-29 Vision 관측의 Unity 비교 pose 중계 기반
+
+- Server가 `VisionObservationStore`의 fresh MEASURED/HELD를 기존 replication과 분리된 `UPT_VISION_OBSERVATION=6`으로 Unity session에 전달한다.
+- Vision local mm를 TestCase0의 `50 mm/map-unit`, node 1 원점 `(50,-36)`으로 변환하고 heading degree를 radian으로 변환한다.
+- Server receive age 500 ms를 넘거나 명시적 LOST이면 같은 transport sequence로도 LOST 전환을 한 번 보내 marker를 숨길 수 있게 한다.
+- 이 relay는 planned AGV pose, ARRIVED, 경로·예약·점유와 ESP32 명령을 읽거나 수정하지 않는다.
+- CMake build와 CTest 3개가 통과했다.
+- Windows Python sender가 WSL Server에 실제 TCP로 MEASURED `(350,350) mm, 90 deg`를 보낸 wire E2E에서 Unity protocol consumer가 `(57,-29)`, `pi/2 rad`와 501 ms timeout LOST를 순서대로 확인했다.
+- 위 검증은 실제 Unity Editor 렌더링과 실카메라 동시 실행을 대신하지 않는다. Unity Play 화면과 reference/robot tag의 동일 높이는 별도 실물 확인이 필요하다.
+
+### 2026-08-29 TestCase0 node pitch 350 mm 반영
+
+- 사용자가 바닥 node marker 간격을 350 mm로 변경했다.
+- `50 mm/map-unit`은 유지하고 격자 간격을 4 unit에서 7 unit으로 변경했다.
+- 모든 44개 directed LINE link 길이는 7 unit이며 전체 node 격자는 약 `1400 x 700 mm`다.
+- Vision map contract는 `67254eca75c55e5c`로 변경됐고 pose contract `f84eb43ebb6cf7ff`는 유지된다.
+- Server map과 hardware-free test를 갱신했으며, VisionTracker 계약 snapshot·카메라 calibration과 실차 350 mm 반복 주행은 재검증이 필요하다.
 
 ### 2026-08-25 VisionTracker observation-only Server 기반
 
@@ -210,11 +229,12 @@ cmake --build build -j2
 
 ## 다음 우선 작업
 
-1. Unity 저장소에 수정한 TestCase03 scene/export를 별도 commit으로 보존하고 Server map과 같은 데이터인지 확인
-2. 시작 heading을 확인한 뒤 raised-wheel curve, 저속 바닥 curve, Unity 실제 pose 비교 순으로 승격
-3. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
-4. 전원 분배단자, fuse, switch와 기판 고정
-5. 새 TestCase03 자동 fleet smoke와 기존 occupancy collision을 별도 Server 작업으로 진단
+1. Unity Editor Play에서 cyan MEASURED/yellow HELD/LOST 숨김 marker를 실카메라와 함께 육안 확인
+2. Unity 저장소에 수정한 TestCase03 scene/export를 별도 commit으로 보존하고 Server map과 같은 데이터인지 확인
+3. 시작 heading을 확인한 뒤 raised-wheel curve, 저속 바닥 curve, Unity 실제 pose 비교 순으로 승격
+4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
+5. 전원 분배단자, fuse, switch와 기판 고정
+6. 새 TestCase03 자동 fleet smoke와 기존 occupancy collision을 별도 Server 작업으로 진단
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

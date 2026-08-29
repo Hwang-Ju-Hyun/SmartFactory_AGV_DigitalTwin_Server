@@ -64,14 +64,14 @@ namespace
     };
 
     constexpr std::array<ExpectedVisionMapNode, 15> kExpectedVisionMapNodes{{
-        {1, 50.0f, -36.0f}, {2, 54.0f, -36.0f},
-        {3, 58.0f, -36.0f}, {4, 62.0f, -36.0f},
-        {5, 66.0f, -36.0f}, {6, 50.0f, -32.0f},
-        {7, 54.0f, -32.0f}, {8, 58.0f, -32.0f},
-        {9, 62.0f, -32.0f}, {10, 66.0f, -32.0f},
-        {11, 50.0f, -28.0f}, {12, 54.0f, -28.0f},
-        {13, 58.0f, -28.0f}, {14, 62.0f, -28.0f},
-        {15, 66.0f, -28.0f}
+        {1, 50.0f, -36.0f}, {2, 57.0f, -36.0f},
+        {3, 64.0f, -36.0f}, {4, 71.0f, -36.0f},
+        {5, 78.0f, -36.0f}, {6, 50.0f, -29.0f},
+        {7, 57.0f, -29.0f}, {8, 64.0f, -29.0f},
+        {9, 71.0f, -29.0f}, {10, 78.0f, -29.0f},
+        {11, 50.0f, -22.0f}, {12, 57.0f, -22.0f},
+        {13, 64.0f, -22.0f}, {14, 71.0f, -22.0f},
+        {15, 78.0f, -22.0f}
     }};
 
     bool MatchesExpectedVisionMapContract(
@@ -688,7 +688,7 @@ void NetworkManagerServer::InitializeVisionObservationStore()
     if (!MatchesExpectedVisionMapContract(nodes))
     {
         throw std::runtime_error(
-            "Vision observation active map does not match contract dd2c1523295b02ee");
+            "Vision observation active map does not match contract 67254eca75c55e5c");
     }
 
     VisionObservationStoreConfig storeConfig;
@@ -956,7 +956,10 @@ void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
          it != m_SessionIdToProxyMap.end();)
     {
         if (it->second == _proxy)
+        {
+            m_LastVisionDeliveryByUnitySession.erase(it->first);
             it = m_SessionIdToProxyMap.erase(it);
+        }
         else
             ++it;
     }
@@ -1008,6 +1011,70 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
         if(replicateStream.GetLength()>sizeof(uint8_t))
         {
             proxy->SendPacket(replicateStream);
+        }
+    }
+
+    SendOutgoingVisionObservationPackets();
+}
+
+void NetworkManagerServer::SendOutgoingVisionObservationPackets()
+{
+    if (!m_VisionObservationStore || m_SessionIdToProxyMap.empty())
+        return;
+
+    const uint64_t nowMilliseconds = MonotonicMilliseconds();
+    std::vector<UnityVisionObservationPayload> payloads;
+    for (const auto& [networkID, object] : m_LinkingContext->GetAllObjects())
+    {
+        if (!object || object->GetClassID() != ClassID::OBJ_AGV)
+            continue;
+
+        const auto latest = m_VisionObservationStore->GetLatest(networkID);
+        if (!latest.has_value())
+            continue;
+
+        payloads.push_back(BuildUnityVisionObservationPayload(
+            *latest,
+            m_VisionObservationStore->GetConfig(),
+            nowMilliseconds));
+    }
+
+    std::sort(
+        payloads.begin(), payloads.end(),
+        [](const UnityVisionObservationPayload& lhs,
+           const UnityVisionObservationPayload& rhs)
+        {
+            return lhs.agvID < rhs.agvID;
+        });
+
+    for (const auto& [sessionID, proxy] : m_SessionIdToProxyMap)
+    {
+        auto& deliveryByAgv =
+            m_LastVisionDeliveryByUnitySession[sessionID];
+        for (const UnityVisionObservationPayload& payload : payloads)
+        {
+            const VisionViewerDeliveryState nextDelivery{
+                payload.transportSequence,
+                payload.trackingState,
+                payload.poseValid
+            };
+            const auto previous = deliveryByAgv.find(payload.agvID);
+            if (previous != deliveryByAgv.end() &&
+                previous->second == nextDelivery)
+            {
+                continue;
+            }
+
+            OutputMemoryStream stream;
+            if (!WriteUnityVisionObservationPacket(stream, payload))
+            {
+                std::cout << "[Vision] Invalid Unity relay payload suppressed. agvID="
+                          << payload.agvID << "\n";
+                continue;
+            }
+
+            proxy->SendPacket(stream);
+            deliveryByAgv[payload.agvID] = nextDelivery;
         }
     }
 }

@@ -1,4 +1,5 @@
 #include "PacketSerializer.hpp"
+#include "VisionObservationRelay.hpp"
 #include "VisionObservationStore.hpp"
 
 #include <algorithm>
@@ -68,12 +69,12 @@ namespace
         config.map.localOriginServerX = 50.0;
         config.map.localOriginServerZ = -36.0;
         config.map.minimumServerX = 50.0;
-        config.map.maximumServerX = 66.0;
+        config.map.maximumServerX = 78.0;
         config.map.minimumServerZ = -36.0;
-        config.map.maximumServerZ = -28.0;
+        config.map.maximumServerZ = -22.0;
         config.map.allowedMarginMillimeters = 100.0;
         config.expectedCalibrationID = "calibration-2026-08";
-        config.expectedMapContractID = "dd2c1523295b02ee";
+        config.expectedMapContractID = "67254eca75c55e5c";
         config.expectedPoseContractID = "f84eb43ebb6cf7ff";
         config.expectedSourceID = 1;
         return config;
@@ -93,7 +94,7 @@ namespace
         input.pose = VisionMetricPose{
             wire.pose->xMm, wire.pose->zMm, wire.pose->headingDeg};
         input.calibrationID = wire.calibrationID;
-        input.mapContractID = "dd2c1523295b02ee";
+        input.mapContractID = "67254eca75c55e5c";
         input.poseContractID = "f84eb43ebb6cf7ff";
         input.verificationState = wire.verificationState;
         input.quality = wire.quality;
@@ -105,13 +106,18 @@ namespace
         return agvID == 1 || agvID == 2;
     }
 
+    bool NearlyEqual(float lhs, float rhs, float tolerance = 0.0001f)
+    {
+        return std::abs(lhs - rhs) <= tolerance;
+    }
+
     void TestSerializerRoundTrips()
     {
         RobotProtocol::VisionHelloPayload hello;
         hello.protocolVersion = RobotProtocol::kProtocolVersion;
         hello.sourceID = 1;
         hello.sessionID = 0xfedcba9876543210ULL;
-        hello.mapContractID = "dd2c1523295b02ee";
+        hello.mapContractID = "67254eca75c55e5c";
         hello.poseContractID = "f84eb43ebb6cf7ff";
         const auto helloDecoded = RoundTrip(
             hello,
@@ -292,7 +298,7 @@ namespace
                VisionObservationStoreResult::NON_FINITE_POSE);
 
         auto outside = MakeStoreInput(1, 3);
-        outside.pose->xMillimeters = 1000.1f;
+        outside.pose->xMillimeters = 1500.1f;
         REQUIRE(store.TryStore(outside, 1003, 1003, IsRegisteredAgv) ==
                VisionObservationStoreResult::OUT_OF_MAP);
 
@@ -387,8 +393,8 @@ namespace
                     VisionObservationStoreResult::ACCEPTED);
             input.sequence = 2;
             input.pose->headingDegrees = 179.999f;
-            input.pose->xMillimeters = 900.0f;
-            input.pose->zMillimeters = 500.0f;
+            input.pose->xMillimeters = 1500.0f;
+            input.pose->zMillimeters = 800.0f;
             REQUIRE(store.TryStore(input, 1001, 1001, IsRegisteredAgv) ==
                     VisionObservationStoreResult::ACCEPTED);
             input.sequence = 3;
@@ -416,6 +422,122 @@ namespace
                     VisionObservationStoreResult::INVALID_QUALITY_METADATA);
         }
     }
+
+    void TestUnityVisionRelayConversionAndFreshness()
+    {
+        const VisionObservationStoreConfig config = MakeStoreConfig();
+        StoredVisionObservation stored;
+        stored.observation = MakeStoreInput(1, 0x01020304U);
+        stored.observation.pose = VisionMetricPose{350.0f, 350.0f, 90.0f};
+        stored.receivedAtServerMilliseconds = 1000;
+
+        const auto fresh = BuildUnityVisionObservationPayload(
+            stored, config, 1020);
+        REQUIRE(fresh.agvID == 1);
+        REQUIRE(fresh.transportSequence == 0x01020304U);
+        REQUIRE(fresh.trackingState ==
+                RobotProtocol::VisionTrackingState::MEASURED);
+        REQUIRE(fresh.poseValid);
+        REQUIRE(NearlyEqual(fresh.serverX, 57.0f));
+        REQUIRE(NearlyEqual(fresh.serverZ, -29.0f));
+        REQUIRE(NearlyEqual(fresh.headingRadians, 1.5707963f));
+        REQUIRE(fresh.serverReceiveAgeMilliseconds == 20);
+
+        OutputMemoryStream packet;
+        REQUIRE(WriteUnityVisionObservationPacket(packet, fresh));
+        REQUIRE(packet.GetLength() == kUnityVisionObservationPacketBytes);
+        const std::vector<uint8_t> expectedPacket{
+            0x06,
+            0x01, 0x00, 0x00, 0x00,
+            0x04, 0x03, 0x02, 0x01,
+            0x01,
+            0x01,
+            0x00, 0x00, 0x64, 0x42,
+            0x00, 0x00, 0xe8, 0xc1,
+            0xdb, 0x0f, 0xc9, 0x3f,
+            0x14, 0x00, 0x00, 0x00
+        };
+        REQUIRE(std::equal(
+            expectedPacket.begin(), expectedPacket.end(),
+            reinterpret_cast<const uint8_t*>(packet.GetBuffer())));
+
+        InputMemoryStream input(
+            const_cast<char*>(packet.GetBuffer()), packet.GetLength());
+        uint8_t packetType = 0;
+        uint32_t agvID = 0;
+        uint32_t sequence = 0;
+        uint8_t trackingState = 0;
+        uint8_t poseValid = 0;
+        float serverX = 0.0f;
+        float serverZ = 0.0f;
+        float headingRadians = 0.0f;
+        uint32_t receiveAge = 0;
+        input.Read(packetType);
+        input.Read(agvID);
+        input.Read(sequence);
+        input.Read(trackingState);
+        input.Read(poseValid);
+        input.Read(serverX);
+        input.Read(serverZ);
+        input.Read(headingRadians);
+        input.Read(receiveAge);
+        REQUIRE(input.GetRemainDataSize() == 0);
+        REQUIRE(packetType == static_cast<uint8_t>(UPT_VISION_OBSERVATION));
+        REQUIRE(agvID == fresh.agvID);
+        REQUIRE(sequence == fresh.transportSequence);
+        REQUIRE(trackingState == static_cast<uint8_t>(fresh.trackingState));
+        REQUIRE(poseValid == 1);
+        REQUIRE(NearlyEqual(serverX, fresh.serverX));
+        REQUIRE(NearlyEqual(serverZ, fresh.serverZ));
+        REQUIRE(NearlyEqual(headingRadians, fresh.headingRadians));
+        REQUIRE(receiveAge == fresh.serverReceiveAgeMilliseconds);
+
+        const auto timeoutBoundary = BuildUnityVisionObservationPayload(
+            stored, config, 1500);
+        REQUIRE(timeoutBoundary.poseValid);
+
+        // The timeout transition intentionally retains the transport sequence.
+        // Unity must accept the state change even though no new camera packet
+        // arrived.
+        const auto stale = BuildUnityVisionObservationPayload(
+            stored, config, 1501);
+        REQUIRE(stale.transportSequence == fresh.transportSequence);
+        REQUIRE(stale.trackingState ==
+                RobotProtocol::VisionTrackingState::LOST);
+        REQUIRE(!stale.poseValid);
+        REQUIRE(stale.serverX == 0.0f);
+        REQUIRE(stale.serverZ == 0.0f);
+        REQUIRE(stale.headingRadians == 0.0f);
+        REQUIRE(stale.serverReceiveAgeMilliseconds == 501);
+        OutputMemoryStream stalePacket;
+        REQUIRE(WriteUnityVisionObservationPacket(stalePacket, stale));
+
+        stored.observation.state = RobotProtocol::VisionTrackingState::HELD;
+        const auto held = BuildUnityVisionObservationPayload(
+            stored, config, 1100);
+        REQUIRE(held.poseValid);
+        REQUIRE(held.trackingState == RobotProtocol::VisionTrackingState::HELD);
+
+        stored.observation.state = RobotProtocol::VisionTrackingState::LOST;
+        stored.observation.pose.reset();
+        const auto explicitlyLost = BuildUnityVisionObservationPayload(
+            stored, config, 1100);
+        REQUIRE(!explicitlyLost.poseValid);
+        REQUIRE(explicitlyLost.trackingState ==
+                RobotProtocol::VisionTrackingState::LOST);
+
+        const auto futureReceiveTime = BuildUnityVisionObservationPayload(
+            stored, config, 999);
+        REQUIRE(!futureReceiveTime.poseValid);
+        REQUIRE(futureReceiveTime.serverReceiveAgeMilliseconds ==
+                std::numeric_limits<uint32_t>::max());
+
+        auto invalid = fresh;
+        invalid.poseValid = false;
+        OutputMemoryStream invalidPacket;
+        REQUIRE(!WriteUnityVisionObservationPacket(invalidPacket, invalid));
+        REQUIRE(invalidPacket.GetLength() == 0);
+    }
 }
 
 int main()
@@ -425,6 +547,7 @@ int main()
     TestGoldenMeasuredBodyLayout();
     TestObservationStoreValidationAndIsolation();
     TestObservationStoreBoundaries();
+    TestUnityVisionRelayConversionAndFreshness();
     std::cout << "Vision observation tests passed\n";
     return 0;
 }

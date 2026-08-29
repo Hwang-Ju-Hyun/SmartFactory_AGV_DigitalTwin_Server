@@ -1,6 +1,6 @@
 # System architecture
 
-Last verified: 2026-08-25
+Last verified: 2026-08-29
 
 Implementation base: `old-new-combined` 2026-08-25 working tree
 
@@ -24,6 +24,8 @@ flowchart LR
         Occupy[OccupancyProvider]
         Robots[RobotManager / IRobotController]
         Repl[ReplicationManagerServer]
+        VisionStore[VisionObservationStore]
+        VisionRelay[Vision-to-Unity comparison relay]
 
         Net --> World
         Task --> Route
@@ -31,6 +33,7 @@ flowchart LR
         Route --> Robots
         Robots --> Occupy
         World --> Repl
+        VisionStore --> VisionRelay
     end
 
     Unity <-->|Map + Replication| Net
@@ -38,6 +41,8 @@ flowchart LR
     ESP <-->|RobotProtocol| Net
     Fake <-->|RobotProtocol| Net
     Vision -->|Observation-only Vision protocol| Net
+    Net --> VisionStore
+    VisionRelay -->|Separate measured pose marker| Unity
 ```
 
 ## 구성요소와 책임
@@ -58,6 +63,7 @@ flowchart LR
 | `ReplicationManagerServer` | 서버 object의 create/update 상태를 Unity로 전송 | route 명령 전송 |
 | `EventManager` | frame 사이에서 task/route 이벤트 전달 | network packet framing |
 | `VisionObservationStore` | 검증된 최신 Vision 관측을 AGV별로 별도 저장 | AGV pose 덮어쓰기, ARRIVED, 재계획, 예약, ESP32 명령 |
+| Vision-to-Unity comparison relay | fresh 관측을 map unit/radian으로 변환해 별도 `UPT_VISION_OBSERVATION` marker로 전송하고 timeout 시 LOST 전달 | 기존 replication AGV pose 또는 Server world 변경 |
 
 ## 프로세스 시작과 tick 흐름
 
@@ -78,6 +84,7 @@ ServerMain
      -> accept/read packet
      -> UpdateWorld(deltaTime)
      -> SendOutgoingReplicationPackets()
+        -> 새 Vision sequence 또는 receive-timeout LOST 전환을 Unity에 별도 중계
 ```
 
 현재 `_TESTCASE0`은 기본 automatic mode의 AGV 4대를 map node `1, 2, 3, 4`에서 시작시킨다. 이 값은 운영 설정 파일이 아니라 `Server/NetworkManagerServer.cpp`와 `Shared/DispatchManager.hpp`의 compile-time test 설정이다.
@@ -114,7 +121,7 @@ EventManager
 
 TCP는 byte stream이므로 세 protocol 모두 frame 맨 앞의 `uint16 packetSize`로 메시지 경계를 구분한다. Robot/Vision wire format은 [CommunicationProtocol.md](CommunicationProtocol.md)를 따른다.
 
-Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManagerServer::UpdateWorld()`는 Vision store를 읽지 않으므로 관측 수신만으로 AGV 위치, 경로, 점유 또는 제어 결과가 바뀌지 않는다.
+Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManagerServer::UpdateWorld()`는 Vision store를 읽지 않으므로 관측 수신만으로 AGV 위치, 경로, 점유 또는 제어 결과가 바뀌지 않는다. visualization 송신 단계만 store를 읽어 Unity의 별도 비교 marker packet을 만든다.
 
 ## 물리 로봇 책임
 
@@ -130,7 +137,7 @@ Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManag
 ## 현재 구조의 명시적 한계
 
 - network loop는 `select()` 기반이며 생산 환경용 대규모 동시 접속 설계가 아니다.
-- Vision 관측의 Unity 비교 표시와 실제 카메라 정확도 검증은 아직 연결하지 않았다.
+- Vision 관측의 Server→Unity 별도 비교 packet은 구현됐지만 실제 카메라·Unity 동시 실행 정확도는 아직 검증하지 않았다.
 - native Windows socket build는 지원하지 않는다. 서버는 Linux/WSL에서 빌드한다.
 - Unity 프로젝트와 정식 ESP32 firmware 프로젝트가 이 저장소에 buildable source tree로 들어와 있지 않다.
 - `TrafficControlManager`, WPF/HMI는 현재 구현이 아니다.

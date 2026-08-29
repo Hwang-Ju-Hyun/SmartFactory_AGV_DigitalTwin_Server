@@ -23,6 +23,9 @@ enum UnityPacketType : uint8_t
     UPT_DISCONNECTED = 3,
     UPT_READY_MAP = 4,
     UPT_READY_OBJECT = 5,
+    // Observation-only physical pose for a separate Unity comparison marker.
+    // This never replaces the authoritative UPT_REPLICATION AGV pose.
+    UPT_VISION_OBSERVATION = 6,
     
     // ==========================================
     // Deprecated legacy robot IDs from the old uint8_t packet scheme.
