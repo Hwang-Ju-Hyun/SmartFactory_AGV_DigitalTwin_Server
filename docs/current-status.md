@@ -30,7 +30,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
-| Vision 관측 수신 기반 | 검증 완료 | calibration `451bca79093b10fd`, source/session·계약·pose 검증 후 실카메라 관측 저장 확인; 제어 반영 없음 |
+| Vision 관측 수신 기반 | 검증 완료 | calibration `a16ebd17de002bb9`, source/session·계약·pose 검증 후 실카메라 관측 저장 확인; 제어 반영 없음 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
 | 자동화된 test target | 일부 구현 | trajectory 2개와 Vision serializer/store/Unity relay CTest 통과; 전체 fleet test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
@@ -52,7 +52,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 - 사용자가 바닥 node marker 간격을 350 mm로 변경했다.
 - `50 mm/map-unit`은 유지하고 격자 간격을 4 unit에서 7 unit으로 변경했다.
 - 모든 44개 directed LINE link 길이는 7 unit이며 전체 node 격자는 약 `1400 x 700 mm`다.
-- Vision map contract는 `67254eca75c55e5c`이며, robot heading 180도 보정을 반영한 pose contract는 `c31aad1be28961c1`이다.
+- Vision map contract는 `67254eca75c55e5c`이며, robot heading 0도 보정을 반영한 pose contract는 `f84eb43ebb6cf7ff`다.
 - Server map과 hardware-free test를 갱신했고 VisionTracker 실카메라 calibration과 TCP 관측 저장을 확인했다. 실차 350 mm 반복 주행은 재검증이 필요하다.
 
 ### 2026-08-25 VisionTracker observation-only Server 기반
