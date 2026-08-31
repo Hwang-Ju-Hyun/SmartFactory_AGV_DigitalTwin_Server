@@ -1,8 +1,8 @@
 # AGV Communication Protocol
 
-> 상태 안내(2026-08-29): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
+> 상태 안내(2026-08-31): 이 문서는 protocol 설계의 기준이다. 실차와 network firmware의 최신 결합 상태는 [current-status.md](current-status.md)와 [physical-agv-integration.md](physical-agv-integration.md)를 우선한다. 아래의 일부 ESP32 구현 상태와 “차체 도착 전” 설명은 과거 network firmware 기준이다.
 
-이 문서는 AGV Fleet Control System에서 Server, Unity Digital Twin, ESP32 Robot, FakeRobot과 observation-only VisionTracker가 어떻게 통신하는지 설명한다. 포트폴리오에서는 이 문서를 통해 "단순히 소켓을 연결했다"가 아니라, 실제 로봇 확장을 고려해서 프로토콜 경계와 책임을 분리했다는 점을 보여준다.
+이 문서는 AGV Fleet Control System에서 Server, Unity Digital Twin, ESP32 Robot, FakeRobot과 VisionTracker가 어떻게 통신하는지 설명한다. Vision은 기본적으로 별도 관측 source이며, PhysicalFleet에서는 node 도착 뒤 제한된 보정 판단에도 사용된다. 포트폴리오에서는 이 문서를 통해 "단순히 소켓을 연결했다"가 아니라, 실제 로봇 확장을 고려해서 프로토콜 경계와 책임을 분리했다는 점을 보여준다.
 
 ## 1. 목표
 
@@ -86,9 +86,9 @@ flowchart LR
 |---|---|---|---|
 | Unity protocol | Server <-> Unity | 맵 전송, 오브젝트 생성/업데이트 replication | `Shared/header.hpp`, `NetworkManagerServer`, Unity `NetworkManagerClient.cs` |
 | RobotProtocol | Server <-> ESP32/FakeRobot | 로봇 등록, route 명령, 상태 보고, 도착 보고, 에러/정지 | `Shared/Protocol.hpp`, `Shared/PacketSerializer.*`, `Server/RobotSession.*`, ESP32 `RobotProtocol.*` |
-| Vision observation protocol | VisionTracker -> Server | 보정된 물리 pose 관측의 수신·검증·별도 보관 | `Shared/Protocol.hpp`, `Shared/PacketSerializer.*`, `Server/VisionObservationStore.*` |
+| Vision observation protocol | VisionTracker -> Server | 보정된 물리 pose 관측의 수신·검증·별도 보관, PhysicalFleet node 도착 보정 입력 | `Shared/Protocol.hpp`, `Shared/PacketSerializer.*`, `Server/VisionObservationStore.*` |
 
-첫 frame은 각 protocol의 HELLO여야 한다. 연결이 Unity, Robot 또는 Vision으로 식별되면 같은 socket에서 다른 protocol로 전환할 수 없다. Vision 관측은 RobotSession이나 Unity replication session에 등록되지 않는다.
+첫 frame은 각 protocol의 HELLO여야 한다. 연결이 Unity, Robot 또는 Vision으로 식별되면 같은 socket에서 다른 protocol로 전환할 수 없다. Vision 관측은 RobotSession이나 Unity replication session에 등록되지 않는다. `PhysicalFleet + --vision-observation`에서만 Server correction coordinator가 검증된 최신 관측을 읽으며, 다른 mode에서는 비교 표시용 관측으로만 유지한다.
 
 포트폴리오에서는 RobotProtocol을 중심으로 설명하는 것이 좋다. 실제 AGV 연동의 핵심이 여기에 있기 때문이다.
 
@@ -214,8 +214,10 @@ Server의 `TCPSession`은 앞의 `packetSize` 2 byte를 기준으로 frame을 �
 | ROUTE_COMMAND | 100 | Server -> Robot | 경로 명령 |
 | CANCEL_ROUTE | 101 | Server -> Robot | 현재 경로 취소 |
 | TRAJECTORY_COMMAND | 102 | Server -> Robot | capability를 선언한 robot용 local metric waypoint 경로 |
+| NODE_CORRECTION_COMMAND | 103 | Server -> Robot | coarse node 도착 뒤 제한된 직진/회전 보정 primitive |
 | STATUS | 200 | Robot -> Server | 현재 노드/링크/진행률/좌표/배터리/상태 보고 |
 | ARRIVED | 201 | Robot -> Server | 특정 노드 도착 보고 |
+| NODE_CORRECTION_REPORT | 202 | Robot -> Server | 보정 primitive 완료·거절·fault 결과 |
 | PING | 300 | 양방향 | 연결 확인 요청 |
 | PONG | 301 | 양방향 | PING 응답 |
 | HELLO | 400 | Client -> Server | 클라이언트 종류와 요청 AGV ID 등록 |
@@ -319,10 +321,11 @@ Server는 `RoutePlanner`가 만든 PathStep을 `RouteNodeTime` 배열로 바꿔 
 
 Direction: Server -> Robot
 
-`HELLO.capabilities`의 두 bit는 의도적으로 다른 의미를 가진다.
+`HELLO.capabilities`의 세 bit는 의도적으로 다른 의미를 가진다.
 
 - `CAPABILITY_TRAJECTORY_COMMAND`: follower, safety, STATUS/ARRIVED까지 포함한 완전 실행 지원
 - `CAPABILITY_TRAJECTORY_PREVIEW`: parse/validate/store/log만 지원하며 motion dispatch 대상이 아님
+- `CAPABILITY_NODE_CORRECTION`: final one-edge `ARRIVED` 뒤 정지 상태에서 bounded correction command를 실행하고 report할 수 있음
 
 기존 v1 ESP32처럼 optional capability field를 생략한 client에는 계속 `ROUTE_COMMAND`만 사용한다. Preview bit만 선언한 client에도 Server가 trajectory 실행을 요구하면 안 된다.
 
@@ -365,7 +368,45 @@ Server sampler는 directed node link를 순서대로 확인한 뒤 다음처럼 
 
 2026-08-11 기준 `60 mm/map-unit` TestCase03 `[1 -> 4]` preview와 ESP32 motor-disabled follower trace가 통과했다. `--trajectory-preview`는 preview-only client에 speed 0만 보내고, `--trajectory-raised-wheel`은 command-capable client에만 `80 mm/s` 실행 trajectory를 보낸다. 두 mode 모두 자동 배차와 RoutePlanner를 사용하지 않으며, 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
 
-### 10.3.2 Vision observation packets
+### 10.3.2 NODE_CORRECTION_COMMAND / NODE_CORRECTION_REPORT
+
+이 확장은 `PhysicalFleet + --vision-observation`의 node 도착 보정에만 사용한다. Robot은 `CAPABILITY_TRAJECTORY_COMMAND | CAPABILITY_NODE_CORRECTION`을 함께 광고해야 하며, Server는 전체 계획 경로를 보유한 채 한 번에 LINE edge 하나만 final trajectory로 전송한다.
+
+`NODE_CORRECTION_COMMAND` direction은 Server -> Robot이고 payload는 17 byte다.
+
+| Field | Type | 설명 |
+|---|---|---|
+| routeID | uint32 | 바로 전에 완료한 one-edge trajectory ID |
+| nodeID | uint32 | coarse ARRIVED와 correction 목표 node |
+| commandID | uint32 | correction primitive 상관관계 ID, 0 금지 |
+| action | uint8 | `DRIVE_FORWARD=2`, `TURN_CW=3`, `TURN_CCW=4` |
+| magnitude | float | 직진은 mm, 회전은 radian. action이 방향을 가지므로 항상 양수 |
+
+`NODE_CORRECTION_REPORT` direction은 Robot -> Server이고 payload도 17 byte다.
+
+| Field | Type | 설명 |
+|---|---|---|
+| routeID | uint32 | command와 같은 trajectory ID |
+| nodeID | uint32 | command와 같은 목표 node |
+| commandID | uint32 | command와 같은 상관관계 ID |
+| result | uint8 | `COMPLETED=2`, `REJECTED=3`, `FAULT=4` |
+| detail | uint32 | firmware 진단 코드. Server 제어 결정의 대체값으로 사용하지 않음 |
+
+Server 제어 순서는 다음과 같다.
+
+```text
+one-edge TRAJECTORY_COMMAND
+  -> Robot safe stop + STATUS + coarse ARRIVED
+  -> Server waits for a newer, receive-age <= 200 ms MEASURED + VERIFIED pose
+  -> within 20 mm and 5 deg: confirm NODE_ARRIVED
+  -> otherwise one bounded turn or forward command
+  -> Robot safe completion STATUS + NODE_CORRECTION_REPORT
+  -> Server requires another newer MEASURED pose and repeats or confirms
+```
+
+Server 정책은 위치 오차 200 mm 초과를 거절하고, 한 command를 직진 최대 120 mm 또는 회전 최대 90도로 제한한다. node당 최대 6개 primitive, 새 측정 대기 2.5초, report 대기 10초다. Robot은 현재 `routeID/nodeID`, 안전 정지 상태, 양수 magnitude와 자체 한계를 다시 검사해야 한다. identity 불일치, `HELD/LOST/stale`, timeout, reject 또는 fault에서는 Server가 active route를 취소하고 자동 진행을 멈춘다.
+
+### 10.3.3 Vision observation packets
 
 Vision receiver는 기본값이 OFF다. 실제 카메라 보정 뒤 다음처럼 calibration identity를 명시한 경우에만 활성화한다.
 
@@ -424,7 +465,7 @@ Server는 non-finite/범위 밖 pose, 잘못된 AGV·identity, stale age, 역순
 - ESP32 encoder/status pose
 - ARRIVED, RoutePlanner, ReservationTable, OccupancyProvider, TaskManager
 
-따라서 Vision packet은 로봇 명령, 도착 판정, 재계획 또는 Unity의 기존 AGV 위치를 변경하지 않는다. Server는 검증된 최신 관측을 별도 비교 표시에만 쓰도록 Unity legacy channel의 `UPT_VISION_OBSERVATION=6`으로 중계한다.
+Vision packet 자체는 Unity의 기존 AGV pose, 예약 또는 world state를 직접 변경하지 않는다. 일반 mode에서는 검증된 최신 관측을 별도 비교 표시에만 쓰도록 Unity legacy channel의 `UPT_VISION_OBSERVATION=6`으로 중계한다. `PhysicalFleet + --vision-observation`에서는 예외적으로 coarse `ARRIVED` 뒤 node correction coordinator가 fresh `MEASURED + VERIFIED` pose를 읽으며, 허용 오차 안에 들어온 뒤에만 기존 `NODE_ARRIVED` 이벤트를 확정한다.
 
 `UPT_VISION_OBSERVATION` direction은 Server -> Unity이며, outer `uint16 packetSize` 뒤 packet body는 다음 고정 27 byte다. `packetSize` 자체까지 포함한 전체 TCP frame은 29 byte다. 기존 Unity packet과 같이 little-endian field serializer를 사용하고 C++ 구조체 padding은 전송하지 않는다.
 
@@ -478,9 +519,9 @@ Direction: Robot -> Server
 |---|---|---|
 | currentNodeID | uint32 | 도착한 노드 |
 
-Server는 ARRIVED를 받으면 `ControllerEvent::ARRIVED`로 바꾸고, `NetworkManagerServer::UpdateWorld()`에서 `RobotEventType::NODE_ARRIVED`로 publish한다. 이후 `RoutePlanner::OnRobotStepCompleted()`가 다음 계획 상태를 갱신한다.
+일반 mode에서 Server는 ARRIVED를 `ControllerEvent::ARRIVED`로 바꾸고, `NetworkManagerServer::UpdateWorld()`에서 `RobotEventType::NODE_ARRIVED`로 publish한다. 이후 `RoutePlanner::OnRobotStepCompleted()`가 다음 계획 상태를 갱신한다.
 
-다중-node `TRAJECTORY_COMMAND`도 각 `NODE_BOUNDARY`에서 정지·settling 후 해당 node의 ARRIVED를 정확히 한 번 전송해야 한다. `nodeID=0`인 synthetic `ROTATE_IN_PLACE`에서는 ARRIVED를 보내지 않는다. Server는 계획상의 다음 node와 다르면 route를 safe-stop한다.
+Vision correction을 켠 PhysicalFleet에서는 Server가 전체 계획을 한 edge씩 final `TRAJECTORY_COMMAND`로 나눈다. Robot은 안전 정지와 최종 STATUS 뒤 coarse ARRIVED를 정확히 한 번 보내고 correction 대기 상태에 머문다. Server는 보정 승인 전에는 이 ARRIVED를 RoutePlanner로 publish하지 않는다. `nodeID=0`인 synthetic `ROTATE_IN_PLACE`에서는 ARRIVED를 보내지 않으며, 계획상의 다음 node와 다르면 route를 safe-stop한다.
 
 ### 10.6 CANCEL_ROUTE
 
@@ -815,6 +856,7 @@ ROUTE_COMMAND
 - ROUTE_COMMAND
 - STATUS
 - ARRIVED
+- NODE_CORRECTION_COMMAND / NODE_CORRECTION_REPORT Server wire 지원
 - ERROR_PACKET
 - EMERGENCY_STOP packet ID 정의
 - FakeRobot을 통한 protocol test
@@ -826,6 +868,7 @@ ROUTE_COMMAND
 - ESP32는 아직 실제 encoder 기반 위치 추정이 없다.
 - ESP32 `RobotStateMachine`은 route leg를 시간 기반으로 진행한다.
 - 실제 motor control은 `kEnableMotorOutputs=false`로 막아둔 상태에서 시작한다.
+- PhysicalFleet node correction은 Server build/CTest까지만 검증됐고 실차 primitive 실행은 재검증 전이다.
 
 남은 작업:
 
@@ -846,8 +889,11 @@ enum class PacketID : uint16_t
 {
     ROUTE_COMMAND = 100,
     CANCEL_ROUTE = 101,
+    TRAJECTORY_COMMAND = 102,
+    NODE_CORRECTION_COMMAND = 103,
     STATUS = 200,
     ARRIVED = 201,
+    NODE_CORRECTION_REPORT = 202,
     PING = 300,
     PONG = 301,
     HELLO = 400,

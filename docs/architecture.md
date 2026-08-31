@@ -1,6 +1,6 @@
 # System architecture
 
-Last verified: 2026-08-29
+Last verified: 2026-08-31
 
 Implementation base: `old-new-combined` 2026-08-25 working tree
 
@@ -26,6 +26,7 @@ flowchart LR
         Repl[ReplicationManagerServer]
         VisionStore[VisionObservationStore]
         VisionRelay[Vision-to-Unity comparison relay]
+        Correction[Physical-fleet node correction coordinator]
 
         Net --> World
         Task --> Route
@@ -34,13 +35,15 @@ flowchart LR
         Robots --> Occupy
         World --> Repl
         VisionStore --> VisionRelay
+        VisionStore --> Correction
+        Correction --> Robots
     end
 
     Unity <-->|Map + Replication| Net
     Repl --> Unity
     ESP <-->|RobotProtocol| Net
     Fake <-->|RobotProtocol| Net
-    Vision -->|Observation-only Vision protocol| Net
+    Vision -->|Vision observation protocol| Net
     Net --> VisionStore
     VisionRelay -->|Separate measured pose marker| Unity
 ```
@@ -62,8 +65,9 @@ flowchart LR
 | `ESP32RobotController` | route/cancel 전송, STATUS/ARRIVED를 서버 controller interface로 변환 | ESP32의 저수준 motor 제어 |
 | `ReplicationManagerServer` | 서버 object의 create/update 상태를 Unity로 전송 | route 명령 전송 |
 | `EventManager` | frame 사이에서 task/route 이벤트 전달 | network packet framing |
-| `VisionObservationStore` | 검증된 최신 Vision 관측을 AGV별로 별도 저장 | AGV pose 덮어쓰기, ARRIVED, 재계획, 예약, ESP32 명령 |
+| `VisionObservationStore` | 검증된 최신 Vision 관측을 AGV별로 별도 저장 | AGV world pose 직접 덮어쓰기 또는 자체 경로 계획 |
 | Vision-to-Unity comparison relay | fresh 관측을 map unit/radian으로 변환해 별도 `UPT_VISION_OBSERVATION` marker로 전송하고 timeout 시 LOST 전달 | 기존 replication AGV pose 또는 Server world 변경 |
+| Physical-fleet node correction coordinator | coarse ARRIVED 뒤 post-stop MEASURED pose와 목표 node/heading 오차를 계산하고 제한된 correction primitive를 순차 전송 | 주행 중 연속 steering, Vision pose로 예약·world pose 직접 변경, 무제한 재시도 |
 
 ## 프로세스 시작과 tick 흐름
 
@@ -71,7 +75,9 @@ flowchart LR
 ServerMain
   -> runtime mode 선택 (기본 AutomaticFleet, --physical-fleet, --physical-demo,
      --trajectory-preview, --trajectory-raised-wheel)
-  -> 독립 옵션 --vision-observation은 위 mode와 함께 observation-only receiver 활성화
+  -> 독립 옵션 --vision-observation은 Vision receiver 활성화
+     -> PhysicalFleet에서는 node 도착 보정 gate로도 사용
+     -> 다른 mode에서는 비교 관측 저장·Unity relay만 수행
   -> 기본 TCP 0.0.0.0:6666 bind/listen (--listen으로 test endpoint 변경 가능)
   -> ObjectRegistry 초기화
   -> NetworkManagerServer 초기화
@@ -83,6 +89,8 @@ ServerMain
   -> select() 기반 loop
      -> accept/read packet
      -> UpdateWorld(deltaTime)
+        -> PhysicalFleet coarse ARRIVED를 보정 완료 전까지 보류
+        -> fresh MEASURED 기반 correction command/report 또는 fail-stop
      -> SendOutgoingReplicationPackets()
         -> 새 Vision sequence 또는 receive-timeout LOST 전환을 Unity에 별도 중계
 ```
@@ -121,7 +129,7 @@ EventManager
 
 TCP는 byte stream이므로 세 protocol 모두 frame 맨 앞의 `uint16 packetSize`로 메시지 경계를 구분한다. Robot/Vision wire format은 [CommunicationProtocol.md](CommunicationProtocol.md)를 따른다.
 
-Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManagerServer::UpdateWorld()`는 Vision store를 읽지 않으므로 관측 수신만으로 AGV 위치, 경로, 점유 또는 제어 결과가 바뀌지 않는다. visualization 송신 단계만 store를 읽어 Unity의 별도 비교 marker packet을 만든다.
+Vision 관측은 planned world pose 및 ESP32 상태와 별도로 저장된다. 기본 mode에서는 visualization 송신 단계만 store를 읽어 Unity의 별도 비교 marker packet을 만든다. 예외적으로 `PhysicalFleet + --vision-observation`에서는 node 도착 보정 coordinator가 coarse `ARRIVED` 뒤 store를 읽는다. 이때도 Vision pose가 AGV world pose나 예약을 직접 덮어쓰지는 않으며, fresh `MEASURED + VERIFIED` 결과가 허용 범위에 든 뒤에만 기존 `NODE_ARRIVED` 이벤트를 확정한다.
 
 ## 물리 로봇 책임
 
@@ -131,6 +139,7 @@ Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManag
 - encoder, odometry, PID와 motor driver 제어
 - 연결이 끊겨도 local stop/safety 유지
 - 실제 진행 상태와 도착을 `STATUS`, `ARRIVED`로 보고
+- final one-edge 도착 뒤 Server가 보낸 제한된 correction primitive를 정지 상태에서 실행하고 결과를 보고
 
 현재는 실차 L자 주행 코드와 RobotProtocol 코드가 별도 계열이며, 통합 상태는 [physical-agv-integration.md](physical-agv-integration.md)를 참고한다.
 
@@ -138,7 +147,8 @@ Vision 관측은 planned world pose 및 ESP32 상태와 별도다. `NetworkManag
 
 - network loop는 `select()` 기반이며 생산 환경용 대규모 동시 접속 설계가 아니다.
 - Vision 관측의 Server→Unity 별도 비교 packet은 구현됐지만 실제 카메라·Unity 동시 실행 정확도는 아직 검증하지 않았다.
+- Physical-fleet Vision node 보정은 Server build/CTest까지만 검증됐으며 새 firmware의 실차 primitive 실행은 아직 검증하지 않았다.
 - native Windows socket build는 지원하지 않는다. 서버는 Linux/WSL에서 빌드한다.
 - Unity 프로젝트와 정식 ESP32 firmware 프로젝트가 이 저장소에 buildable source tree로 들어와 있지 않다.
 - `TrafficControlManager`, WPF/HMI는 현재 구현이 아니다.
-- `TrajectorySmokeTest`, trajectory preview와 `VisionObservationTest`가 CTest에 등록돼 있다. 전체 fleet TCP E2E는 여전히 FakeRobot smoke test가 대표 검증이다.
+- `TrajectorySmokeTest`, trajectory preview, `VisionObservationTest`, `PhysicalFleetCorrectionTest`가 CTest에 등록돼 있다. 전체 fleet TCP E2E는 여전히 FakeRobot smoke test가 대표 검증이다.

@@ -12,6 +12,7 @@ private:
     uint32_t m_ClientCapabilities = RobotProtocol::CAPABILITY_NONE;
     uint32_t m_NextOutgoingSequence = 1;
     uint32_t m_NextRouteID = 1;
+    uint32_t m_LastSentTrajectoryRouteID = 0;
     StatusPacket m_LastStatus{};
     bool m_HasStatus = false;
     std::queue<ControllerEvent> m_EventQueue;
@@ -31,6 +32,14 @@ public:
         return (m_ClientCapabilities & RobotProtocol::CAPABILITY_TRAJECTORY_PREVIEW) != 0 &&
                (m_ClientCapabilities & RobotProtocol::CAPABILITY_TRAJECTORY_COMMAND) == 0;
     }
+    bool SupportsNodeCorrection() const
+    {
+        return (m_ClientCapabilities & RobotProtocol::CAPABILITY_NODE_CORRECTION) != 0;
+    }
+    uint32_t GetLastSentTrajectoryRouteID() const
+    {
+        return m_LastSentTrajectoryRouteID;
+    }
     TCPSessionPtr GetSession() const { return m_TCPSession; }
 
     void ProcessPacket(const RobotProtocol::PacketBodyHeader& header, InputMemoryStream& payloadStream);
@@ -39,6 +48,8 @@ public:
     void SendRoute(const RoutePacket& routePacket);
     bool SendTrajectory(RobotProtocol::TrajectoryCommandPayload payload);
     bool SendTrajectoryPreview(RobotProtocol::TrajectoryCommandPayload payload);
+    bool SendNodeCorrection(
+        const RobotProtocol::NodeCorrectionCommandPayload& payload);
     void SendCancelRoute(uint32_t agvID);
     void SendPong(uint32_t timestampMs);
 

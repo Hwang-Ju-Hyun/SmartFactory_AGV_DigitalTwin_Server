@@ -352,6 +352,68 @@ namespace
         Check(!RobotProtocol::WriteTrajectoryCommandPayload(tooLarge, trajectory),
               "serializer accepted 65 waypoints");
     }
+
+    void TestNodeCorrectionWireFormat()
+    {
+        RobotProtocol::NodeCorrectionCommandPayload command;
+        command.routeID = 7;
+        command.nodeID = 8;
+        command.commandID = 9;
+        command.action = RobotProtocol::NodeCorrectionAction::TURN_CCW;
+        command.magnitude = 0.25f;
+
+        OutputMemoryStream encodedCommand;
+        Check(RobotProtocol::WriteNodeCorrectionCommandPayload(
+                  encodedCommand, command),
+              "node correction command serialization failed");
+        Check(encodedCommand.GetLength() == 17,
+              "node correction command wire size changed");
+        InputMemoryStream commandInput(
+            const_cast<char*>(encodedCommand.GetBuffer()),
+            encodedCommand.GetLength());
+        RobotProtocol::NodeCorrectionCommandPayload decodedCommand;
+        Check(RobotProtocol::ReadNodeCorrectionCommandPayload(
+                  commandInput, decodedCommand),
+              "node correction command round-trip failed");
+        Check(decodedCommand.routeID == command.routeID &&
+                  decodedCommand.nodeID == command.nodeID &&
+                  decodedCommand.commandID == command.commandID &&
+                  decodedCommand.action == command.action &&
+                  Near(decodedCommand.magnitude, command.magnitude),
+              "node correction command fields changed during round-trip");
+
+        RobotProtocol::NodeCorrectionReportPayload report;
+        report.routeID = command.routeID;
+        report.nodeID = command.nodeID;
+        report.commandID = command.commandID;
+        report.result = RobotProtocol::NodeCorrectionResult::COMPLETED;
+        report.detail = 42;
+        OutputMemoryStream encodedReport;
+        Check(RobotProtocol::WriteNodeCorrectionReportPayload(
+                  encodedReport, report),
+              "node correction report serialization failed");
+        Check(encodedReport.GetLength() == 17,
+              "node correction report wire size changed");
+        InputMemoryStream reportInput(
+            const_cast<char*>(encodedReport.GetBuffer()),
+            encodedReport.GetLength());
+        RobotProtocol::NodeCorrectionReportPayload decodedReport;
+        Check(RobotProtocol::ReadNodeCorrectionReportPayload(
+                  reportInput, decodedReport),
+              "node correction report round-trip failed");
+        Check(decodedReport.routeID == report.routeID &&
+                  decodedReport.nodeID == report.nodeID &&
+                  decodedReport.commandID == report.commandID &&
+                  decodedReport.result == report.result &&
+                  decodedReport.detail == report.detail,
+              "node correction report fields changed during round-trip");
+
+        command.magnitude = 0.0f;
+        OutputMemoryStream invalidCommand;
+        Check(!RobotProtocol::WriteNodeCorrectionCommandPayload(
+                  invalidCommand, command),
+              "node correction serializer accepted zero magnitude");
+    }
 }
 
 int main()
@@ -362,6 +424,7 @@ int main()
     TestInitialHeadingAndWireGuards();
     TestOptionalHelloCapabilities();
     TestMaximumTrajectoryWireSize();
+    TestNodeCorrectionWireFormat();
 
     if (g_Failures != 0)
     {

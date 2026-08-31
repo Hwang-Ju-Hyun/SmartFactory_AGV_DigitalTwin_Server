@@ -24,6 +24,7 @@
 #include "OccupancyProvider.hpp"
 #include "PacketSerializer.hpp"
 #include "TrajectoryBuilder.hpp"
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -55,6 +56,12 @@ namespace
     constexpr float kVisionLocalOriginServerX = 50.0f;
     constexpr float kVisionLocalOriginServerZ = -36.0f;
     constexpr float kVisionAllowedMapMarginMm = 100.0f;
+    constexpr uint64_t kCorrectionMaximumVisionAgeMs = 200;
+    constexpr uint64_t kCorrectionMeasurementWaitMs = 2500;
+    constexpr uint64_t kCorrectionReportWaitMs = 10000;
+    constexpr uint8_t kMaximumCorrectionPrimitives = 6;
+    constexpr float kDegreesToRadians =
+        3.14159265358979323846f / 180.0f;
 
     struct ExpectedVisionMapNode
     {
@@ -438,22 +445,7 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
 
     if (m_RunMode == ServerRunMode::PhysicalFleet)
     {
-        if (!robotSession->SupportsTrajectoryCommand())
-        {
-            std::cout << "[PhysicalFleet] AGV 1 is connected but not armed for trajectory execution;"
-                         " automatic dispatch remains stopped\n";
-        }
-        else if (RoutePlanner::GetInstance().ResendCurrentRouteToController(assignedAgvID))
-        {
-            std::cout << "[PhysicalFleet] Active automatic route restored\n";
-        }
-        else if (!m_IsPhysicalFleetActivated)
-        {
-            m_IsPhysicalFleetActivated = true;
-            EventManager::GetInstance().Publish(
-                { RobotEventType::IDLE_READY, assignedAgvID, m_TotalElapsedServerTime });
-            std::cout << "[PhysicalFleet] Command-capable AGV 1 ready; automatic dispatch enabled\n";
-        }
+        TryActivatePhysicalFleet();
     }
     else if (m_RunMode == ServerRunMode::PhysicalDemo)
     {
@@ -658,6 +650,12 @@ void NetworkManagerServer::HandleVisionObservationPacket(
     std::cout << "[Vision] Observation stored separately. agvID=" << _header.agvID
               << " sequence=" << _header.sequence
               << " state=" << static_cast<uint16_t>(payload.state) << "\n";
+
+    if (m_RunMode == ServerRunMode::PhysicalFleet &&
+        !m_IsPhysicalFleetActivated)
+    {
+        TryActivatePhysicalFleet();
+    }
 }
 
 void NetworkManagerServer::SendVisionHelloAck(
@@ -704,7 +702,434 @@ void NetworkManagerServer::InitializeVisionObservationStore()
     m_VisionObservationStore =
         std::make_unique<VisionObservationStore>(std::move(storeConfig));
 
-    std::cout << "[Vision] Observation-only receiver enabled; control integration remains OFF\n";
+    if (m_RunMode == ServerRunMode::PhysicalFleet)
+        std::cout << "[VisionCorrection] Direct node correction enabled\n";
+    else
+        std::cout << "[Vision] Observation-only receiver enabled\n";
+}
+
+void NetworkManagerServer::TryActivatePhysicalFleet()
+{
+    if (m_RunMode != ServerRunMode::PhysicalFleet)
+        return;
+
+    const auto sessionIt = m_AgvIdToRobotSessionMap.find(kPhysicalFleetAgvID);
+    if (sessionIt == m_AgvIdToRobotSessionMap.end() || !sessionIt->second)
+        return;
+
+    const RobotSessionPtr& session = sessionIt->second;
+    if (!session->SupportsTrajectoryCommand())
+    {
+        std::cout << "[PhysicalFleet] AGV 1 lacks trajectory capability; dispatch stopped\n";
+        return;
+    }
+    if (m_VisionConfig.enabled && !session->SupportsNodeCorrection())
+    {
+        std::cout << "[VisionCorrection] AGV 1 lacks node-correction capability; dispatch stopped\n";
+        return;
+    }
+
+    if (m_VisionConfig.enabled)
+    {
+        const auto latest = m_VisionObservationStore ?
+            m_VisionObservationStore->GetLatest(kPhysicalFleetAgvID) :
+            std::nullopt;
+        const uint64_t nowMs = MonotonicMilliseconds();
+        if (!latest.has_value() || !latest->observation.pose.has_value() ||
+            latest->observation.state !=
+                RobotProtocol::VisionTrackingState::MEASURED ||
+            latest->observation.verificationState !=
+                RobotProtocol::VisionVerificationState::VERIFIED ||
+            latest->receivedAtServerMilliseconds > nowMs ||
+            nowMs - latest->receivedAtServerMilliseconds > 200)
+        {
+            std::cout << "[VisionCorrection] Waiting for fresh MEASURED pose before dispatch\n";
+            return;
+        }
+
+        const MapNode startNode = MapManager::GetInstance().GetMapNode(
+            kPhysicalFleetStartNodeID);
+        const VisionMetricPose& actual = *latest->observation.pose;
+        PhysicalFleetCorrectionInput startPose;
+        startPose.actualXMm = actual.xMillimeters;
+        startPose.actualZMm = actual.zMillimeters;
+        startPose.actualHeadingRad =
+            actual.headingDegrees * kDegreesToRadians;
+        startPose.targetXMm =
+            (startNode.m_PosX - kVisionLocalOriginServerX) *
+            kVisionScaleMmPerMapUnit;
+        startPose.targetZMm =
+            (startNode.m_PosZ - kVisionLocalOriginServerZ) *
+            kVisionScaleMmPerMapUnit;
+        startPose.expectedArrivalHeadingRad = 0.0f;
+
+        const PhysicalFleetCorrectionDecision startDecision =
+            DecidePhysicalFleetCorrection(startPose);
+        if (startDecision.action != PhysicalFleetCorrectionAction::ACCEPT)
+        {
+            std::cout << "[VisionCorrection] Waiting for AGV at node 1, east. "
+                      << "positionErrorMm=" << startDecision.positionErrorMm
+                      << " headingErrorDeg="
+                      << startDecision.headingErrorRad / kDegreesToRadians
+                      << "\n";
+            return;
+        }
+    }
+
+    if (m_IsPhysicalFleetActivated)
+    {
+        if (!m_PhysicalFleetCorrection.active() &&
+            RoutePlanner::GetInstance().ResendCurrentRouteToController(
+                kPhysicalFleetAgvID))
+        {
+            std::cout << "[PhysicalFleet] Active automatic route restored\n";
+        }
+        return;
+    }
+
+    m_IsPhysicalFleetActivated = true;
+    EventManager::GetInstance().Publish(
+        { RobotEventType::IDLE_READY,
+          kPhysicalFleetAgvID,
+          m_TotalElapsedServerTime });
+    if (m_VisionConfig.enabled)
+    {
+        std::cout << "[PhysicalFleet] Vision and correction-capable AGV ready; "
+                     "automatic dispatch enabled\n";
+    }
+    else
+    {
+        std::cout << "[PhysicalFleet] Command-capable AGV ready; "
+                     "automatic dispatch enabled\n";
+    }
+}
+
+bool NetworkManagerServer::HandlePhysicalFleetControllerEvent(
+    uint32_t _agvID,
+    const ControllerEvent& _event)
+{
+    if (m_RunMode != ServerRunMode::PhysicalFleet)
+        return false;
+
+    auto* controller = dynamic_cast<ESP32RobotController*>(
+        RobotManager::GetInstance().GetRobotController(_agvID));
+    if (!controller)
+        return false;
+
+    if (_event.type == ControllerEventType::NODE_CORRECTION_REPORT)
+    {
+        HandlePhysicalFleetCorrectionReport(_agvID, _event);
+        return true;
+    }
+
+    if (_event.type != ControllerEventType::ARRIVED)
+        return false;
+
+    if (!controller->IsExpectedPhysicalArrival(_event.nodeID))
+        return false;
+
+    if (!m_VisionConfig.enabled)
+    {
+        if (!controller->ConfirmCorrectedPhysicalArrival(_event.nodeID))
+        {
+            RoutePlanner::GetInstance().StopActiveRouteForSafety(
+                _agvID,
+                m_TotalElapsedServerTime,
+                "physical edge confirmation failed");
+            return true;
+        }
+        return false;
+    }
+
+    BeginPhysicalFleetCorrection(_agvID, _event.nodeID);
+    return true;
+}
+
+void NetworkManagerServer::BeginPhysicalFleetCorrection(
+    uint32_t _agvID,
+    uint32_t _nodeID)
+{
+    if (m_PhysicalFleetCorrection.active())
+    {
+        if (m_PhysicalFleetCorrection.agvID == _agvID &&
+            m_PhysicalFleetCorrection.nodeID == _nodeID)
+        {
+            std::cout << "[VisionCorrection] Duplicate coarse ARRIVED ignored\n";
+            return;
+        }
+        FailPhysicalFleetCorrection("overlapping coarse ARRIVED");
+        return;
+    }
+
+    auto* controller = dynamic_cast<ESP32RobotController*>(
+        RobotManager::GetInstance().GetRobotController(_agvID));
+    float expectedHeadingRad = 0.0f;
+    if (!controller || !controller->SupportsNodeCorrection() ||
+        !controller->TryGetExpectedArrivalHeading(
+            _nodeID, expectedHeadingRad))
+    {
+        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+            _agvID,
+            m_TotalElapsedServerTime,
+            "Vision correction unavailable");
+        return;
+    }
+
+    const uint32_t routeID = controller->GetActivePhysicalRouteID();
+    if (routeID == 0)
+    {
+        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+            _agvID,
+            m_TotalElapsedServerTime,
+            "missing physical edge route ID");
+        return;
+    }
+
+    uint32_t baselineSequence = 0;
+    if (m_VisionObservationStore)
+    {
+        const auto latest = m_VisionObservationStore->GetLatest(_agvID);
+        if (latest.has_value())
+            baselineSequence = latest->observation.sequence;
+    }
+
+    m_PhysicalFleetCorrection = {};
+    m_PhysicalFleetCorrection.phase =
+        PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT;
+    m_PhysicalFleetCorrection.agvID = _agvID;
+    m_PhysicalFleetCorrection.nodeID = _nodeID;
+    m_PhysicalFleetCorrection.routeID = routeID;
+    m_PhysicalFleetCorrection.baselineVisionSequence = baselineSequence;
+    m_PhysicalFleetCorrection.expectedHeadingRad = expectedHeadingRad;
+    m_PhysicalFleetCorrection.deadlineMilliseconds =
+        MonotonicMilliseconds() + kCorrectionMeasurementWaitMs;
+
+    std::cout << "[VisionCorrection] Coarse node " << _nodeID
+              << " reached; waiting for post-stop MEASURED pose\n";
+}
+
+void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
+    uint32_t _agvID,
+    const ControllerEvent& _event)
+{
+    if (!m_PhysicalFleetCorrection.active())
+    {
+        std::cout << "[VisionCorrection] Late correction report ignored\n";
+        return;
+    }
+
+    if (m_PhysicalFleetCorrection.phase ==
+            PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT &&
+        _event.commandID == m_PhysicalFleetCorrection.commandID &&
+        _event.routeID == m_PhysicalFleetCorrection.routeID &&
+        _event.nodeID == m_PhysicalFleetCorrection.nodeID)
+    {
+        std::cout << "[VisionCorrection] Duplicate completion report ignored\n";
+        return;
+    }
+
+    if (m_PhysicalFleetCorrection.phase !=
+            PhysicalFleetCorrectionState::Phase::WAITING_FOR_REPORT ||
+        _agvID != m_PhysicalFleetCorrection.agvID ||
+        _event.nodeID != m_PhysicalFleetCorrection.nodeID ||
+        _event.routeID != m_PhysicalFleetCorrection.routeID ||
+        _event.commandID != m_PhysicalFleetCorrection.commandID)
+    {
+        FailPhysicalFleetCorrection("correction report identity mismatch");
+        return;
+    }
+
+    if (_event.correctionResult !=
+        RobotProtocol::NodeCorrectionResult::COMPLETED)
+    {
+        std::cout << "[VisionCorrection] Primitive failed. result="
+                  << static_cast<unsigned>(_event.correctionResult)
+                  << " detail=" << _event.detail << "\n";
+        FailPhysicalFleetCorrection("ESP32 correction primitive failed");
+        return;
+    }
+
+    if (m_VisionObservationStore)
+    {
+        const auto latest = m_VisionObservationStore->GetLatest(_agvID);
+        if (latest.has_value())
+        {
+            m_PhysicalFleetCorrection.baselineVisionSequence = std::max(
+                m_PhysicalFleetCorrection.baselineVisionSequence,
+                latest->observation.sequence);
+        }
+    }
+    m_PhysicalFleetCorrection.phase =
+        PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT;
+    m_PhysicalFleetCorrection.deadlineMilliseconds =
+        MonotonicMilliseconds() + kCorrectionMeasurementWaitMs;
+    std::cout << "[VisionCorrection] Primitive completed; remeasuring\n";
+}
+
+void NetworkManagerServer::UpdatePhysicalFleetCorrection()
+{
+    if (!m_PhysicalFleetCorrection.active())
+        return;
+
+    const uint64_t nowMs = MonotonicMilliseconds();
+    if (nowMs > m_PhysicalFleetCorrection.deadlineMilliseconds)
+    {
+        FailPhysicalFleetCorrection(
+            m_PhysicalFleetCorrection.phase ==
+                    PhysicalFleetCorrectionState::Phase::WAITING_FOR_REPORT
+                ? "correction report timeout"
+                : "fresh Vision measurement timeout");
+        return;
+    }
+    if (m_PhysicalFleetCorrection.phase !=
+        PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT)
+    {
+        return;
+    }
+
+    if (!m_VisionObservationStore)
+    {
+        FailPhysicalFleetCorrection("Vision store unavailable");
+        return;
+    }
+    const auto latest = m_VisionObservationStore->GetLatest(
+        m_PhysicalFleetCorrection.agvID);
+    if (!latest.has_value() || !latest->observation.pose.has_value() ||
+        latest->observation.sequence <=
+            m_PhysicalFleetCorrection.baselineVisionSequence ||
+        latest->observation.state !=
+            RobotProtocol::VisionTrackingState::MEASURED ||
+        latest->observation.verificationState !=
+            RobotProtocol::VisionVerificationState::VERIFIED ||
+        latest->receivedAtServerMilliseconds > nowMs ||
+        nowMs - latest->receivedAtServerMilliseconds >
+            kCorrectionMaximumVisionAgeMs)
+    {
+        return;
+    }
+
+    const MapNode target = MapManager::GetInstance().GetMapNode(
+        m_PhysicalFleetCorrection.nodeID);
+    const VisionMetricPose& actual = *latest->observation.pose;
+    PhysicalFleetCorrectionInput input;
+    input.actualXMm = actual.xMillimeters;
+    input.actualZMm = actual.zMillimeters;
+    input.actualHeadingRad = actual.headingDegrees * kDegreesToRadians;
+    input.targetXMm =
+        (target.m_PosX - kVisionLocalOriginServerX) * kVisionScaleMmPerMapUnit;
+    input.targetZMm =
+        (target.m_PosZ - kVisionLocalOriginServerZ) * kVisionScaleMmPerMapUnit;
+    input.expectedArrivalHeadingRad =
+        m_PhysicalFleetCorrection.expectedHeadingRad;
+
+    const PhysicalFleetCorrectionDecision decision =
+        DecidePhysicalFleetCorrection(input);
+    std::cout << "[VisionCorrection] node="
+              << m_PhysicalFleetCorrection.nodeID
+              << " positionErrorMm=" << decision.positionErrorMm
+              << " headingErrorDeg="
+              << decision.headingErrorRad / kDegreesToRadians << "\n";
+
+    if (decision.action == PhysicalFleetCorrectionAction::ACCEPT)
+    {
+        CompletePhysicalFleetCorrection();
+        return;
+    }
+    if (decision.action == PhysicalFleetCorrectionAction::REJECT ||
+        m_PhysicalFleetCorrection.primitiveCount >=
+            kMaximumCorrectionPrimitives)
+    {
+        FailPhysicalFleetCorrection("correction bounds exceeded");
+        return;
+    }
+
+    RobotProtocol::NodeCorrectionAction action;
+    switch (decision.action)
+    {
+    case PhysicalFleetCorrectionAction::DRIVE_FORWARD:
+        action = RobotProtocol::NodeCorrectionAction::DRIVE_FORWARD;
+        break;
+    case PhysicalFleetCorrectionAction::TURN_CW:
+        action = RobotProtocol::NodeCorrectionAction::TURN_CW;
+        break;
+    case PhysicalFleetCorrectionAction::TURN_CCW:
+        action = RobotProtocol::NodeCorrectionAction::TURN_CCW;
+        break;
+    default:
+        FailPhysicalFleetCorrection("invalid correction decision");
+        return;
+    }
+
+    auto sessionIt = m_AgvIdToRobotSessionMap.find(
+        m_PhysicalFleetCorrection.agvID);
+    if (sessionIt == m_AgvIdToRobotSessionMap.end() || !sessionIt->second)
+    {
+        FailPhysicalFleetCorrection("robot session unavailable");
+        return;
+    }
+
+    if (m_NextCorrectionCommandID == 0)
+        ++m_NextCorrectionCommandID;
+    RobotProtocol::NodeCorrectionCommandPayload command;
+    command.routeID = m_PhysicalFleetCorrection.routeID;
+    command.nodeID = m_PhysicalFleetCorrection.nodeID;
+    command.commandID = m_NextCorrectionCommandID++;
+    command.action = action;
+    command.magnitude = decision.magnitude;
+    if (!sessionIt->second->SendNodeCorrection(command))
+    {
+        FailPhysicalFleetCorrection("correction command send failed");
+        return;
+    }
+
+    m_PhysicalFleetCorrection.commandID = command.commandID;
+    m_PhysicalFleetCorrection.baselineVisionSequence =
+        latest->observation.sequence;
+    ++m_PhysicalFleetCorrection.primitiveCount;
+    m_PhysicalFleetCorrection.phase =
+        PhysicalFleetCorrectionState::Phase::WAITING_FOR_REPORT;
+    m_PhysicalFleetCorrection.deadlineMilliseconds =
+        nowMs + kCorrectionReportWaitMs;
+}
+
+void NetworkManagerServer::CompletePhysicalFleetCorrection()
+{
+    const uint32_t agvID = m_PhysicalFleetCorrection.agvID;
+    const uint32_t nodeID = m_PhysicalFleetCorrection.nodeID;
+    auto* controller = dynamic_cast<ESP32RobotController*>(
+        RobotManager::GetInstance().GetRobotController(agvID));
+    if (!controller || !controller->ConfirmCorrectedPhysicalArrival(nodeID))
+    {
+        FailPhysicalFleetCorrection("corrected arrival confirmation failed");
+        return;
+    }
+
+    const uint8_t primitiveCount =
+        m_PhysicalFleetCorrection.primitiveCount;
+    m_PhysicalFleetCorrection = {};
+    EventManager::GetInstance().Publish(
+        { RobotEventType::NODE_ARRIVED,
+          agvID,
+          m_TotalElapsedServerTime,
+          nodeID });
+    std::cout << "[VisionCorrection] Node " << nodeID
+              << " accepted after "
+              << static_cast<unsigned>(primitiveCount)
+              << " correction primitive(s)\n";
+}
+
+void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
+{
+    const uint32_t agvID = m_PhysicalFleetCorrection.agvID;
+    std::cout << "[VisionCorrection] SAFE STOP: " << _reason << "\n";
+    m_PhysicalFleetCorrection = {};
+    if (agvID != 0)
+    {
+        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+            agvID,
+            m_TotalElapsedServerTime,
+            _reason);
+    }
 }
 
 void NetworkManagerServer::SendTrajectoryPreview(
@@ -1231,6 +1656,8 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
         while (it->second->HasEvent()) 
         {            
             ControllerEvent ev = it->second->PopEvent();
+            if (HandlePhysicalFleetControllerEvent(it->first, ev))
+                continue;
             if (ev.type == ControllerEventType::ARRIVED) 
             {
                 EventManager::GetInstance().Publish({ RobotEventType::NODE_ARRIVED, it->first, m_TotalElapsedServerTime, ev.nodeID });
@@ -1241,6 +1668,8 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
             }
         }
     }
+
+    UpdatePhysicalFleetCorrection();
 
     // 2. LOGIC 레이어: 장부 갱신 및 시공간 설계
     EventManager::GetInstance().SwapAndProcessEvents(); 

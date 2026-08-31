@@ -20,7 +20,10 @@ namespace RobotProtocol
         // Full execution support: follower, safety, STATUS and ARRIVED.
         CAPABILITY_TRAJECTORY_COMMAND = 1u << 0,
         // Parse/validate/store only. Never a runtime motion target.
-        CAPABILITY_TRAJECTORY_PREVIEW = 1u << 1
+        CAPABILITY_TRAJECTORY_PREVIEW = 1u << 1,
+        // Executes bounded node-centering primitives while a completed
+        // physical-fleet edge is stopped and awaiting Server verification.
+        CAPABILITY_NODE_CORRECTION = 1u << 2
     };
 
     enum class ClientType : uint8_t
@@ -38,9 +41,11 @@ namespace RobotProtocol
         ROUTE_COMMAND = 100,
         CANCEL_ROUTE = 101,
         TRAJECTORY_COMMAND = 102,
+        NODE_CORRECTION_COMMAND = 103,
 
         STATUS = 200,
         ARRIVED = 201,
+        NODE_CORRECTION_REPORT = 202,
 
         PING = 300,
         PONG = 301,
@@ -95,6 +100,20 @@ namespace RobotProtocol
         MEASURED = 1,
         HELD = 2,
         LOST = 3
+    };
+
+    enum class NodeCorrectionAction : uint8_t
+    {
+        DRIVE_FORWARD = 2,
+        TURN_CW = 3,
+        TURN_CCW = 4
+    };
+
+    enum class NodeCorrectionResult : uint8_t
+    {
+        COMPLETED = 2,
+        REJECTED = 3,
+        FAULT = 4
     };
 
     // Mirrors the locked-calibration guard states emitted by VisionTracker.
@@ -174,6 +193,26 @@ namespace RobotProtocol
     struct ArrivedPayload
     {
         uint32_t currentNodeID = 0;
+    };
+
+    struct NodeCorrectionCommandPayload
+    {
+        uint32_t routeID = 0;
+        uint32_t nodeID = 0;
+        uint32_t commandID = 0;
+        NodeCorrectionAction action = NodeCorrectionAction::DRIVE_FORWARD;
+        // Millimetres for DRIVE_FORWARD and radians for TURN_CW/TURN_CCW.
+        // Direction is carried by action, so this value is always positive.
+        float magnitude = 0.0f;
+    };
+
+    struct NodeCorrectionReportPayload
+    {
+        uint32_t routeID = 0;
+        uint32_t nodeID = 0;
+        uint32_t commandID = 0;
+        NodeCorrectionResult result = NodeCorrectionResult::REJECTED;
+        uint32_t detail = 0;
     };
 
     struct ErrorPayload

@@ -1,6 +1,6 @@
 # Current project status
 
-Last verified: 2026-08-30
+Last verified: 2026-08-31
 
 Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
@@ -21,7 +21,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 | 영역 | 상태 | 근거/메모 |
 |---|---|---|
-| C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `TrajectorySmokeTest`, `TrajectoryPreview`, `VisionObservationTest`, `AGV_Client` target |
+| C++20 CMake 구성 | 검증 완료 | `Shared`, `AGV_Server`, `FakeRobot`, `TrajectorySmokeTest`, `TrajectoryPreview`, `VisionObservationTest`, `PhysicalFleetCorrectionTest`, `AGV_Client` target |
 | Server-authoritative world | 구현됨 | TESTCASE0 및 실제 AGV 1용 `--physical-fleet` |
 | WHCA* 계열 route planning | 검증 완료 | smoke test에서 route 생성과 후속 route 재전송 확인 |
 | 시간 기반 node/edge/goal reservation | 검증 완료 | server/FakeRobot smoke flow에서 사용 |
@@ -30,12 +30,23 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
-| Vision 관측 수신 기반 | 검증 완료 | calibration `a16ebd17de002bb9`, source/session·계약·pose 검증 후 실카메라 관측 저장 확인; 제어 반영 없음 |
+| Vision 관측 수신 기반 | 검증 완료 | calibration `a16ebd17de002bb9`, source/session·계약·pose 검증 후 실카메라 관측 저장 확인; PhysicalFleet correction coordinator만 제한적으로 읽음 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
-| 자동화된 test target | 일부 구현 | trajectory 2개와 Vision serializer/store/Unity relay CTest 통과; 전체 fleet test framework는 없음 |
+| Vision node 보정 제어 | 구현됨·실차 재검증 필요 | `--physical-fleet`와 Vision을 함께 켜면 coarse ARRIVED 뒤 fresh MEASURED pose로 제한된 회전/직진 보정 후에만 NODE_ARRIVED 확정 |
+| 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy를 포함한 CTest 4개 통과; 전체 fleet TCP test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-08-31 Vision 기반 node 도착 보정 Server 구현
+
+- `--physical-fleet`와 `--vision-observation`을 함께 사용할 때만 Vision 관측을 실차 node 도착 보정에 사용한다. 다른 mode의 planned pose와 기존 Unity 비교 marker 흐름은 그대로 분리된다.
+- Server는 전체 계획 경로를 유지하되 ESP32에는 LINE 한 edge씩 final trajectory로 보낸다. ESP32의 coarse `ARRIVED`는 즉시 RoutePlanner로 전달하지 않고, 정지 뒤 들어온 더 새 `MEASURED + VERIFIED` 관측을 기다린다.
+- 허용 오차는 위치 20 mm, 도착 heading 5도다. 위치 오차 200 mm 초과는 거절하며, 한 primitive는 직진 최대 120 mm 또는 회전 최대 90도, node당 최대 6회로 제한한다.
+- `NODE_CORRECTION_COMMAND=103`과 `NODE_CORRECTION_REPORT=202`, capability bit 2를 추가했다. 명령과 결과는 route/node/command ID로 결합하며 payload는 각각 17 byte다.
+- 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 heading 5도 이내인 fresh Vision pose를 확인한 뒤에만 첫 자동 route를 보낸다.
+- 새 측정 대기 2.5초, primitive 결과 대기 10초를 넘기거나 Vision/robot identity·범위·결과가 맞지 않으면 active route를 취소하고 fail-stop한다.
+- CMake configure/build와 CTest 4개가 통과했다. 이 결과는 Server 정책과 wire serializer의 hardware-free 검증이며, 새 보정 firmware 업로드와 실제 바닥 보정 주행은 아직 검증하지 않았다.
 
 ### 2026-08-29 Vision 관측의 Unity 비교 pose 중계 기반
 
@@ -213,6 +224,9 @@ cmake --build build -j2
 
 ## 알려진 위험과 blocker
 
+- Vision node 보정은 Server에서 직접 명령을 내리는 build-only 단계다. 실제 바닥에서는 먼저 바퀴를 띄우고 CW/CCW 방향, 짧은 직진 count, report 순서와 BOOT E-stop을 확인해야 한다.
+- 보정 실패 시 Server가 확정하는 node는 마지막 검증 node로 유지된다. 실제 차체는 coarse target 부근에 있을 수 있으므로 fail-stop 뒤 자동 재개하지 말고 사람이 위치를 다시 확인해야 한다.
+
 - TestCase03 export는 Server working tree에 반영됐지만 아직 Server와 Unity 저장소의 기준 commit으로 함께 확정되지 않았다. Unity의 수정 scene/export도 별도 commit으로 보존해야 한다.
 - `60 mm/map-unit`은 TestCase03 곡선 demo용 선택값이며 시설 전체의 최종 실측 calibration은 아니다.
 - physical-demo가 초기화하는 heading 값은 trajectory의 신뢰된 radian start heading으로 사용할 수 없다. 실제 시작 자세의 좌표계와 단위를 확정하기 전 runtime dispatch를 켜지 않는다.
@@ -229,12 +243,11 @@ cmake --build build -j2
 
 ## 다음 우선 작업
 
-1. Unity Editor Play에서 cyan MEASURED/yellow HELD/LOST 숨김 marker를 실카메라와 함께 육안 확인
-2. Unity 저장소에 수정한 TestCase03 scene/export를 별도 commit으로 보존하고 Server map과 같은 데이터인지 확인
-3. 시작 heading을 확인한 뒤 raised-wheel curve, 저속 바닥 curve, Unity 실제 pose 비교 순으로 승격
+1. 다른 작업 중인 ESP32 node-correction 구현과 Server packet ID·payload·capability를 맞춘 뒤 motor-locked 통신 확인
+2. 바퀴를 띄우고 짧은 CW/CCW·직진 primitive와 report/fail-stop을 확인한 뒤 저속 바닥 node 보정을 한 번만 시험
+3. Unity Editor에서 planned AGV와 Vision marker가 보정 전후 의도대로 표시되는지 확인
 4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
 5. 전원 분배단자, fuse, switch와 기판 고정
-6. 새 TestCase03 자동 fleet smoke와 기존 occupancy collision을 별도 Server 작업으로 진단
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

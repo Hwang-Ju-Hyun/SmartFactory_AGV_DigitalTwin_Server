@@ -144,6 +144,32 @@ namespace RobotProtocol
             }
         }
 
+        bool IsKnownNodeCorrectionAction(uint8_t rawAction)
+        {
+            switch (static_cast<NodeCorrectionAction>(rawAction))
+            {
+            case NodeCorrectionAction::DRIVE_FORWARD:
+            case NodeCorrectionAction::TURN_CW:
+            case NodeCorrectionAction::TURN_CCW:
+                return true;
+            default:
+                return false;
+            }
+        }
+
+        bool IsKnownNodeCorrectionResult(uint8_t rawResult)
+        {
+            switch (static_cast<NodeCorrectionResult>(rawResult))
+            {
+            case NodeCorrectionResult::COMPLETED:
+            case NodeCorrectionResult::REJECTED:
+            case NodeCorrectionResult::FAULT:
+                return true;
+            default:
+                return false;
+            }
+        }
+
         constexpr uint16_t kKnownVisionQualityFields =
             VISION_QUALITY_DECISION_MARGIN |
             VISION_QUALITY_CALIBRATION_RMS_ERROR |
@@ -161,8 +187,10 @@ namespace RobotProtocol
         case PacketID::ROUTE_COMMAND:
         case PacketID::CANCEL_ROUTE:
         case PacketID::TRAJECTORY_COMMAND:
+        case PacketID::NODE_CORRECTION_COMMAND:
         case PacketID::STATUS:
         case PacketID::ARRIVED:
+        case PacketID::NODE_CORRECTION_REPORT:
         case PacketID::PING:
         case PacketID::PONG:
         case PacketID::HELLO:
@@ -438,6 +466,92 @@ namespace RobotProtocol
 
         if (inStream.GetRemainDataSize() != 0) return false;
         outPayload = std::move(decoded);
+        return true;
+    }
+
+    bool WriteNodeCorrectionCommandPayload(
+        OutputMemoryStream& outStream,
+        const NodeCorrectionCommandPayload& payload)
+    {
+        const uint8_t rawAction = static_cast<uint8_t>(payload.action);
+        if (payload.routeID == 0 || payload.nodeID == 0 ||
+            payload.commandID == 0 ||
+            !IsKnownNodeCorrectionAction(rawAction) ||
+            !std::isfinite(payload.magnitude) || payload.magnitude <= 0.0f)
+        {
+            return false;
+        }
+
+        outStream.Write(payload.routeID);
+        outStream.Write(payload.nodeID);
+        outStream.Write(payload.commandID);
+        outStream.Write(rawAction);
+        outStream.Write(payload.magnitude);
+        return true;
+    }
+
+    bool ReadNodeCorrectionCommandPayload(
+        InputMemoryStream& inStream,
+        NodeCorrectionCommandPayload& outPayload)
+    {
+        NodeCorrectionCommandPayload decoded;
+        uint8_t rawAction = 0;
+        if (!ReadUInt32(inStream, decoded.routeID)) return false;
+        if (!ReadUInt32(inStream, decoded.nodeID)) return false;
+        if (!ReadUInt32(inStream, decoded.commandID)) return false;
+        if (!ReadUInt8(inStream, rawAction)) return false;
+        if (!ReadFloat(inStream, decoded.magnitude)) return false;
+        if (inStream.GetRemainDataSize() != 0 || decoded.routeID == 0 ||
+            decoded.nodeID == 0 || decoded.commandID == 0 ||
+            !IsKnownNodeCorrectionAction(rawAction) ||
+            !std::isfinite(decoded.magnitude) || decoded.magnitude <= 0.0f)
+        {
+            return false;
+        }
+        decoded.action = static_cast<NodeCorrectionAction>(rawAction);
+        outPayload = decoded;
+        return true;
+    }
+
+    bool WriteNodeCorrectionReportPayload(
+        OutputMemoryStream& outStream,
+        const NodeCorrectionReportPayload& payload)
+    {
+        const uint8_t rawResult = static_cast<uint8_t>(payload.result);
+        if (payload.routeID == 0 || payload.nodeID == 0 ||
+            payload.commandID == 0 ||
+            !IsKnownNodeCorrectionResult(rawResult))
+        {
+            return false;
+        }
+
+        outStream.Write(payload.routeID);
+        outStream.Write(payload.nodeID);
+        outStream.Write(payload.commandID);
+        outStream.Write(rawResult);
+        outStream.Write(payload.detail);
+        return true;
+    }
+
+    bool ReadNodeCorrectionReportPayload(
+        InputMemoryStream& inStream,
+        NodeCorrectionReportPayload& outPayload)
+    {
+        NodeCorrectionReportPayload decoded;
+        uint8_t rawResult = 0;
+        if (!ReadUInt32(inStream, decoded.routeID)) return false;
+        if (!ReadUInt32(inStream, decoded.nodeID)) return false;
+        if (!ReadUInt32(inStream, decoded.commandID)) return false;
+        if (!ReadUInt8(inStream, rawResult)) return false;
+        if (!ReadUInt32(inStream, decoded.detail)) return false;
+        if (inStream.GetRemainDataSize() != 0 || decoded.routeID == 0 ||
+            decoded.nodeID == 0 || decoded.commandID == 0 ||
+            !IsKnownNodeCorrectionResult(rawResult))
+        {
+            return false;
+        }
+        decoded.result = static_cast<NodeCorrectionResult>(rawResult);
+        outPayload = decoded;
         return true;
     }
 

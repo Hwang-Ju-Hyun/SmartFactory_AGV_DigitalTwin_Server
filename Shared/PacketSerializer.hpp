@@ -57,6 +57,12 @@ namespace RobotProtocol
     bool WriteTrajectoryCommandPayload(OutputMemoryStream& outStream, const TrajectoryCommandPayload& payload);
     bool ReadTrajectoryCommandPayload(InputMemoryStream& inStream, TrajectoryCommandPayload& outPayload);
 
+    bool WriteNodeCorrectionCommandPayload(OutputMemoryStream& outStream, const NodeCorrectionCommandPayload& payload);
+    bool ReadNodeCorrectionCommandPayload(InputMemoryStream& inStream, NodeCorrectionCommandPayload& outPayload);
+
+    bool WriteNodeCorrectionReportPayload(OutputMemoryStream& outStream, const NodeCorrectionReportPayload& payload);
+    bool ReadNodeCorrectionReportPayload(InputMemoryStream& inStream, NodeCorrectionReportPayload& outPayload);
+
     void WriteArrivedPayload(OutputMemoryStream& outStream, const ArrivedPayload& payload);
     bool ReadArrivedPayload(InputMemoryStream& inStream, ArrivedPayload& outPayload);
 

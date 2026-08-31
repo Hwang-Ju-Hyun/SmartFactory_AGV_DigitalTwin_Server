@@ -12,6 +12,7 @@ add_executable(AGV_Server
     UnityRobotController.cpp
     VisionObservationStore.cpp
     VisionObservationRelay.cpp
+    PhysicalFleetCorrection.cpp
 )
 
 #  정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
@@ -44,9 +45,15 @@ add_executable(VisionObservationTest
 
 target_link_libraries(VisionObservationTest PRIVATE Shared)
 
+add_executable(PhysicalFleetCorrectionTest
+    PhysicalFleetCorrectionTest.cpp
+    PhysicalFleetCorrection.cpp
+)
+
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
     add_test(NAME vision_observation COMMAND VisionObservationTest)
+    add_test(NAME physical_fleet_correction COMMAND PhysicalFleetCorrectionTest)
     add_test(
         NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview

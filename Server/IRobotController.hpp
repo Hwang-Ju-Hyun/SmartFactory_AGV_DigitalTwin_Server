@@ -1,4 +1,5 @@
 #pragma once
+#include "Protocol.hpp"
 #include "SharedPackets.hpp"
 #include "TCPSession.hpp"
 #include <functional>
@@ -9,7 +10,8 @@ enum class ControllerEventType : uint8_t
     ARRIVED, 
     ERROR_SLIP, 
     EMERGENCY_STOP,
-    EXECUTION_BLOCKED
+    EXECUTION_BLOCKED,
+    NODE_CORRECTION_REPORT
 };
 
 struct ControllerEvent 
@@ -17,6 +19,11 @@ struct ControllerEvent
     ControllerEventType type = ControllerEventType::NONE; 
     uint32_t nodeID = 0; 
     uint32_t relatedNodeID = 0;
+    uint32_t routeID = 0;
+    uint32_t commandID = 0;
+    uint32_t detail = 0;
+    RobotProtocol::NodeCorrectionResult correctionResult =
+        RobotProtocol::NodeCorrectionResult::REJECTED;
 };
 
 class IRobotController

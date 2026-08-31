@@ -5,6 +5,7 @@
 #include "RobotSession.hpp"
 #include "VisionObservationStore.hpp"
 #include "VisionObservationRelay.hpp"
+#include "PhysicalFleetCorrection.hpp"
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -83,6 +84,16 @@ private:
     void SendTrajectoryPreview(uint32_t _agvID, const RobotSessionPtr& _robotSession);
     void SendTrajectoryRaisedWheel(uint32_t _agvID, const RobotSessionPtr& _robotSession);
     void SendOutgoingVisionObservationPackets();
+    void TryActivatePhysicalFleet();
+    bool HandlePhysicalFleetControllerEvent(uint32_t _agvID,
+                                            const ControllerEvent& _event);
+    void BeginPhysicalFleetCorrection(uint32_t _agvID, uint32_t _nodeID);
+    void HandlePhysicalFleetCorrectionReport(
+        uint32_t _agvID,
+        const ControllerEvent& _event);
+    void UpdatePhysicalFleetCorrection();
+    void CompletePhysicalFleetCorrection();
+    void FailPhysicalFleetCorrection(const char* _reason);
 private:
     std::vector<ClientProxyPtr> m_PendingProxies;
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    
@@ -105,6 +116,29 @@ private:
         std::unordered_map<uint32_t, VisionViewerDeliveryState>>
         m_LastVisionDeliveryByUnitySession;
     static uint32_t nextSessionID;
+    struct PhysicalFleetCorrectionState
+    {
+        enum class Phase
+        {
+            IDLE,
+            WAITING_FOR_MEASUREMENT,
+            WAITING_FOR_REPORT
+        };
+
+        Phase phase = Phase::IDLE;
+        uint32_t agvID = 0;
+        uint32_t nodeID = 0;
+        uint32_t routeID = 0;
+        uint32_t commandID = 0;
+        uint32_t baselineVisionSequence = 0;
+        uint8_t primitiveCount = 0;
+        float expectedHeadingRad = 0.0f;
+        uint64_t deadlineMilliseconds = 0;
+
+        bool active() const { return phase != Phase::IDLE; }
+    };
+    PhysicalFleetCorrectionState m_PhysicalFleetCorrection;
+    uint32_t m_NextCorrectionCommandID = 1;
 private:
     LinkingContext* m_LinkingContext; 
 public: 

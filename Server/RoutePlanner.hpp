@@ -47,6 +47,8 @@ public:
                                   float _serverTime, MissionPurpose _purpose);
     void Update(float _deltaTime, float _serverTime); 
     void OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, uint32_t _blockedNodeID, float _serverTime);
+    void StopActiveRouteForSafety(uint32_t _agvID, float _serverTime,
+                                  const char* _reason);
     bool ResendCurrentRouteToController(uint32_t _agvID,
                                         const std::vector<uint32_t>& _expectedNodeIDs = {});
     

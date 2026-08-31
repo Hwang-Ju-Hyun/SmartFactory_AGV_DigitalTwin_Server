@@ -107,6 +107,28 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
         m_EventQueue.push({ ControllerEventType::ARRIVED, payload.currentNodeID, 0 });
         break;
     }
+    case RobotProtocol::PacketID::NODE_CORRECTION_REPORT:
+    {
+        RobotProtocol::NodeCorrectionReportPayload payload;
+        if (!SupportsNodeCorrection() ||
+            !RobotProtocol::ReadNodeCorrectionReportPayload(
+                payloadStream, payload))
+        {
+            std::cout << "[RobotSession] Invalid NODE_CORRECTION_REPORT from AGV "
+                      << header.agvID << "\n";
+            return;
+        }
+
+        ControllerEvent event;
+        event.type = ControllerEventType::NODE_CORRECTION_REPORT;
+        event.nodeID = payload.nodeID;
+        event.routeID = payload.routeID;
+        event.commandID = payload.commandID;
+        event.detail = payload.detail;
+        event.correctionResult = payload.result;
+        m_EventQueue.push(event);
+        break;
+    }
     case RobotProtocol::PacketID::PING:
     {
         RobotProtocol::TimePayload payload;
@@ -133,6 +155,7 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
     case RobotProtocol::PacketID::HELLO:
     case RobotProtocol::PacketID::ROUTE_COMMAND:
     case RobotProtocol::PacketID::TRAJECTORY_COMMAND:
+    case RobotProtocol::PacketID::NODE_CORRECTION_COMMAND:
     case RobotProtocol::PacketID::CANCEL_ROUTE:
     case RobotProtocol::PacketID::VISION_HELLO:
     case RobotProtocol::PacketID::VISION_HELLO_ACK:
@@ -214,9 +237,41 @@ bool RobotSession::SendTrajectoryForCapability(
     }
 
     SendRobotPacket(RobotProtocol::PacketID::TRAJECTORY_COMMAND, m_AgvID, payloadStream);
+    m_LastSentTrajectoryRouteID = payload.routeID;
     std::cout << "[RobotProtocol] Send TRAJECTORY_COMMAND agvID=" << m_AgvID
               << " routeID=" << payload.routeID
               << " waypoints=" << payload.waypoints.size() << "\n";
+    return true;
+}
+
+bool RobotSession::SendNodeCorrection(
+    const RobotProtocol::NodeCorrectionCommandPayload& payload)
+{
+    if (!SupportsNodeCorrection() || payload.routeID == 0 ||
+        payload.routeID != m_LastSentTrajectoryRouteID)
+    {
+        std::cout << "[RobotProtocol] NODE_CORRECTION_COMMAND not sent: "
+                  << "capability or route mismatch for AGV " << m_AgvID << "\n";
+        return false;
+    }
+
+    OutputMemoryStream payloadStream;
+    if (!RobotProtocol::WriteNodeCorrectionCommandPayload(
+            payloadStream, payload))
+    {
+        std::cout << "[RobotProtocol] NODE_CORRECTION_COMMAND not sent: invalid payload for AGV "
+                  << m_AgvID << "\n";
+        return false;
+    }
+
+    SendRobotPacket(
+        RobotProtocol::PacketID::NODE_CORRECTION_COMMAND,
+        m_AgvID,
+        payloadStream);
+    std::cout << "[VisionCorrection] command=" << payload.commandID
+              << " node=" << payload.nodeID
+              << " action=" << static_cast<unsigned>(payload.action)
+              << " magnitude=" << payload.magnitude << "\n";
     return true;
 }
 

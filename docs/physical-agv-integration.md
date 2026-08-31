@@ -1,6 +1,6 @@
 # Physical ESP32 AGV integration
 
-Last updated: 2026-08-11
+Last updated: 2026-08-31
 
 Hardware verification record: 2026-08-04
 
@@ -16,6 +16,7 @@ Hardware verification record: 2026-08-04
 | `30 cm -> CW 90도 -> 30 cm` | 바닥 시험 완료 |
 | ESP32 RobotProtocol 연결 | 실차 E2E 검증 완료 |
 | 실제 motor control + RobotProtocol | exact `[1 -> 2]` 바닥 검증 완료 |
+| AprilTag node 도착 보정 | Server 구현·hardware-free test 완료, 새 firmware 실차 미검증 |
 | 후진 | 미검증 |
 | encoder odometry | motor-locked preview 구현, 실차 pose 미검증 |
 | 실제 pose의 Digital Twin 반영 | node/progress 완료, odometry pose 미완료 |
@@ -155,6 +156,8 @@ Server -> ESP32 : HELLO_ACK
 Server -> ESP32 : ROUTE_COMMAND
 ESP32 -> Server : STATUS (주기 보고)
 ESP32 -> Server : ARRIVED (실제 node 도착 후)
+Server -> ESP32 : NODE_CORRECTION_COMMAND (Vision 보정이 필요할 때)
+ESP32 -> Server : NODE_CORRECTION_REPORT (primitive 안전 완료/거절/fault)
 ```
 
 추가 packet으로 `CANCEL_ROUTE`, `PING/PONG`, `ERROR_PACKET`, `EMERGENCY_STOP`이 정의돼 있다. 정확한 field와 크기는 [CommunicationProtocol.md](CommunicationProtocol.md)와 `Shared/Protocol.hpp`를 기준으로 한다.
@@ -166,6 +169,20 @@ ESP32 -> Server : ARRIVED (실제 node 도착 후)
 - server route node를 local `rotate -> drive -> stop` 단계로 변환한다.
 - server는 PWM이나 wheel별 제어값을 지속 전송하지 않는다.
 - protocol 처리와 motor control loop가 서로 장시간 block하지 않게 한다.
+- correction은 final one-edge 도착과 안전 정지 뒤에만 받으며 route/node/command ID와 local 범위를 다시 검증한다.
+
+### Vision node 도착 보정 계약
+
+`--physical-fleet --vision-observation` 조합에서는 coarse encoder 도착을 곧바로 최종 node 도착으로 확정하지 않는다.
+
+1. Server가 LINE edge 하나를 final `TRAJECTORY_COMMAND`로 보낸다.
+2. ESP32가 정지·settling 뒤 STATUS와 ARRIVED를 보내고 다음 trajectory를 기다린다.
+3. Server가 ARRIVED 이후의 새 `MEASURED + VERIFIED` AprilTag pose만 읽는다.
+4. 위치 20 mm·heading 5도 안이면 기존 `NODE_ARRIVED`를 확정한다.
+5. 밖이면 최대 120 mm 직진 또는 최대 90도 회전 한 번을 명령하고 완료 report 뒤 다시 측정한다.
+6. 200 mm 초과, node당 6회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
+
+Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 5도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. 이 기능은 Server build/CTest만 완료된 상태다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
 
 ## 단계별 통합 순서
 
@@ -222,6 +239,15 @@ node/progress 기반 Unity 이동은 physical-demo 실차와 함께 검증됐다
 
 웹 조종은 진단 수단으로는 유용하지만, 본 시스템 연동은 이미 정의된 RobotProtocol을 먼저 완성한다.
 
+### 6. Vision correction 승격
+
+- Server/ESP32의 capability bit, packet ID와 17-byte payload 순서를 먼저 대조
+- motor-locked 통신에서 unsupported client가 dispatch되지 않는지 확인
+- 바퀴를 띄워 20 mm 직진과 최소 CW/CCW correction을 각각 한 번 확인
+- `STATUS -> NODE_CORRECTION_REPORT` 순서와 새 Vision measurement gate 확인
+- 저속 바닥에서 한 node만 보정하고, 성공 후에만 다음 edge 자동 전송 확인
+- timeout·LOST·BOOT E-stop 중 하나를 의도적으로 만들어 route cancel과 safe output 확인
+
 ## 안전 핵심
 
 - 배터리 원전압을 ESP32 `5V` 또는 `3V3`에 직접 연결하지 않는다.
@@ -230,3 +256,4 @@ node/progress 기반 Unity 이동은 physical-demo 실차와 함께 검증됐다
 - 임시 배선은 사람이 옆에서 짧게만 시험한다.
 - 장시간 또는 원격 주행 전에 fuse, switch, 절연, 고정과 물리적 긴급 정지를 갖춘다.
 - motor output을 켜기 전에 방향 GPIO, encoder 부호, BOOT stop, timeout을 바퀴를 띄운 상태에서 확인한다.
+- correction fail-stop 뒤에는 Server의 마지막 확정 node와 실제 차체 위치가 다를 수 있으므로 사람이 재배치하기 전 자동 재개하지 않는다.

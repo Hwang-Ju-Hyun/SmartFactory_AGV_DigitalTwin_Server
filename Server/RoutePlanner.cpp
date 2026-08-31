@@ -153,6 +153,17 @@ void RoutePlanner::OnExecutionBlocked(uint32_t _agvID, uint32_t _currentNodeID, 
     //           << " toward " << _blockedNodeID << ", route cancelled\n";
 }
 
+void RoutePlanner::StopActiveRouteForSafety(uint32_t _agvID,
+                                            float _serverTime,
+                                            const char* _reason)
+{
+    Robo* agv = dynamic_cast<Robo*>(
+        AGVManager::GetInstance().FindAGV(_agvID));
+    if (!agv)
+        return;
+    StopRouteWithoutReplan(_agvID, agv, _serverTime, _reason);
+}
+
 bool RoutePlanner::TryReservePathTransaction(uint32_t _agvID, const std::vector<PathStep>& _path, uint32_t _finalTargetID, float _serverTime)
 {
     if (_path.empty())
