@@ -1,4 +1,5 @@
 #include "PacketSerializer.hpp"
+#include "NetworkManagerServer.hpp"
 #include "VisionObservationRelay.hpp"
 #include "VisionObservationStore.hpp"
 
@@ -21,6 +22,13 @@
 
 namespace
 {
+    void TestDefaultVisionContract()
+    {
+        const VisionObservationServerConfig config;
+        REQUIRE(config.expectedMapContractID == "67254eca75c55e5c");
+        REQUIRE(config.expectedPoseContractID == "f84eb43ebb6cf7ff");
+    }
+
     template <typename Payload, typename Writer, typename Reader>
     Payload RoundTrip(const Payload& source, Writer writer, Reader reader)
     {
@@ -542,6 +550,7 @@ namespace
 
 int main()
 {
+    TestDefaultVisionContract();
     TestSerializerRoundTrips();
     TestSerializerRejectsMalformedPayloads();
     TestGoldenMeasuredBodyLayout();
