@@ -155,6 +155,32 @@ namespace
         REQUIRE(NearlyEqual(decision.positionErrorMm, 200.01f));
     }
 
+    void TestRecordedRecoveryRetainsTwoFinalPrimitives()
+    {
+        REQUIRE(
+            PhysicalFleetCorrectionPolicy::kMaximumPrimitivesPerNode == 8);
+
+        // The 2026-08-31 floor run used six primitives to get this close to
+        // node 2. It still needed one short drive followed by one final
+        // heading correction, so both must fit inside the bounded session.
+        auto input = AtOrigin();
+        input.actualXMm = 324.0f;
+        input.actualZMm = -13.0f;
+        input.actualHeadingRad = 28.0f * kDegreesToRadians;
+        input.targetXMm = 350.0f;
+
+        const auto finalDrive = DecidePhysicalFleetCorrection(input);
+        REQUIRE(finalDrive.action ==
+                PhysicalFleetCorrectionAction::DRIVE_FORWARD);
+        REQUIRE(finalDrive.positionErrorMm >
+                PhysicalFleetCorrectionPolicy::kPositionToleranceMm);
+
+        input.actualXMm = input.targetXMm;
+        input.actualZMm = input.targetZMm;
+        const auto finalHeading = DecidePhysicalFleetCorrection(input);
+        REQUIRE(finalHeading.action == PhysicalFleetCorrectionAction::TURN_CW);
+    }
+
     void TestRejectsEveryNonFiniteInput()
     {
         const float invalidValues[]{
@@ -204,6 +230,7 @@ int main()
     TestCorrectsArrivalHeadingAfterPosition();
     TestUsesShortestWrappedHeadingError();
     TestRejectsExcessiveDistance();
+    TestRecordedRecoveryRetainsTwoFinalPrimitives();
     TestRejectsEveryNonFiniteInput();
     std::cout << "Physical fleet correction tests passed\n";
     return 0;

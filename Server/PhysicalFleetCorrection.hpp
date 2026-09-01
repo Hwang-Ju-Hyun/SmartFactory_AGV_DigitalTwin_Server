@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 enum class PhysicalFleetCorrectionAction
 {
     ACCEPT,
@@ -37,6 +39,7 @@ struct PhysicalFleetCorrectionDecision
 
 namespace PhysicalFleetCorrectionPolicy
 {
+    inline constexpr uint8_t kMaximumPrimitivesPerNode = 8;
     inline constexpr float kPositionToleranceMm = 20.0f;
     inline constexpr float kHeadingToleranceRad =
         0.08726646259971647f; // 5 degrees

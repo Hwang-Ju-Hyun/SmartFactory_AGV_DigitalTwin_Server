@@ -59,7 +59,7 @@ namespace
     constexpr uint64_t kCorrectionMaximumVisionAgeMs = 200;
     constexpr uint64_t kCorrectionMeasurementWaitMs = 2500;
     constexpr uint64_t kCorrectionReportWaitMs = 10000;
-    constexpr uint8_t kMaximumCorrectionPrimitives = 6;
+    constexpr uint32_t kVisionAcceptedLogInterval = 30;
     constexpr float kDegreesToRadians =
         3.14159265358979323846f / 180.0f;
 
@@ -647,9 +647,13 @@ void NetworkManagerServer::HandleVisionObservationPacket(
         return;
     }
 
-    std::cout << "[Vision] Observation stored separately. agvID=" << _header.agvID
-              << " sequence=" << _header.sequence
-              << " state=" << static_cast<uint16_t>(payload.state) << "\n";
+    if (_header.sequence % kVisionAcceptedLogInterval == 0)
+    {
+        std::cout << "[Vision] Observation accepted. agvID=" << _header.agvID
+                  << " sequence=" << _header.sequence
+                  << " state=" << static_cast<uint16_t>(payload.state)
+                  << "\n";
+    }
 
     if (m_RunMode == ServerRunMode::PhysicalFleet &&
         !m_IsPhysicalFleetActivated)
@@ -1035,11 +1039,24 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         CompletePhysicalFleetCorrection();
         return;
     }
-    if (decision.action == PhysicalFleetCorrectionAction::REJECT ||
-        m_PhysicalFleetCorrection.primitiveCount >=
-            kMaximumCorrectionPrimitives)
+    if (decision.action == PhysicalFleetCorrectionAction::REJECT)
     {
-        FailPhysicalFleetCorrection("correction bounds exceeded");
+        FailPhysicalFleetCorrection("correction pose outside safety bounds");
+        return;
+    }
+    if (m_PhysicalFleetCorrection.primitiveCount >=
+        PhysicalFleetCorrectionPolicy::kMaximumPrimitivesPerNode)
+    {
+        std::cout << "[VisionCorrection] Primitive limit exhausted. completed="
+                  << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.primitiveCount)
+                  << " limit=" << static_cast<unsigned>(
+                         PhysicalFleetCorrectionPolicy::
+                             kMaximumPrimitivesPerNode)
+                  << " remainingPositionMm=" << decision.positionErrorMm
+                  << " remainingHeadingDeg="
+                  << decision.headingErrorRad / kDegreesToRadians << "\n";
+        FailPhysicalFleetCorrection("correction primitive limit exhausted");
         return;
     }
 
@@ -1354,6 +1371,12 @@ void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
     {
         const RobotSessionPtr disconnectedSession = robotProxyIt->second;
         const uint32_t agvID = disconnectedSession->GetAgvID();
+        const StatusPacket lastStatus = disconnectedSession->GetStatus();
+        std::cout << "[RobotProtocol] AGV " << agvID
+                  << " disconnected. lastLink=" << lastStatus.currentLinkID
+                  << " progress=" << lastStatus.progress
+                  << " pose=(" << lastStatus.x << "," << lastStatus.z << ")"
+                  << " velocity=" << lastStatus.velocity << "\n";
         auto agvSessionIt = m_AgvIdToRobotSessionMap.find(agvID);
         if (agvSessionIt != m_AgvIdToRobotSessionMap.end() &&
             agvSessionIt->second == disconnectedSession)
@@ -1665,6 +1688,47 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
             else if (ev.type == ControllerEventType::EXECUTION_BLOCKED) 
             {
                 RoutePlanner::GetInstance().OnExecutionBlocked(it->first, ev.nodeID, ev.relatedNodeID, m_TotalElapsedServerTime);
+            }
+            else if (ev.type == ControllerEventType::ERROR_SLIP)
+            {
+                std::cout << "[RobotProtocol] AGV " << it->first
+                          << " reported ERROR code=" << ev.nodeID
+                          << " detail=" << ev.detail << "\n";
+                if (m_RunMode == ServerRunMode::PhysicalFleet)
+                {
+                    if (m_PhysicalFleetCorrection.active() &&
+                        m_PhysicalFleetCorrection.agvID == it->first)
+                    {
+                        FailPhysicalFleetCorrection("ESP32 reported motion fault");
+                    }
+                    else
+                    {
+                        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+                            it->first,
+                            m_TotalElapsedServerTime,
+                            "ESP32 reported motion fault");
+                    }
+                }
+            }
+            else if (ev.type == ControllerEventType::EMERGENCY_STOP)
+            {
+                std::cout << "[RobotProtocol] AGV " << it->first
+                          << " reported EMERGENCY_STOP\n";
+                if (m_RunMode == ServerRunMode::PhysicalFleet)
+                {
+                    if (m_PhysicalFleetCorrection.active() &&
+                        m_PhysicalFleetCorrection.agvID == it->first)
+                    {
+                        FailPhysicalFleetCorrection("ESP32 emergency stop");
+                    }
+                    else
+                    {
+                        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+                            it->first,
+                            m_TotalElapsedServerTime,
+                            "ESP32 emergency stop");
+                    }
+                }
             }
         }
     }

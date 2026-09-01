@@ -404,7 +404,7 @@ one-edge TRAJECTORY_COMMAND
   -> Server requires another newer MEASURED pose and repeats or confirms
 ```
 
-Server 정책은 위치 오차 200 mm 초과를 거절하고, 한 command를 직진 최대 120 mm 또는 회전 최대 90도로 제한한다. node당 최대 6개 primitive, 새 측정 대기 2.5초, report 대기 10초다. Robot은 현재 `routeID/nodeID`, 안전 정지 상태, 양수 magnitude와 자체 한계를 다시 검사해야 한다. identity 불일치, `HELD/LOST/stale`, timeout, reject 또는 fault에서는 Server가 active route를 취소하고 자동 진행을 멈춘다.
+Server 정책은 위치 오차 200 mm 초과를 거절하고, 한 command를 직진 최대 120 mm 또는 회전 최대 90도로 제한한다. node당 최대 8개 primitive, 새 측정 대기 2.5초, report 대기 10초다. Robot은 현재 `routeID/nodeID`, 안전 정지 상태, 양수 magnitude와 자체 한계를 다시 검사해야 한다. identity 불일치, `HELD/LOST/stale`, timeout, reject 또는 fault에서는 Server가 active route를 취소하고 자동 진행을 멈춘다.
 
 ### 10.3.3 Vision observation packets
 

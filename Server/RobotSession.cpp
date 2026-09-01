@@ -143,7 +143,11 @@ void RobotSession::ProcessPacket(const RobotProtocol::PacketBodyHeader& header, 
         RobotProtocol::ErrorPayload payload;
         if (RobotProtocol::ReadErrorPayload(payloadStream, payload))
         {
-            m_EventQueue.push({ ControllerEventType::ERROR_SLIP, static_cast<uint32_t>(payload.errorCode), payload.detail });
+            ControllerEvent event;
+            event.type = ControllerEventType::ERROR_SLIP;
+            event.nodeID = static_cast<uint32_t>(payload.errorCode);
+            event.detail = payload.detail;
+            m_EventQueue.push(event);
         }
         break;
     }
