@@ -11,6 +11,12 @@ enum class PhysicalFleetCorrectionAction
     REJECT
 };
 
+enum class PhysicalFleetCorrectionGoal
+{
+    POSITION_AND_HEADING,
+    HEADING_ONLY
+};
+
 struct PhysicalFleetCorrectionInput
 {
     float actualXMm = 0.0f;
@@ -42,12 +48,15 @@ namespace PhysicalFleetCorrectionPolicy
     inline constexpr uint8_t kMaximumPrimitivesPerNode = 8;
     inline constexpr float kPositionToleranceMm = 20.0f;
     inline constexpr float kHeadingToleranceRad =
-        0.08726646259971647f; // 5 degrees
+        0.17453292519943295f; // 10 degrees; avoids unreliable floor micro-turns
     inline constexpr float kRejectDistanceMm = 200.0f;
+    inline constexpr float kMaximumHeadingAlignmentDriftMm = 75.0f;
     inline constexpr float kMaximumDriveMm = 120.0f;
     inline constexpr float kMaximumTurnRad =
         1.5707963267948966f; // 90 degrees
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
-    const PhysicalFleetCorrectionInput& input);
+    const PhysicalFleetCorrectionInput& input,
+    PhysicalFleetCorrectionGoal goal =
+        PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);

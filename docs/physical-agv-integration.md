@@ -1,6 +1,6 @@
 # Physical ESP32 AGV integration
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01
 
 Hardware verification record: 2026-08-04
 
@@ -178,11 +178,13 @@ ESP32 -> Server : NODE_CORRECTION_REPORT (primitive 안전 완료/거절/fault)
 1. Server가 LINE edge 하나를 final `TRAJECTORY_COMMAND`로 보낸다.
 2. ESP32가 정지·settling 뒤 STATUS와 ARRIVED를 보내고 다음 trajectory를 기다린다.
 3. Server가 ARRIVED 이후의 새 `MEASURED + VERIFIED` AprilTag pose만 읽는다.
-4. 위치 20 mm·heading 5도 안이면 기존 `NODE_ARRIVED`를 확정한다.
-5. 밖이면 최대 120 mm 직진 또는 최대 90도 회전 한 번을 명령하고 완료 report 뒤 다시 측정한다.
-6. 200 mm 초과, node당 6회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
+4. 위치가 20 mm 밖이면 목표 방향으로 최대 90도 회전하거나 최대 120 mm 직진하고, 완료 report 뒤 다시 측정한다.
+5. 위치가 20 mm 안에 한 번 들어오면 heading 정렬 단계로 고정한다. 이후 point-turn으로 위치가 다시 밀려도 직진 보정으로 되돌아가지 않고, 도착 heading을 10도 안까지 맞춘 뒤 `NODE_ARRIVED`를 확정한다.
+6. 일반 보정 중 200 mm 초과, heading 정렬 단계에서 위치 75 mm 초과, node당 8회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
 
-Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 5도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. 이 기능은 Server build/CTest만 완료된 상태다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
+Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
+
+실차의 제자리회전은 encoder상 완료돼도 바닥 마찰 때문에 차체 중심을 수 cm 이동시킬 수 있다. 따라서 node 중심에 들어온 뒤 incoming-edge heading을 보정하면서 위치를 다시 쫓으면 위치와 heading 보정이 반복될 수 있다. 시작 pose의 heading 검사는 유지하고, node 보정은 `위치 수렴 -> heading 정렬`의 단방향 단계로 처리한다.
 
 ## 단계별 통합 순서
 

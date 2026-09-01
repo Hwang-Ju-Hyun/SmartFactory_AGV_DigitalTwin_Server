@@ -1026,8 +1026,21 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     input.expectedArrivalHeadingRad =
         m_PhysicalFleetCorrection.expectedHeadingRad;
 
+    const PhysicalFleetCorrectionGoal correctionGoal =
+        m_PhysicalFleetCorrection.positionToleranceReached
+            ? PhysicalFleetCorrectionGoal::HEADING_ONLY
+            : PhysicalFleetCorrectionGoal::POSITION_AND_HEADING;
     const PhysicalFleetCorrectionDecision decision =
-        DecidePhysicalFleetCorrection(input);
+        DecidePhysicalFleetCorrection(input, correctionGoal);
+    if (!m_PhysicalFleetCorrection.positionToleranceReached &&
+        decision.action != PhysicalFleetCorrectionAction::REJECT &&
+        decision.positionErrorMm <=
+            PhysicalFleetCorrectionPolicy::kPositionToleranceMm)
+    {
+        m_PhysicalFleetCorrection.positionToleranceReached = true;
+        std::cout << "[VisionCorrection] Position tolerance reached; "
+                     "heading-alignment phase locked\n";
+    }
     std::cout << "[VisionCorrection] node="
               << m_PhysicalFleetCorrection.nodeID
               << " positionErrorMm=" << decision.positionErrorMm
@@ -1036,6 +1049,13 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
 
     if (decision.action == PhysicalFleetCorrectionAction::ACCEPT)
     {
+        if (decision.positionErrorMm >
+            PhysicalFleetCorrectionPolicy::kPositionToleranceMm)
+        {
+            std::cout << "[VisionCorrection] Accepting bounded point-turn "
+                         "drift after heading alignment. positionErrorMm="
+                      << decision.positionErrorMm << "\n";
+        }
         CompletePhysicalFleetCorrection();
         return;
     }

@@ -10,7 +10,7 @@
                 "--physical-fleet",
                 "--vision-observation",
                 "--vision-calibration-id",
-                "101c8672b86f9512"
+                "2a448dafa77e8b56"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

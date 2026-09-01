@@ -132,6 +132,7 @@ private:
         uint32_t commandID = 0;
         uint32_t baselineVisionSequence = 0;
         uint8_t primitiveCount = 0;
+        bool positionToleranceReached = false;
         float expectedHeadingRad = 0.0f;
         uint64_t deadlineMilliseconds = 0;
 

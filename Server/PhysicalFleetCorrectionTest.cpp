@@ -117,6 +117,22 @@ namespace
         REQUIRE(NearlyEqual(decision.headingErrorRad, 0.0f));
     }
 
+    void TestRecordedEightDegreeBearingErrorDrivesInsteadOfMicroTurning()
+    {
+        auto input = AtOrigin();
+        input.targetXMm = 96.2116f;
+        input.actualHeadingRad = -8.01f * kDegreesToRadians;
+
+        const auto decision = DecidePhysicalFleetCorrection(input);
+        REQUIRE(decision.action ==
+                PhysicalFleetCorrectionAction::DRIVE_FORWARD);
+        REQUIRE(NearlyEqual(decision.magnitude, 96.2116f));
+        REQUIRE(NearlyEqual(
+            decision.headingErrorRad,
+            8.01f * kDegreesToRadians,
+            0.0002f));
+    }
+
     void TestCorrectsArrivalHeadingAfterPosition()
     {
         auto input = AtOrigin();
@@ -130,6 +146,53 @@ namespace
         const auto cw = DecidePhysicalFleetCorrection(input);
         REQUIRE(cw.action == PhysicalFleetCorrectionAction::TURN_CW);
         REQUIRE(NearlyEqual(cw.magnitude, 45.0f * kDegreesToRadians));
+    }
+
+    void TestHeadingOnlyGoalDoesNotReturnToPositionCorrection()
+    {
+        auto input = AtOrigin();
+        input.actualXMm = 50.7381f;
+
+        const auto strict = DecidePhysicalFleetCorrection(input);
+        REQUIRE(strict.action == PhysicalFleetCorrectionAction::TURN_CCW);
+
+        const auto headingOnly = DecidePhysicalFleetCorrection(
+            input,
+            PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(headingOnly.action == PhysicalFleetCorrectionAction::ACCEPT);
+
+        input.actualHeadingRad = -32.0083f * kDegreesToRadians;
+        const auto remainingHeading = DecidePhysicalFleetCorrection(
+            input,
+            PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(remainingHeading.action ==
+                PhysicalFleetCorrectionAction::TURN_CCW);
+        REQUIRE(NearlyEqual(
+            remainingHeading.magnitude,
+            32.0083f * kDegreesToRadians,
+            0.0002f));
+
+        input.actualXMm = 62.7304f;
+        input.actualHeadingRad = -2.48727f * kDegreesToRadians;
+        const auto aligned = DecidePhysicalFleetCorrection(
+            input,
+            PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(aligned.action == PhysicalFleetCorrectionAction::ACCEPT);
+        REQUIRE(aligned.magnitude == 0.0f);
+        REQUIRE(NearlyEqual(aligned.positionErrorMm, 62.7304f));
+        REQUIRE(NearlyEqual(
+            aligned.headingErrorRad,
+            2.48727f * kDegreesToRadians,
+            0.0002f));
+
+        input.actualXMm =
+            PhysicalFleetCorrectionPolicy::kMaximumHeadingAlignmentDriftMm +
+            0.01f;
+        const auto excessiveDrift = DecidePhysicalFleetCorrection(
+            input,
+            PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(excessiveDrift.action ==
+                PhysicalFleetCorrectionAction::REJECT);
     }
 
     void TestUsesShortestWrappedHeadingError()
@@ -227,7 +290,9 @@ int main()
     TestTurnsTowardPositionBeforeDriving();
     TestCapsTurnAtNinetyDegrees();
     TestDrivesWhenAlignedAndCapsDistance();
+    TestRecordedEightDegreeBearingErrorDrivesInsteadOfMicroTurning();
     TestCorrectsArrivalHeadingAfterPosition();
+    TestHeadingOnlyGoalDoesNotReturnToPositionCorrection();
     TestUsesShortestWrappedHeadingError();
     TestRejectsExcessiveDistance();
     TestRecordedRecoveryRetainsTwoFinalPrimitives();

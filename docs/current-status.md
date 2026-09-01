@@ -1,6 +1,6 @@
 # Current project status
 
-Last verified: 2026-08-31
+Last verified: 2026-09-01
 
 Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
@@ -42,12 +42,13 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 - `--physical-fleet`와 `--vision-observation`을 함께 사용할 때만 Vision 관측을 실차 node 도착 보정에 사용한다. 다른 mode의 planned pose와 기존 Unity 비교 marker 흐름은 그대로 분리된다.
 - Server는 전체 계획 경로를 유지하되 ESP32에는 LINE 한 edge씩 final trajectory로 보낸다. ESP32의 coarse `ARRIVED`는 즉시 RoutePlanner로 전달하지 않고, 정지 뒤 들어온 더 새 `MEASURED + VERIFIED` 관측을 기다린다.
-- 허용 오차는 위치 20 mm, 도착 heading 5도다. 위치 오차 200 mm 초과는 거절하며, 한 primitive는 직진 최대 120 mm 또는 회전 최대 90도, node당 최대 8회로 제한한다.
+- 허용 오차는 위치 20 mm, 도착 heading 10도다. 위치 오차 200 mm 초과는 거절하며, 한 primitive는 직진 최대 120 mm 또는 회전 최대 90도, node당 최대 8회로 제한한다. 바닥 시험에서 8도 미세 회전이 정지 마찰로 STALL 난 기록을 반영해 그 범위는 회전시키지 않는다.
 - `NODE_CORRECTION_COMMAND=103`과 `NODE_CORRECTION_REPORT=202`, capability bit 2를 추가했다. 명령과 결과는 route/node/command ID로 결합하며 payload는 각각 17 byte다.
-- 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 heading 5도 이내인 fresh Vision pose를 확인한 뒤에만 첫 자동 route를 보낸다.
+- 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 heading 10도 이내인 fresh Vision pose를 확인한 뒤에만 첫 자동 route를 보낸다.
 - 새 측정 대기 2.5초, primitive 결과 대기 10초를 넘기거나 Vision/robot identity·범위·결과가 맞지 않으면 active route를 취소하고 fail-stop한다.
 - 첫 실제 바닥 보정 주행에서 Vision은 계속 `VERIFIED/MEASURED`였고 ESP32 primitive 1~6도 모두 완료됐지만, node 2에 위치 약 30 mm와 heading 약 30도가 남은 상태에서 기존 6회 상한을 소진해 safe-stop했다. 회복 순서에 필요한 짧은 직진과 최종 heading 보정을 허용하도록 Server와 ESP32 상한을 8회로 맞췄으며 9번째 명령은 계속 거절한다.
-- CMake configure/build와 CTest 4개, ESP32 host state test, motor-locked/live PlatformIO build가 통과했다. 변경 firmware의 재업로드 뒤 실제 바닥에서 8회 이내 수렴하는지는 재검증이 필요하다.
+- 후속 node 6 시험에서는 위치 오차가 13.1 mm까지 수렴한 뒤 90도 도착 heading 보정 중 차체가 옆으로 밀려 위치 오차가 50.7 mm로 다시 증가했다. 위치와 heading 보정이 반복돼 8회 한도에서 safe-stop한 것이며 Vision reject나 통신 단절은 아니었다. node 위치가 20 mm 안에 한 번 들어오면 heading 정렬 단계로 고정해, point-turn 밀림 때문에 위치 보정으로 되돌아가지 않도록 변경했다. heading은 계속 10도 안까지 맞추되 이 단계의 위치 오차가 75 mm를 넘으면 fail-stop한다. 시작 node 1의 위치·동쪽 heading 검사는 유지되며 이 정책은 실차 재검증이 필요하다.
+- heading-only 단계 고정 변경 뒤 Server CMake configure/build와 CTest 4개가 통과했다. 이 변경은 Server 전용이라 ESP32 재업로드는 필요 없으며, 실제 바닥에서 다음 edge까지 진행하는지는 재검증이 필요하다.
 
 ### 2026-08-29 Vision 관측의 Unity 비교 pose 중계 기반
 
@@ -225,7 +226,7 @@ cmake --build build -j2
 
 ## 알려진 위험과 blocker
 
-- Vision node 보정의 실제 바닥 흐름과 fail-stop은 확인했지만, 8회 상한 firmware로 node 2를 수용하고 다음 edge를 진행하는지는 아직 재검증하지 않았다.
+- Vision node 보정의 실제 바닥 흐름과 fail-stop은 확인했지만, node 위치 20 mm 수렴 뒤 heading-only 단계로 고정하는 Server 정책은 아직 실차 재검증하지 않았다.
 - 보정 실패 시 Server가 확정하는 node는 마지막 검증 node로 유지된다. 실제 차체는 coarse target 부근에 있을 수 있으므로 fail-stop 뒤 자동 재개하지 말고 사람이 위치를 다시 확인해야 한다.
 
 - TestCase03 export는 Server working tree에 반영됐지만 아직 Server와 Unity 저장소의 기준 commit으로 함께 확정되지 않았다. Unity의 수정 scene/export도 별도 commit으로 보존해야 한다.
@@ -244,8 +245,8 @@ cmake --build build -j2
 
 ## 다음 우선 작업
 
-1. ESP32 `esp32dev-physical-fleet`을 다시 업로드하고 로봇을 node 1 동쪽에 둔 뒤, node 2 보정이 8회 이내 수용되는지 한 번만 시험
-2. 성공 시 Server 로그의 `Node 2 accepted`와 다음 edge 전송을 확인하고, 실패 시 새 `Primitive limit exhausted` 로그의 남은 위치·heading 오차를 기록
+1. 로봇을 node 1 동쪽에 다시 둔 뒤 새 Server binary로 한 번만 시험한다. 이번 변경은 Server 전용이므로 ESP32 재업로드는 필요 없다.
+2. 성공 시 Server 로그의 `Node N accepted`와 다음 edge 전송을 확인하고, 실패 시 새 `Primitive limit exhausted` 로그의 남은 위치·heading 오차를 기록
 3. Unity Editor에서 planned AGV와 Vision marker가 보정 전후 의도대로 표시되는지 확인
 4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
 5. 전원 분배단자, fuse, switch와 기판 고정

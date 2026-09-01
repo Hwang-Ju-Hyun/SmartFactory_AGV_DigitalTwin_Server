@@ -36,7 +36,8 @@ namespace
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
-    const PhysicalFleetCorrectionInput& input)
+    const PhysicalFleetCorrectionInput& input,
+    PhysicalFleetCorrectionGoal goal)
 {
     PhysicalFleetCorrectionDecision decision;
     if (!IsFinite(input))
@@ -54,7 +55,8 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
         return decision;
     }
 
-    if (decision.positionErrorMm >
+    if (goal != PhysicalFleetCorrectionGoal::HEADING_ONLY &&
+        decision.positionErrorMm >
         PhysicalFleetCorrectionPolicy::kPositionToleranceMm)
     {
         const float targetBearingRad = std::atan2(deltaZ, deltaX);
@@ -80,6 +82,12 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
         input.expectedArrivalHeadingRad - input.actualHeadingRad);
     if (!std::isfinite(decision.headingErrorRad))
         return PhysicalFleetCorrectionDecision{};
+    if (goal == PhysicalFleetCorrectionGoal::HEADING_ONLY &&
+        decision.positionErrorMm >
+            PhysicalFleetCorrectionPolicy::kMaximumHeadingAlignmentDriftMm)
+    {
+        return decision;
+    }
     if (std::abs(decision.headingErrorRad) >
         PhysicalFleetCorrectionPolicy::kHeadingToleranceRad)
     {
