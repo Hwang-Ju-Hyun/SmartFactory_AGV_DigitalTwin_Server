@@ -1,6 +1,6 @@
 # Current project status
 
-Last verified: 2026-09-01
+Last verified: 2026-09-02
 
 Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
@@ -30,7 +30,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
-| Vision 관측 수신 기반 | 카메라 검증 완료·Server 재시작 필요 | 측정된 `[0,0]` body offset의 pose contract `f84eb43ebb6cf7ff`, calibration `2b88b8cdc46e47d5`; 카메라 이동 후 Node 1 camera-only 오차 약 18.1 mm/1.6도, 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
+| Vision 관측 수신 기반 | 카메라 검증 완료·Server 재시작 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[0,0]` body offset의 pose contract `f84eb43ebb6cf7ff`, calibration `f1766a6f3a2d9a6d`; 카메라 재조정 후 Node 1 camera-only 오차 약 1.9 mm/0.2도, 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
 | Vision node 보정 제어 | 구현됨·실차 재검증 필요 | `--physical-fleet`와 Vision을 함께 켜면 coarse ARRIVED 뒤 fresh MEASURED pose로 제한된 회전/직진 보정 후에만 NODE_ARRIVED 확정 |
 | 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy를 포함한 CTest 4개 통과; 전체 fleet TCP test framework는 없음 |
