@@ -419,7 +419,7 @@ Vision receiver는 기본값이 OFF다. 실제 카메라 보정 뒤 다음처럼
 
 - source ID 기본값: `1` (`--vision-source-id`로 변경 가능)
 - map contract: `67254eca75c55e5c`
-- pose contract: `f84eb43ebb6cf7ff`
+- pose contract: `fb3cad48a32b9893`
 - 좌표: node 1 `(50,-36)` 원점, `50 mm/map-unit`, `0 deg=+x`, 반시계가 양수
 
 기능을 켤 때 Server는 active map의 node 1~15 ID와 좌표 전체가 이 canonical contract와 일치하는지도 확인한다. 한 node라도 다르면 main loop 진입 전에 startup을 실패시켜 이전 digest를 잘못 승인하지 않는다.

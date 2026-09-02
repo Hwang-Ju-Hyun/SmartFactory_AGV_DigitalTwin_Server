@@ -30,7 +30,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | RobotProtocol v1 | 검증 완료 | HELLO_ACK, ROUTE_COMMAND, STATUS/ARRIVED flow 확인 |
 | metric trajectory 기반 | 진행 중 | 60 mm/unit `[1 -> 4]` preview와 ESP32 motor-disabled follower trace 통과 |
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
-| Vision 관측 수신 기반 | 카메라 검증 완료·Server 재시작 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[0,0]` body offset의 pose contract `f84eb43ebb6cf7ff`, calibration `f1766a6f3a2d9a6d`; 카메라 재조정 후 Node 1 camera-only 오차 약 1.9 mm/0.2도, 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
+| Vision 관측 수신 기반 | 카메라·회전 검증 완료·Server 재시작 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[60,0]` body offset의 pose contract `fb3cad48a32b9893`, calibration `68011668e298c992`; CCW 격리 시험에서 회전 중 보고 위치 이동이 81.2 mm에서 20.8 mm로 감소했으며, 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
 | Vision node 보정 제어 | 구현됨·실차 재검증 필요 | `--physical-fleet`와 Vision을 함께 켜면 coarse ARRIVED 뒤 fresh MEASURED pose로 제한된 회전/직진 보정 후에만 NODE_ARRIVED 확정 |
 | 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy를 포함한 CTest 4개 통과; 전체 fleet TCP test framework는 없음 |
@@ -65,7 +65,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 - 사용자가 바닥 node marker 간격을 350 mm로 변경했다.
 - `50 mm/map-unit`은 유지하고 격자 간격을 4 unit에서 7 unit으로 변경했다.
 - 모든 44개 directed LINE link 길이는 7 unit이며 전체 node 격자는 약 `1400 x 700 mm`다.
-- Vision map contract는 `67254eca75c55e5c`이며, robot heading 0도 보정을 반영한 pose contract는 `f84eb43ebb6cf7ff`다.
+- Vision map contract는 `67254eca75c55e5c`이며, robot heading 0도와 `[60,0]` body offset을 반영한 pose contract는 `fb3cad48a32b9893`다.
 - Server map과 hardware-free test를 갱신했고 VisionTracker 실카메라 calibration과 TCP 관측 저장을 확인했다. 실차 350 mm 반복 주행은 재검증이 필요하다.
 
 ### 2026-08-25 VisionTracker observation-only Server 기반

@@ -26,7 +26,7 @@ namespace
     {
         const VisionObservationServerConfig config;
         REQUIRE(config.expectedMapContractID == "67254eca75c55e5c");
-        REQUIRE(config.expectedPoseContractID == "f84eb43ebb6cf7ff");
+        REQUIRE(config.expectedPoseContractID == "fb3cad48a32b9893");
     }
 
     template <typename Payload, typename Writer, typename Reader>
@@ -83,7 +83,7 @@ namespace
         config.map.allowedMarginMillimeters = 100.0;
         config.expectedCalibrationID = "calibration-2026-08";
         config.expectedMapContractID = "67254eca75c55e5c";
-        config.expectedPoseContractID = "f84eb43ebb6cf7ff";
+        config.expectedPoseContractID = "fb3cad48a32b9893";
         config.expectedSourceID = 1;
         return config;
     }
@@ -103,7 +103,7 @@ namespace
             wire.pose->xMm, wire.pose->zMm, wire.pose->headingDeg};
         input.calibrationID = wire.calibrationID;
         input.mapContractID = "67254eca75c55e5c";
-        input.poseContractID = "f84eb43ebb6cf7ff";
+        input.poseContractID = "fb3cad48a32b9893";
         input.verificationState = wire.verificationState;
         input.quality = wire.quality;
         return input;
@@ -126,7 +126,7 @@ namespace
         hello.sourceID = 1;
         hello.sessionID = 0xfedcba9876543210ULL;
         hello.mapContractID = "67254eca75c55e5c";
-        hello.poseContractID = "f84eb43ebb6cf7ff";
+        hello.poseContractID = "fb3cad48a32b9893";
         const auto helloDecoded = RoundTrip(
             hello,
             RobotProtocol::WriteVisionHelloPayload,
