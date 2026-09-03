@@ -42,7 +42,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 - calibration `e7c58f032c843335` 실차 로그에서 초기 `33.5 mm / 5.9도` pose가 기존 20 mm 기준 때문에 target bearing correction에 들어갔고, 위치 수렴 뒤 arrival heading point turn으로 위치가 `12.8 -> 36.7`, `10.2 -> 41.6`, `4.7 -> 41.8`, `33.8 -> 72.6 mm`로 증가했다. 기존 heading-only 단계는 이를 75 mm까지 허용해 54 mm대 pose도 승인했다.
 - target-bearing error와 final arrival-heading error를 별도 값과 로그 필드로 분리했다. 신규 coarse pose는 위치 40 mm 이하이면서 arrival heading 10도 이내면 바로 승인하고, 위치 correction은 40 mm 초과에서만 진입한다. 위치 correction은 35 mm 이하에서 arrival-heading 단계로 나가고, final turn drift는 위치 40 mm와 heading 10도 이내까지 승인한다. heading 단계에서 위치가 40 mm를 넘으면 bounded position correction으로 복귀한다.
-- primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 point turn 3회째, 누적 회전 360도 초과, point turn 한 번에 위치 오차 20 mm 초과 증가를 비수렴으로 판단해 기존 route safety-stop을 사용한다. node당 8회, 200 mm reject, timeout과 시작 node 1의 20 mm/10도 승인은 유지했다.
+- primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 point turn 3회째, 누적 회전 360도 초과, point turn 한 번에 위치 오차 25 mm 초과 증가를 비수렴으로 판단해 기존 route safety-stop을 사용한다. 25 mm는 정상 실측 최대 증가 20.1478 mm에 약 4.85 mm 여유를 둔 값이다. node당 8회, 200 mm reject, timeout과 시작 node 1의 20 mm/10도 승인은 유지했다.
 - WSL CMake configure/build와 CTest 6개가 통과했다. Server 실행·ESP32 업로드·실차 재시험은 수행하지 않았으므로 새 정책은 hardware-free 검증 상태다.
 - 후속 실차에서 `7 -> 6` coarse pose `37.1457 mm / -10.1535도`가 35~40 mm hysteresis 구간의 판정 공백으로 거절됐다. 이 구간에서 heading만 벗어난 유효 pose는 `CORRECT_HEADING`으로 연결하고 35/40 mm 및 10도 경계 조합을 회귀시험했다.
 - `4 -> 5`에서는 위치가 `18.41 mm`까지 수렴한 뒤 final turn 중심 이동으로 `35.47 mm / 3.11도`가 됐지만 기존 final 35 mm 검사에서 거절됐다. 35 mm exit와 40 mm entry의 역할을 상태 전이에 반영해 이 pose는 승인하고, 40 mm 초과 시에만 위치 단계로 복귀하도록 수정했다.

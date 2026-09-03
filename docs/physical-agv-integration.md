@@ -182,7 +182,7 @@ PhysicalFleet의 `WHEEL_MISMATCH`는 기존 `MOTOR_FAULT/detail=65539`로 먼저
 3. Server가 ARRIVED 이후의 새 `MEASURED + VERIFIED` AprilTag pose만 읽는다.
 4. 최초 coarse pose가 위치 40 mm 이하이고 arrival heading 10도 이내면 위치 primitive 없이 승인한다. 위치 correction은 40 mm 초과에서만 시작하며 목표 방향으로 최대 90도 회전하거나 최대 120 mm 직진하고, 완료 report 뒤 다시 측정한다.
 5. correction 중 위치가 35 mm 안에 들어오면 arrival-heading 단계로 전환한다. final turn 중심 이동은 위치 40 mm와 arrival heading 10도 이내까지 `NODE_ARRIVED`로 확정한다. heading 단계에서 위치가 40 mm를 넘으면 bounded position correction으로 복귀하고, 다시 35 mm 이내에 들어와야 heading 단계로 나간다.
-6. primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 회전 3회째, 누적 회전 360도 초과, 회전 한 번에 위치 오차 20 mm 초과 증가를 비수렴으로 처리한다. 이 조건과 일반 보정 중 200 mm 초과, node당 8회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
+6. primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 회전 3회째, 누적 회전 360도 초과, 회전 한 번에 위치 오차 25 mm 초과 증가를 비수렴으로 처리한다. 이 조건과 일반 보정 중 200 mm 초과, node당 8회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
 
 Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
 

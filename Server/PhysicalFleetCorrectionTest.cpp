@@ -291,16 +291,52 @@ namespace
 
     void TestNonConvergenceProgressGuards()
     {
-        PhysicalFleetProgressCheck spike;
-        spike.action = PhysicalFleetCorrectionAction::TURN_CW;
-        spike.beforePositionErrorMm = 12.8f;
-        spike.afterPositionErrorMm = 36.7f;
-        spike.beforeObjectiveHeadingErrorRad =
-            75.0f * kDegreesToRadians;
-        spike.afterObjectiveHeadingErrorRad =
-            3.0f * kDegreesToRadians;
-        REQUIRE(CheckPhysicalFleetCorrectionProgress(spike).reason ==
+        PhysicalFleetProgressCheck measuredTurn;
+        measuredTurn.action = PhysicalFleetCorrectionAction::TURN_CW;
+        measuredTurn.beforePositionErrorMm = 43.0499f;
+        measuredTurn.afterPositionErrorMm = 63.1977f;
+        measuredTurn.beforeObjectiveHeadingErrorRad =
+            90.0f * kDegreesToRadians;
+        measuredTurn.afterObjectiveHeadingErrorRad =
+            0.85f * kDegreesToRadians;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(measuredTurn).reason ==
+                PhysicalFleetNonConvergenceReason::NONE);
+
+        PhysicalFleetProgressCheck turnBoundary = measuredTurn;
+        turnBoundary.beforePositionErrorMm = 10.0f;
+        turnBoundary.afterPositionErrorMm =
+            10.0f +
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm -
+            0.001f;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(turnBoundary).reason ==
+                PhysicalFleetNonConvergenceReason::NONE);
+        turnBoundary.afterPositionErrorMm =
+            10.0f +
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(turnBoundary).reason ==
+                PhysicalFleetNonConvergenceReason::NONE);
+        turnBoundary.afterPositionErrorMm =
+            10.0f +
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm +
+            0.001f;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(turnBoundary).reason ==
                 PhysicalFleetNonConvergenceReason::TURN_POSITION_SPIKE);
+
+        PhysicalFleetProgressCheck nonImprovingTurn = measuredTurn;
+        nonImprovingTurn.beforePositionErrorMm = 10.0f;
+        nonImprovingTurn.afterPositionErrorMm = 11.0f;
+        nonImprovingTurn.beforeObjectiveHeadingErrorRad =
+            45.0f * kDegreesToRadians;
+        nonImprovingTurn.afterObjectiveHeadingErrorRad =
+            45.0f * kDegreesToRadians;
+        auto firstTurn =
+            CheckPhysicalFleetCorrectionProgress(nonImprovingTurn);
+        REQUIRE(firstTurn.reason ==
+                PhysicalFleetNonConvergenceReason::NONE);
+        REQUIRE(firstTurn.consecutiveNonImprovingPrimitives == 1);
+        nonImprovingTurn.consecutiveNonImprovingPrimitives = 1;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(nonImprovingTurn).reason ==
+                PhysicalFleetNonConvergenceReason::ERROR_NOT_DECREASING);
 
         PhysicalFleetProgressCheck stalled;
         stalled.action = PhysicalFleetCorrectionAction::DRIVE_FORWARD;

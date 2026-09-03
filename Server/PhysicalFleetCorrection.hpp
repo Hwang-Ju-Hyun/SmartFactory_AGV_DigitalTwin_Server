@@ -98,7 +98,7 @@ namespace PhysicalFleetCorrectionPolicy
     inline constexpr uint8_t kMaximumConsecutiveSameDirectionTurns = 2;
     inline constexpr float kMaximumCumulativeTurnRad =
         6.2831853071795865f; // one full revolution
-    inline constexpr float kMaximumTurnPositionIncreaseMm = 20.0f;
+    inline constexpr float kMaximumTurnPositionIncreaseMm = 25.0f;
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
