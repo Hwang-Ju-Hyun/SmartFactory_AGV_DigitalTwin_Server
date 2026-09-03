@@ -83,7 +83,8 @@ namespace PhysicalFleetCorrectionPolicy
     inline constexpr float kStartPosePositionToleranceMm = 20.0f;
     inline constexpr float kPositionCorrectionEntryMm = 40.0f;
     inline constexpr float kPositionCorrectionExitMm = 35.0f;
-    inline constexpr float kMaximumFinalPositionErrorMm = 35.0f;
+    inline constexpr float kMaximumFinalPositionErrorMm =
+        kPositionCorrectionEntryMm;
     inline constexpr float kHeadingToleranceRad =
         0.17453292519943295f; // 10 degrees; avoids unreliable floor micro-turns
     inline constexpr float kRejectDistanceMm = 200.0f;
@@ -107,6 +108,9 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
 PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
     float positionErrorMm,
     float arrivalHeadingErrorRad);
+PhysicalFleetCorrectionGoal SelectPhysicalFleetCorrectionGoal(
+    bool positionToleranceReached,
+    float positionErrorMm);
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check);
 PhysicalFleetNonConvergenceReason CheckPhysicalFleetTurnCommand(

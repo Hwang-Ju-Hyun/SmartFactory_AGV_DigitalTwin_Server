@@ -242,6 +242,53 @@ namespace
                 PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
     }
 
+    void TestFinalCompletionHysteresisAndPositionReentry()
+    {
+        auto input = AtOrigin();
+        input.actualHeadingRad =
+            -PhysicalFleetCorrectionPolicy::kHeadingToleranceRad;
+        input.actualXMm = 35.0f;
+        REQUIRE(DecidePhysicalFleetCorrection(
+                    input,
+                    PhysicalFleetCorrectionGoal::HEADING_ONLY).action ==
+                PhysicalFleetCorrectionAction::ACCEPT);
+
+        input.actualXMm = 35.4685f;
+        input.actualHeadingRad = -3.10654f * kDegreesToRadians;
+        REQUIRE(SelectPhysicalFleetCorrectionGoal(true, 35.4685f) ==
+                PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(DecidePhysicalFleetCorrection(
+                    input,
+                    PhysicalFleetCorrectionGoal::HEADING_ONLY).action ==
+                PhysicalFleetCorrectionAction::ACCEPT);
+
+        input.actualXMm = 39.99f;
+        REQUIRE(SelectPhysicalFleetCorrectionGoal(true, 39.99f) ==
+                PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(DecidePhysicalFleetCorrection(
+                    input,
+                    PhysicalFleetCorrectionGoal::HEADING_ONLY).action ==
+                PhysicalFleetCorrectionAction::ACCEPT);
+
+        input.actualXMm = -40.01f;
+        input.actualHeadingRad = 0.0f;
+        const auto reentryGoal =
+            SelectPhysicalFleetCorrectionGoal(true, 40.01f);
+        REQUIRE(reentryGoal ==
+                PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);
+        const auto boundedPositionCorrection =
+            DecidePhysicalFleetCorrection(input, reentryGoal);
+        REQUIRE(boundedPositionCorrection.action ==
+                PhysicalFleetCorrectionAction::DRIVE_FORWARD);
+        REQUIRE(NearlyEqual(
+            boundedPositionCorrection.magnitude, 40.01f, 0.001f));
+
+        REQUIRE(SelectPhysicalFleetCorrectionGoal(false, 35.0f) ==
+                PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(SelectPhysicalFleetCorrectionGoal(false, 35.01f) ==
+                PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);
+    }
+
     void TestNonConvergenceProgressGuards()
     {
         PhysicalFleetProgressCheck spike;
@@ -412,6 +459,7 @@ int main()
     TestHeadingOnlyGoalDoesNotReturnToPositionCorrection();
     TestSeparatesTargetBearingFromArrivalHeading();
     TestCoarsePoseEntryHysteresis();
+    TestFinalCompletionHysteresisAndPositionReentry();
     TestNonConvergenceProgressGuards();
     TestTurnSequenceGuards();
     TestStartPoseApprovalRemainsStrict();

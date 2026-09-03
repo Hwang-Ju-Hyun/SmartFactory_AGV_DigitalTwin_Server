@@ -1245,18 +1245,28 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         }
     }
 
-    if (!m_PhysicalFleetCorrection.positionToleranceReached &&
-        poseDiagnostic.positionErrorMm <=
-            PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm)
+    const bool wasPositionToleranceReached =
+        m_PhysicalFleetCorrection.positionToleranceReached;
+    const PhysicalFleetCorrectionGoal correctionGoal =
+        SelectPhysicalFleetCorrectionGoal(
+            wasPositionToleranceReached,
+            poseDiagnostic.positionErrorMm);
+    m_PhysicalFleetCorrection.positionToleranceReached =
+        correctionGoal == PhysicalFleetCorrectionGoal::HEADING_ONLY;
+    if (!wasPositionToleranceReached &&
+        m_PhysicalFleetCorrection.positionToleranceReached)
     {
-        m_PhysicalFleetCorrection.positionToleranceReached = true;
         std::cout << "[VisionCorrection] Position exit threshold reached; "
                      "arrival-heading phase locked\n";
     }
-    const PhysicalFleetCorrectionGoal correctionGoal =
-        m_PhysicalFleetCorrection.positionToleranceReached
-            ? PhysicalFleetCorrectionGoal::HEADING_ONLY
-            : PhysicalFleetCorrectionGoal::POSITION_AND_HEADING;
+    else if (wasPositionToleranceReached &&
+             !m_PhysicalFleetCorrection.positionToleranceReached)
+    {
+        std::cout << "[VisionCorrection] Position exceeded entry threshold; "
+                     "returning to bounded position correction. "
+                  << "positionErrorMm=" << poseDiagnostic.positionErrorMm
+                  << "\n";
+    }
     const PhysicalFleetCorrectionDecision decision =
         DecidePhysicalFleetCorrection(input, correctionGoal);
     if (decision.action == PhysicalFleetCorrectionAction::ACCEPT)

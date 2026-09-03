@@ -131,6 +131,24 @@ PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
     return PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING;
 }
 
+PhysicalFleetCorrectionGoal SelectPhysicalFleetCorrectionGoal(
+    bool positionToleranceReached,
+    float positionErrorMm)
+{
+    if (positionToleranceReached)
+    {
+        return positionErrorMm >
+                PhysicalFleetCorrectionPolicy::kPositionCorrectionEntryMm
+            ? PhysicalFleetCorrectionGoal::POSITION_AND_HEADING
+            : PhysicalFleetCorrectionGoal::HEADING_ONLY;
+    }
+
+    return positionErrorMm <=
+            PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm
+        ? PhysicalFleetCorrectionGoal::HEADING_ONLY
+        : PhysicalFleetCorrectionGoal::POSITION_AND_HEADING;
+}
+
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check)
 {
