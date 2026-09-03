@@ -460,6 +460,7 @@ void NetworkManagerServer::HandleRobotHelloPacket(ClientProxy* _proxy, const Rob
         trajectoryConfig.enabled = true;
         trajectoryConfig.millimetersPerMapUnit = kPhysicalFleetScaleMmPerMapUnit;
         trajectoryConfig.cruiseSpeedMmPerSecond = kPhysicalFleetCruiseSpeedMmPerSecond;
+        trajectoryConfig.requireDepartureRelease = m_VisionConfig.enabled;
     }
     RobotManager::GetInstance().RegisterRobot(
         assignedAgvID,
@@ -862,6 +863,13 @@ bool NetworkManagerServer::HandlePhysicalFleetControllerEvent(
         return true;
     }
 
+    if (_event.type == ControllerEventType::DEPARTURE_REQUESTED)
+    {
+        BeginPhysicalFleetDepartureAlignment(
+            _agvID, _event.nodeID, _event.relatedNodeID);
+        return true;
+    }
+
     if (_event.type != ControllerEventType::ARRIVED)
         return false;
 
@@ -870,7 +878,7 @@ bool NetworkManagerServer::HandlePhysicalFleetControllerEvent(
 
     if (!m_VisionConfig.enabled)
     {
-        if (!controller->ConfirmCorrectedPhysicalArrival(_event.nodeID))
+        if (!controller->CommitCorrectedPhysicalArrival(_event.nodeID))
         {
             RoutePlanner::GetInstance().StopActiveRouteForSafety(
                 _agvID,
@@ -883,6 +891,111 @@ bool NetworkManagerServer::HandlePhysicalFleetControllerEvent(
 
     BeginPhysicalFleetCorrection(_agvID, _event.nodeID);
     return true;
+}
+
+void NetworkManagerServer::BeginPhysicalFleetDepartureAlignment(
+    uint32_t _agvID,
+    uint32_t _startNodeID,
+    uint32_t _targetNodeID)
+{
+    if (m_PhysicalFleetCorrection.active())
+    {
+        FailPhysicalFleetCorrection("overlapping departure request");
+        return;
+    }
+
+    auto* controller = dynamic_cast<ESP32RobotController*>(
+        RobotManager::GetInstance().GetRobotController(_agvID));
+    if (!controller || !controller->SupportsNodeCorrection() ||
+        !controller->IsPhysicalDepartureHeld(
+            _startNodeID, _targetNodeID))
+    {
+        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+            _agvID,
+            m_TotalElapsedServerTime,
+            "physical departure gate unavailable");
+        return;
+    }
+
+    const MapNode startNode =
+        MapManager::GetInstance().GetMapNode(_startNodeID);
+    const MapNode targetNode =
+        MapManager::GetInstance().GetMapNode(_targetNodeID);
+    const float targetHeadingRad = std::atan2(
+        targetNode.m_PosZ - startNode.m_PosZ,
+        targetNode.m_PosX - startNode.m_PosX);
+    if (!std::isfinite(targetHeadingRad))
+    {
+        RoutePlanner::GetInstance().StopActiveRouteForSafety(
+            _agvID,
+            m_TotalElapsedServerTime,
+            "invalid physical departure bearing");
+        return;
+    }
+
+    uint32_t baselineSequence = 0;
+    if (m_VisionObservationStore)
+    {
+        const auto latest = m_VisionObservationStore->GetLatest(_agvID);
+        if (latest.has_value())
+            baselineSequence = latest->observation.sequence;
+    }
+
+    const uint64_t startedAtMs = MonotonicMilliseconds();
+    m_PhysicalFleetCorrection = {};
+    m_PhysicalFleetCorrection.stage =
+        PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT;
+    m_PhysicalFleetCorrection.phase =
+        PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT;
+    m_PhysicalFleetCorrection.agvID = _agvID;
+    m_PhysicalFleetCorrection.startNodeID = _startNodeID;
+    m_PhysicalFleetCorrection.nodeID = _startNodeID;
+    m_PhysicalFleetCorrection.routeID =
+        controller->GetActivePhysicalRouteID();
+    m_PhysicalFleetCorrection.baselineVisionSequence = baselineSequence;
+    m_PhysicalFleetCorrection.targetXMm =
+        (startNode.m_PosX - kVisionLocalOriginServerX) *
+        kVisionScaleMmPerMapUnit;
+    m_PhysicalFleetCorrection.targetZMm =
+        (startNode.m_PosZ - kVisionLocalOriginServerZ) *
+        kVisionScaleMmPerMapUnit;
+    m_PhysicalFleetCorrection.expectedHeadingRad = targetHeadingRad;
+    m_PhysicalFleetCorrection.departureTargetNodeID = _targetNodeID;
+    m_PhysicalFleetCorrection.departureTargetHeadingRad = targetHeadingRad;
+    if (m_PhysicalDepartureSafetyCarry.has_value() &&
+        m_PhysicalDepartureSafetyCarry->agvID == _agvID &&
+        m_PhysicalDepartureSafetyCarry->nodeID == _startNodeID)
+    {
+        m_PhysicalFleetCorrection.primitiveCount =
+            m_PhysicalDepartureSafetyCarry->primitiveCount;
+        m_PhysicalFleetCorrection.cumulativeTurnRad =
+            m_PhysicalDepartureSafetyCarry->cumulativeTurnRad;
+    }
+    m_PhysicalFleetCorrection.startedAtMilliseconds = startedAtMs;
+    m_PhysicalFleetCorrection.deadlineMilliseconds =
+        startedAtMs + kCorrectionMeasurementWaitMs;
+
+    std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
+              << " phase=PRE_DEPARTURE"
+              << " physicalArrivalCommitted="
+              << controller->HasCommittedPhysicalArrival()
+              << " departureHold=1"
+              << " confirmedNode="
+              << controller->GetCommittedPhysicalNodeID()
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << _agvID
+              << " edge=" << _startNodeID << "->" << _targetNodeID
+              << " targetHeadingDeg="
+              << targetHeadingRad / kDegreesToRadians
+              << " actualHeadingDeg=unavailable"
+              << " headingErrorDeg=unavailable"
+              << " visionSequence=" << baselineSequence
+              << " alignmentAttempt=0"
+              << " sameDirectionCount=0"
+              << " cumulativeTurnDeg="
+              << m_PhysicalFleetCorrection.cumulativeTurnRad /
+                     kDegreesToRadians
+              << " dispatchResult=WAITING_FOR_MEASUREMENT\n";
 }
 
 void NetworkManagerServer::BeginPhysicalFleetCorrection(
@@ -979,6 +1092,8 @@ void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
     uint32_t _agvID,
     const ControllerEvent& _event)
 {
+    const bool preDeparture = m_PhysicalFleetCorrection.stage ==
+        PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT;
     if (!m_PhysicalFleetCorrection.active())
     {
         std::cout << "[VisionCorrection] Late correction report ignored\n";
@@ -1016,7 +1131,10 @@ void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
               << " routeID=" << m_PhysicalFleetCorrection.routeID
               << " agvID=" << _agvID
               << " edge=" << m_PhysicalFleetCorrection.startNodeID
-              << "->" << m_PhysicalFleetCorrection.nodeID
+              << "->"
+              << (preDeparture
+                      ? m_PhysicalFleetCorrection.departureTargetNodeID
+                      : m_PhysicalFleetCorrection.nodeID)
               << " primitive=" << static_cast<unsigned>(
                      m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
               << " commandID=" << _event.commandID
@@ -1060,6 +1178,11 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         return;
 
     const uint64_t nowMs = MonotonicMilliseconds();
+    const bool preDeparture = m_PhysicalFleetCorrection.stage ==
+        PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT;
+    const uint32_t diagnosticTargetNodeID = preDeparture
+        ? m_PhysicalFleetCorrection.departureTargetNodeID
+        : m_PhysicalFleetCorrection.nodeID;
     if (nowMs > m_PhysicalFleetCorrection.deadlineMilliseconds)
     {
         FailPhysicalFleetCorrection(
@@ -1178,7 +1301,7 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
               << " routeID=" << m_PhysicalFleetCorrection.routeID
               << " agvID=" << m_PhysicalFleetCorrection.agvID
               << " edge=" << m_PhysicalFleetCorrection.startNodeID
-              << "->" << m_PhysicalFleetCorrection.nodeID
+              << "->" << diagnosticTargetNodeID
               << " visionSequence=" << latest->observation.sequence
               << " frame=VISION_LOCAL_METRIC_XZ";
     WritePhysicalFleetPoseDiagnostic(poseDiagnostic);
@@ -1220,7 +1343,7 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << " routeID=" << m_PhysicalFleetCorrection.routeID
                   << " agvID=" << m_PhysicalFleetCorrection.agvID
                   << " edge=" << m_PhysicalFleetCorrection.startNodeID
-                  << "->" << m_PhysicalFleetCorrection.nodeID
+                  << "->" << diagnosticTargetNodeID
                   << " primitive=" << static_cast<unsigned>(
                          m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
                   << " commandID="
@@ -1353,104 +1476,8 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
 
     if (decision.action == PhysicalFleetCorrectionAction::ACCEPT)
     {
-        if (m_PhysicalFleetCorrection.stage ==
-            PhysicalFleetCorrectionState::Stage::POST_ARRIVAL)
-        {
-            auto* controller = dynamic_cast<ESP32RobotController*>(
-                RobotManager::GetInstance().GetRobotController(
-                    m_PhysicalFleetCorrection.agvID));
-            uint32_t nextNodeID = 0;
-            float departureHeadingRad = 0.0f;
-            if (controller && controller->TryGetNextDepartureHeading(
-                    m_PhysicalFleetCorrection.nodeID,
-                    nextNodeID,
-                    departureHeadingRad))
-            {
-                bool currentVisionSession = false;
-                for (const auto& [proxy, session] :
-                     m_ProxyToVisionSessionMap)
-                {
-                    (void)proxy;
-                    if (session.sourceID == latest->observation.sourceID &&
-                        session.sessionID == latest->observation.sessionID)
-                    {
-                        currentVisionSession = true;
-                        break;
-                    }
-                }
-                if (!currentVisionSession ||
-                    latest->observation.calibrationID !=
-                        m_VisionConfig.expectedCalibrationID)
-                {
-                    FailPhysicalFleetCorrection(
-                        "pre-departure Vision identity unavailable");
-                    return;
-                }
-
-                m_PhysicalFleetCorrection.stage =
-                    PhysicalFleetCorrectionState::Stage::
-                        PRE_DEPARTURE_ALIGNMENT;
-                m_PhysicalFleetCorrection.departureTargetNodeID = nextNodeID;
-                m_PhysicalFleetCorrection.departureTargetHeadingRad =
-                    departureHeadingRad;
-                input.expectedArrivalHeadingRad = departureHeadingRad;
-                diagnosticInput.expectedHeadingRad = departureHeadingRad;
-                poseDiagnostic = CalculatePhysicalFleetPoseDiagnostic(
-                    diagnosticInput);
-                m_PhysicalFleetCorrection.lastPoseDiagnostic = poseDiagnostic;
-
-                const PhysicalFleetPreDepartureDecision departureDecision =
-                    DecidePhysicalFleetPreDepartureAlignment(
-                        poseDiagnostic.positionErrorMm,
-                        input.actualHeadingRad,
-                        departureHeadingRad,
-                        0);
-                decision.action = departureDecision.action;
-                decision.magnitude = departureDecision.magnitude;
-                decision.positionErrorMm = poseDiagnostic.positionErrorMm;
-                decision.arrivalHeadingErrorRad =
-                    departureDecision.headingErrorRad;
-                std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
-                          << " phase=PRE_DEPARTURE"
-                          << " routeID="
-                          << m_PhysicalFleetCorrection.routeID
-                          << " agvID=" << m_PhysicalFleetCorrection.agvID
-                          << " edge=" << m_PhysicalFleetCorrection.nodeID
-                          << "->" << nextNodeID
-                          << " targetHeadingDeg="
-                          << departureHeadingRad / kDegreesToRadians
-                          << " actualHeadingDeg="
-                          << input.actualHeadingRad / kDegreesToRadians
-                          << " headingErrorDeg="
-                          << departureDecision.headingErrorRad /
-                                 kDegreesToRadians
-                          << " visionSequence="
-                          << latest->observation.sequence
-                          << " commandID=0 alignmentAttempt=0"
-                          << " dispatchResult="
-                          << (departureDecision.action ==
-                                      PhysicalFleetCorrectionAction::ACCEPT
-                                  ? "ALIGNED"
-                                  : "TURN_REQUIRED")
-                          << "\n";
-                if (decision.action ==
-                    PhysicalFleetCorrectionAction::ACCEPT)
-                {
-                    CompletePhysicalFleetCorrection();
-                    return;
-                }
-            }
-            else
-            {
-                CompletePhysicalFleetCorrection();
-                return;
-            }
-        }
-        else
-        {
-            CompletePhysicalFleetCorrection();
-            return;
-        }
+        CompletePhysicalFleetCorrection();
+        return;
     }
     if (decision.action == PhysicalFleetCorrectionAction::REJECT)
     {
@@ -1478,6 +1505,15 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << decision.arrivalHeadingErrorRad / kDegreesToRadians
                   << "\n";
         FailPhysicalFleetCorrection("correction primitive limit exhausted");
+        return;
+    }
+    if (m_PhysicalFleetCorrection.stage ==
+            PhysicalFleetCorrectionState::Stage::
+                PRE_DEPARTURE_ALIGNMENT &&
+        m_PhysicalFleetCorrection.routeID == 0)
+    {
+        FailPhysicalFleetCorrection(
+            "pre-departure turn unavailable before first completed route");
         return;
     }
 
@@ -1566,7 +1602,7 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
               << " routeID=" << command.routeID
               << " agvID=" << m_PhysicalFleetCorrection.agvID
               << " edge=" << m_PhysicalFleetCorrection.startNodeID
-              << "->" << command.nodeID
+              << "->" << diagnosticTargetNodeID
               << " primitive=" << static_cast<unsigned>(
                      m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
               << " commandID=" << command.commandID
@@ -1586,8 +1622,19 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT)
     {
         ++m_PhysicalFleetCorrection.departureAlignmentAttempts;
+        const uint8_t dispatchedSameDirectionCount =
+            m_PhysicalFleetCorrection.hasPreviousTurn &&
+                m_PhysicalFleetCorrection.previousTurnAction ==
+                    decision.action
+            ? static_cast<uint8_t>(
+                  m_PhysicalFleetCorrection.consecutiveSameDirectionTurns + 1)
+            : 1;
         std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
                   << " phase=PRE_DEPARTURE"
+                  << " physicalArrivalCommitted=1"
+                  << " departureHold=1"
+                  << " confirmedNode="
+                  << m_PhysicalFleetCorrection.nodeID
                   << " routeID=" << command.routeID
                   << " agvID=" << m_PhysicalFleetCorrection.agvID
                   << " edge=" << m_PhysicalFleetCorrection.nodeID
@@ -1605,6 +1652,12 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << " alignmentAttempt=" << static_cast<unsigned>(
                          m_PhysicalFleetCorrection.
                              departureAlignmentAttempts)
+                  << " sameDirectionCount=" << static_cast<unsigned>(
+                         dispatchedSameDirectionCount)
+                  << " cumulativeTurnDeg="
+                  << (m_PhysicalFleetCorrection.cumulativeTurnRad +
+                      decision.magnitude) /
+                         kDegreesToRadians
                   << " dispatchResult=WAITING_FOR_CORRECTION_REPORT\n";
     }
 
@@ -1711,29 +1764,31 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
 
     auto* controller = dynamic_cast<ESP32RobotController*>(
         RobotManager::GetInstance().GetRobotController(agvID));
-    if (!controller || !controller->ConfirmCorrectedPhysicalArrival(
-            nodeID, visionAnchor))
+    if (!controller)
     {
-        FailPhysicalFleetCorrection("corrected arrival confirmation failed");
+        FailPhysicalFleetCorrection("physical controller unavailable");
         return;
     }
 
-    std::cout << "[PhysicalFleetDiag] HEADING_ANCHOR"
-              << " routeID=" << m_PhysicalFleetCorrection.routeID
-              << " agvID=" << agvID
-              << " nodeID=" << nodeID
-              << " headingSource="
-              << (visionHeadingValid ? "VISION_ACCEPTED" : "NOMINAL_NODE")
-              << " visionSequence="
-              << (visionHeadingValid
-                      ? m_PhysicalFleetCorrection.lastVisionSequence
-                      : 0)
-              << "\n";
-
     if (completedPreDepartureAlignment)
     {
+        if (!controller->ReleasePhysicalDeparture(
+                nodeID,
+                m_PhysicalFleetCorrection.departureTargetNodeID,
+                *visionAnchor))
+        {
+            FailPhysicalFleetCorrection(
+                "physical departure release failed");
+            return;
+        }
+
         std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
                   << " phase=PRE_DEPARTURE"
+                  << " physicalArrivalCommitted="
+                  << controller->HasCommittedPhysicalArrival()
+                  << " departureHold=0"
+                  << " confirmedNode="
+                  << controller->GetCommittedPhysicalNodeID()
                   << " routeID=" << m_PhysicalFleetCorrection.routeID
                   << " agvID=" << agvID
                   << " edge=" << nodeID << "->"
@@ -1759,8 +1814,36 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
                   << " alignmentAttempt=" << static_cast<unsigned>(
                          m_PhysicalFleetCorrection.
                              departureAlignmentAttempts)
+                  << " sameDirectionCount=" << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.
+                             consecutiveSameDirectionTurns)
+                  << " cumulativeTurnDeg="
+                  << m_PhysicalFleetCorrection.cumulativeTurnRad /
+                         kDegreesToRadians
                   << " dispatchResult=RELEASED\n";
+
+        m_PhysicalDepartureSafetyCarry.reset();
+        m_PhysicalFleetCorrection = {};
+        return;
     }
+
+    if (!controller->CommitCorrectedPhysicalArrival(nodeID, visionAnchor))
+    {
+        FailPhysicalFleetCorrection("corrected arrival commit failed");
+        return;
+    }
+
+    std::cout << "[PhysicalFleetDiag] HEADING_ANCHOR"
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << agvID
+              << " nodeID=" << nodeID
+              << " headingSource="
+              << (visionHeadingValid ? "VISION_ACCEPTED" : "NOMINAL_NODE")
+              << " visionSequence="
+              << (visionHeadingValid
+                      ? m_PhysicalFleetCorrection.lastVisionSequence
+                      : 0)
+              << "\n";
 
     const uint8_t primitiveCount =
         m_PhysicalFleetCorrection.primitiveCount;
@@ -1794,6 +1877,41 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
               << static_cast<unsigned>(primitiveCount)
               << " durationMs=" << durationMs << "\n";
 
+    std::cout << "[PhysicalFleetDiag] ARRIVAL_COMMIT"
+              << " phase=POST_ARRIVAL"
+              << " physicalArrivalCommitted=1"
+              << " departureHold="
+              << controller->HasPhysicalDepartureHold()
+              << " confirmedNode=" << nodeID
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << agvID
+              << " edge=" << m_PhysicalFleetCorrection.startNodeID
+              << "->" << nodeID
+              << " targetHeadingDeg="
+              << m_PhysicalFleetCorrection.expectedHeadingRad /
+                     kDegreesToRadians
+              << " actualHeadingDeg="
+              << m_PhysicalFleetCorrection.lastPoseDiagnostic.actualHeadingDeg
+              << " headingErrorDeg="
+              << m_PhysicalFleetCorrection.lastPoseDiagnostic.
+                     arrivalHeadingErrorDeg
+              << " visionSequence="
+              << m_PhysicalFleetCorrection.lastVisionSequence
+              << " alignmentAttempt=0"
+              << " sameDirectionCount=" << static_cast<unsigned>(
+                     m_PhysicalFleetCorrection.consecutiveSameDirectionTurns)
+              << " cumulativeTurnDeg="
+              << m_PhysicalFleetCorrection.cumulativeTurnRad /
+                     kDegreesToRadians
+              << " dispatchResult=ARRIVAL_COMMITTED\n";
+
+    m_PhysicalDepartureSafetyCarry = PhysicalFleetDepartureSafetyCarry{
+        agvID,
+        nodeID,
+        m_PhysicalFleetCorrection.primitiveCount,
+        m_PhysicalFleetCorrection.cumulativeTurnRad
+    };
+
     m_PhysicalFleetCorrection = {};
     EventManager::GetInstance().Publish(
         { RobotEventType::NODE_ARRIVED,
@@ -1817,8 +1935,18 @@ void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
         if (m_PhysicalFleetCorrection.stage ==
             PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT)
         {
+            auto* controller = dynamic_cast<ESP32RobotController*>(
+                RobotManager::GetInstance().GetRobotController(agvID));
             std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
                       << " phase=PRE_DEPARTURE"
+                      << " physicalArrivalCommitted="
+                      << (controller &&
+                          controller->HasCommittedPhysicalArrival())
+                      << " departureHold=1"
+                      << " confirmedNode="
+                      << (controller
+                              ? controller->GetCommittedPhysicalNodeID()
+                              : m_PhysicalFleetCorrection.nodeID)
                       << " routeID="
                       << m_PhysicalFleetCorrection.routeID
                       << " agvID=" << agvID
@@ -1855,6 +1983,12 @@ void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
                       << " alignmentAttempt=" << static_cast<unsigned>(
                              m_PhysicalFleetCorrection.
                                  departureAlignmentAttempts)
+                      << " sameDirectionCount=" << static_cast<unsigned>(
+                             m_PhysicalFleetCorrection.
+                                 consecutiveSameDirectionTurns)
+                      << " cumulativeTurnDeg="
+                      << m_PhysicalFleetCorrection.cumulativeTurnRad /
+                             kDegreesToRadians
                       << " dispatchResult=SAFE_STOP"
                       << " reason=\"" << _reason << "\"\n";
         }
@@ -1869,7 +2003,12 @@ void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
                   << " routeID=" << m_PhysicalFleetCorrection.routeID
                   << " agvID=" << agvID
                   << " edge=" << m_PhysicalFleetCorrection.startNodeID
-                  << "->" << m_PhysicalFleetCorrection.nodeID
+                  << "->"
+                  << (m_PhysicalFleetCorrection.stage ==
+                              PhysicalFleetCorrectionState::Stage::
+                                  PRE_DEPARTURE_ALIGNMENT
+                          ? m_PhysicalFleetCorrection.departureTargetNodeID
+                          : m_PhysicalFleetCorrection.nodeID)
                   << " frame=VISION_LOCAL_METRIC_XZ"
                   << " visionSequence="
                   << m_PhysicalFleetCorrection.lastVisionSequence;
@@ -1913,6 +2052,7 @@ void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
     }
     std::cout << "[VisionCorrection] SAFE STOP: " << _reason << "\n";
     m_PhysicalFleetCorrection = {};
+    m_PhysicalDepartureSafetyCarry.reset();
     if (agvID != 0)
     {
         RoutePlanner::GetInstance().StopActiveRouteForSafety(
@@ -2157,6 +2297,11 @@ void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
             m_AgvIdToRobotSessionMap.erase(agvSessionIt);
         }
         m_MotorFaultDiagnosticDecoders.erase(agvID);
+        if (m_PhysicalDepartureSafetyCarry.has_value() &&
+            m_PhysicalDepartureSafetyCarry->agvID == agvID)
+        {
+            m_PhysicalDepartureSafetyCarry.reset();
+        }
         m_ProxyToRobotSessionMap.erase(robotProxyIt);
     }
 

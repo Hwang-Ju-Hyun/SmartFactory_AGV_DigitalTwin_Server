@@ -66,12 +66,17 @@ add_executable(PhysicalFleetDiagnosticsTest
 
 target_link_libraries(PhysicalFleetDiagnosticsTest PRIVATE Shared)
 
+add_executable(PhysicalFleetDispatchStateTest
+    PhysicalFleetDispatchStateTest.cpp
+)
+
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
     add_test(NAME vision_observation COMMAND VisionObservationTest)
     add_test(NAME physical_fleet_correction COMMAND PhysicalFleetCorrectionTest)
     add_test(NAME motor_fault_diagnostic COMMAND MotorFaultDiagnosticTest)
     add_test(NAME physical_fleet_diagnostics COMMAND PhysicalFleetDiagnosticsTest)
+    add_test(NAME physical_fleet_dispatch_state COMMAND PhysicalFleetDispatchStateTest)
     add_test(
         NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview

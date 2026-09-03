@@ -57,7 +57,10 @@ bool ESP32RobotController::FollowRoute(const RoutePacket& _routePacket)
     m_CurrentRoute = _routePacket;
     m_CurrentEdgeStartIndex = 0;
     m_DispatchNextEdgePending = false;
-    if (!DispatchCurrentPhysicalEdge())
+    const bool accepted = m_TrajectoryConfig.requireDepartureRelease
+        ? HoldCurrentPhysicalDeparture()
+        : DispatchCurrentPhysicalEdge();
+    if (!accepted)
     {
         m_CurrentRoute = {};
         return false;
@@ -135,6 +138,9 @@ void ESP32RobotController::CancelRoute()
     m_CurrentRoute = {};
     m_CurrentEdgeStartIndex = 0;
     m_DispatchNextEdgePending = false;
+    m_PhysicalDispatchState.CancelDeparture();
+    std::queue<ControllerEvent> emptyEvents;
+    m_LocalEvents.swap(emptyEvents);
 }
 
 StatusPacket ESP32RobotController::GetStatus()
@@ -189,7 +195,22 @@ bool ESP32RobotController::IsExpectedPhysicalArrival(uint32_t nodeID) const
         m_CurrentRoute.nodes[m_CurrentEdgeStartIndex + 1].nodeID == nodeID;
 }
 
-bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(
+bool ESP32RobotController::ApplyConfirmedHeading(
+    float nominalHeadingRad,
+    std::optional<PhysicalFleetHeadingAnchor> visionAnchor)
+{
+    const ResolvedPhysicalFleetHeading resolved =
+        ResolvePhysicalFleetHeading(nominalHeadingRad, visionAnchor);
+    if (!std::isfinite(resolved.headingRad))
+        return false;
+    m_ConfirmedStartHeadingRad = resolved.headingRad;
+    m_HasConfirmedStartHeading = true;
+    m_ConfirmedStartHeadingFromVision = resolved.usedVision;
+    m_ConfirmedStartHeadingVisionSequence = resolved.visionSequence;
+    return true;
+}
+
+bool ESP32RobotController::CommitCorrectedPhysicalArrival(
     uint32_t nodeID,
     std::optional<PhysicalFleetHeadingAnchor> visionAnchor)
 {
@@ -203,23 +224,25 @@ bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(
     // Prefer the accepted fresh Vision heading. If it is unavailable, anchor
     // to the confirmed incoming-link heading instead of reusing the ESP32's
     // accumulated open-loop estimate.
-    const ResolvedPhysicalFleetHeading resolved =
-        ResolvePhysicalFleetHeading(confirmedHeadingRad, visionAnchor);
-    if (!std::isfinite(resolved.headingRad))
+    if (!ApplyConfirmedHeading(confirmedHeadingRad, visionAnchor) ||
+        !m_PhysicalDispatchState.CommitArrival(nodeID))
         return false;
-    m_ConfirmedStartHeadingRad = resolved.headingRad;
-    m_HasConfirmedStartHeading = true;
-    m_ConfirmedStartHeadingFromVision = resolved.usedVision;
-    m_ConfirmedStartHeadingVisionSequence = resolved.visionSequence;
     std::cout << "[PhysicalFleet] Arrival heading anchored. node=" << nodeID
-              << " headingRad=" << resolved.headingRad
+              << " headingRad=" << m_ConfirmedStartHeadingRad
               << " headingSource="
-              << (resolved.usedVision ? "VISION_ACCEPTED" : "NOMINAL_NODE")
-              << " visionSequence=" << resolved.visionSequence << "\n";
+              << (m_ConfirmedStartHeadingFromVision
+                      ? "VISION_ACCEPTED"
+                      : "NOMINAL_NODE")
+              << " visionSequence="
+              << m_ConfirmedStartHeadingVisionSequence << "\n";
 
     ++m_CurrentEdgeStartIndex;
     if (m_CurrentEdgeStartIndex + 1 < m_CurrentRoute.nodes.size())
+    {
+        if (m_TrajectoryConfig.requireDepartureRelease)
+            return HoldCurrentPhysicalDeparture();
         m_DispatchNextEdgePending = true;
+    }
     else
     {
         m_CurrentRoute = {};
@@ -227,6 +250,89 @@ bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(
         m_DispatchNextEdgePending = false;
     }
     return true;
+}
+
+bool ESP32RobotController::HoldCurrentPhysicalDeparture()
+{
+    if (m_CurrentRoute.nodes.size() < 2 ||
+        m_CurrentEdgeStartIndex + 1 >= m_CurrentRoute.nodes.size())
+    {
+        return false;
+    }
+
+    const uint32_t startNodeID =
+        m_CurrentRoute.nodes[m_CurrentEdgeStartIndex].nodeID;
+    const uint32_t targetNodeID =
+        m_CurrentRoute.nodes[m_CurrentEdgeStartIndex + 1].nodeID;
+    if (!m_PhysicalDispatchState.HoldDeparture(
+            startNodeID, targetNodeID))
+    {
+        return false;
+    }
+
+    ControllerEvent event;
+    event.type = ControllerEventType::DEPARTURE_REQUESTED;
+    event.nodeID = startNodeID;
+    event.relatedNodeID = targetNodeID;
+    m_LocalEvents.push(event);
+    std::cout << "[PhysicalFleet] Departure held. edge="
+              << startNodeID << "->" << targetNodeID
+              << " physicalArrivalCommitted="
+              << m_PhysicalDispatchState.IsPhysicalArrivalCommitted()
+              << " departureHold=1 confirmedNode="
+              << m_PhysicalDispatchState.GetConfirmedNodeID() << "\n";
+    return true;
+}
+
+bool ESP32RobotController::ReleasePhysicalDeparture(
+    uint32_t startNodeID,
+    uint32_t targetNodeID,
+    PhysicalFleetHeadingAnchor visionAnchor)
+{
+    if (!IsPhysicalDepartureHeld(startNodeID, targetNodeID) ||
+        visionAnchor.visionSequence == 0 ||
+        !std::isfinite(visionAnchor.headingRad))
+    {
+        return false;
+    }
+
+    const MapNode from = MapManager::GetInstance().GetMapNode(startNodeID);
+    const MapNode to = MapManager::GetInstance().GetMapNode(targetNodeID);
+    const float nominalHeadingRad = std::atan2(
+        to.m_PosZ - from.m_PosZ,
+        to.m_PosX - from.m_PosX);
+    if (!ApplyConfirmedHeading(nominalHeadingRad, visionAnchor) ||
+        !m_PhysicalDispatchState.GrantDeparture(
+            startNodeID, targetNodeID))
+    {
+        return false;
+    }
+
+    m_DispatchNextEdgePending = true;
+    return true;
+}
+
+bool ESP32RobotController::IsPhysicalDepartureHeld(
+    uint32_t startNodeID,
+    uint32_t targetNodeID) const
+{
+    return m_PhysicalDispatchState.MatchesHeldDeparture(
+        startNodeID, targetNodeID);
+}
+
+bool ESP32RobotController::HasPhysicalDepartureHold() const
+{
+    return m_PhysicalDispatchState.IsDepartureHeld();
+}
+
+uint32_t ESP32RobotController::GetCommittedPhysicalNodeID() const
+{
+    return m_PhysicalDispatchState.GetConfirmedNodeID();
+}
+
+bool ESP32RobotController::HasCommittedPhysicalArrival() const
+{
+    return m_PhysicalDispatchState.IsPhysicalArrivalCommitted();
 }
 
 bool ESP32RobotController::TryGetExpectedArrivalHeading(
@@ -254,28 +360,6 @@ bool ESP32RobotController::TryGetExpectedPhysicalEdge(
     outStartNodeID =
         m_CurrentRoute.nodes[m_CurrentEdgeStartIndex].nodeID;
     return true;
-}
-
-bool ESP32RobotController::TryGetNextDepartureHeading(
-    uint32_t currentNodeID,
-    uint32_t& outNextNodeID,
-    float& outHeadingRad) const
-{
-    if (!IsExpectedPhysicalArrival(currentNodeID) ||
-        m_CurrentEdgeStartIndex + 2 >= m_CurrentRoute.nodes.size())
-    {
-        return false;
-    }
-
-    outNextNodeID =
-        m_CurrentRoute.nodes[m_CurrentEdgeStartIndex + 2].nodeID;
-    const MapNode from =
-        MapManager::GetInstance().GetMapNode(currentNodeID);
-    const MapNode to =
-        MapManager::GetInstance().GetMapNode(outNextNodeID);
-    outHeadingRad = std::atan2(to.m_PosZ - from.m_PosZ,
-                               to.m_PosX - from.m_PosX);
-    return std::isfinite(outHeadingRad);
 }
 
 uint32_t ESP32RobotController::GetActivePhysicalRouteID() const

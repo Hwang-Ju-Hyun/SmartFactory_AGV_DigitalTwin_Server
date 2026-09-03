@@ -62,12 +62,12 @@ flowchart LR
 | `OccupancyProvider` | 실행 시점의 실제 node/edge 점유 | 미래 route 계획 |
 | `RobotManager` | AGV ID별 `IRobotController` 소유, 실행 안전 callback 주입 | route 자체 계산 |
 | `UnityRobotController` | 서버 내부 `MovementSimulator` 실행 | Unity network viewer 자체 |
-| `ESP32RobotController` | route/cancel 전송, STATUS/ARRIVED를 서버 controller interface로 변환 | ESP32의 저수준 motor 제어 |
+| `ESP32RobotController` | route/cancel 전송, STATUS/ARRIVED 변환, physical arrival commit과 departure hold/release 분리 | ESP32의 저수준 motor 제어 |
 | `ReplicationManagerServer` | 서버 object의 create/update 상태를 Unity로 전송 | route 명령 전송 |
 | `EventManager` | frame 사이에서 task/route 이벤트 전달 | network packet framing |
 | `VisionObservationStore` | 검증된 최신 Vision 관측을 AGV별로 별도 저장 | AGV world pose 직접 덮어쓰기 또는 자체 경로 계획 |
 | Vision-to-Unity comparison relay | fresh 관측을 map unit/radian으로 변환해 별도 `UPT_VISION_OBSERVATION` marker로 전송하고 timeout 시 LOST 전달 | 기존 replication AGV pose 또는 Server world 변경 |
-| Physical-fleet node correction coordinator | coarse ARRIVED 뒤 post-stop MEASURED pose와 목표 node/heading 오차를 계산하고 제한된 correction primitive를 순차 전송 | 주행 중 연속 steering, Vision pose로 예약·world pose 직접 변경, 무제한 재시도 |
+| Physical-fleet node correction coordinator | coarse ARRIVED 뒤 node pose를 확정하고, 모든 다음 edge dispatch 전에 fresh Vision heading gate와 제한된 correction primitive를 순차 실행 | 주행 중 연속 steering, Vision pose로 예약·world pose 직접 변경, 무제한 재시도 |
 
 ## 프로세스 시작과 tick 흐름
 
@@ -89,8 +89,10 @@ ServerMain
   -> select() 기반 loop
      -> accept/read packet
      -> UpdateWorld(deltaTime)
-        -> PhysicalFleet coarse ARRIVED를 보정 완료 전까지 보류
-        -> fresh MEASURED 기반 correction command/report 또는 fail-stop
+        -> PhysicalFleet coarse ARRIVED를 post-arrival 보정 완료 전까지 보류
+        -> node/occupancy/route step을 한 번 확정하되 다음 edge는 departure hold
+        -> 모든 route의 edge dispatch 전에 fresh MEASURED heading 정렬
+        -> departure release 뒤에만 one-edge trajectory 전송, 실패 시 hold 상태로 fail-stop
      -> SendOutgoingReplicationPackets()
         -> 새 Vision sequence 또는 receive-timeout LOST 전환을 Unity에 별도 중계
 ```
@@ -129,7 +131,7 @@ EventManager
 
 TCP는 byte stream이므로 세 protocol 모두 frame 맨 앞의 `uint16 packetSize`로 메시지 경계를 구분한다. Robot/Vision wire format은 [CommunicationProtocol.md](CommunicationProtocol.md)를 따른다.
 
-Vision 관측은 planned world pose 및 ESP32 상태와 별도로 저장된다. 기본 mode에서는 visualization 송신 단계만 store를 읽어 Unity의 별도 비교 marker packet을 만든다. 예외적으로 `PhysicalFleet + --vision-observation`에서는 node 도착 보정 coordinator가 coarse `ARRIVED` 뒤 store를 읽는다. 이때도 Vision pose가 AGV world pose나 예약을 직접 덮어쓰지는 않으며, fresh `MEASURED + VERIFIED` 결과가 허용 범위에 든 뒤에만 기존 `NODE_ARRIVED` 이벤트를 확정한다.
+Vision 관측은 planned world pose 및 ESP32 상태와 별도로 저장된다. 기본 mode에서는 visualization 송신 단계만 store를 읽어 Unity의 별도 비교 marker packet을 만든다. 예외적으로 `PhysicalFleet + --vision-observation`에서는 node 도착 보정과 departure gate가 store를 읽는다. post-arrival의 fresh `MEASURED + VERIFIED` pose가 허용 범위에 들면 `NODE_ARRIVED`를 한 번 확정하지만 controller는 다음 edge를 hold한다. 별도의 pre-departure 검증이 성공한 뒤에만 hold를 해제하므로 task/route 전환이 일어나도 Vision pose가 AGV world pose나 예약을 직접 덮어쓰거나 조기 forward를 만들지 않는다.
 
 ## 물리 로봇 책임
 
@@ -151,4 +153,4 @@ Vision 관측은 planned world pose 및 ESP32 상태와 별도로 저장된다. 
 - native Windows socket build는 지원하지 않는다. 서버는 Linux/WSL에서 빌드한다.
 - Unity 프로젝트와 정식 ESP32 firmware 프로젝트가 이 저장소에 buildable source tree로 들어와 있지 않다.
 - `TrafficControlManager`, WPF/HMI는 현재 구현이 아니다.
-- `TrajectorySmokeTest`, trajectory preview, `VisionObservationTest`, `PhysicalFleetCorrectionTest`가 CTest에 등록돼 있다. 전체 fleet TCP E2E는 여전히 FakeRobot smoke test가 대표 검증이다.
+- `TrajectorySmokeTest`, trajectory preview, `VisionObservationTest`, `PhysicalFleetCorrectionTest`, `PhysicalFleetDispatchStateTest`가 CTest에 등록돼 있다. 전체 fleet TCP E2E는 여전히 FakeRobot smoke test가 대표 검증이다.

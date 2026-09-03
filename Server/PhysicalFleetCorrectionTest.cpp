@@ -551,6 +551,88 @@ namespace
         REQUIRE(excessivePosition.action ==
                 PhysicalFleetCorrectionAction::REJECT);
     }
+
+    void TestCorrectionObjectiveHistoryIsSeparated()
+    {
+        constexpr float postArrivalCumulativeTurnRad =
+            115.0726f * kDegreesToRadians;
+        constexpr float departureTurnRad =
+            93.2815f * kDegreesToRadians;
+
+        REQUIRE(CheckPhysicalFleetTurnCommand(
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    departureTurnRad,
+                    true,
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    2,
+                    postArrivalCumulativeTurnRad) ==
+                PhysicalFleetNonConvergenceReason::
+                    SAME_DIRECTION_TURN_LIMIT);
+
+        REQUIRE(CheckPhysicalFleetTurnCommand(
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    departureTurnRad,
+                    false,
+                    PhysicalFleetCorrectionAction::REJECT,
+                    0,
+                    postArrivalCumulativeTurnRad) ==
+                PhysicalFleetNonConvergenceReason::NONE);
+
+        REQUIRE(CheckPhysicalFleetTurnCommand(
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    departureTurnRad,
+                    true,
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    2,
+                    postArrivalCumulativeTurnRad) ==
+                PhysicalFleetNonConvergenceReason::
+                    SAME_DIRECTION_TURN_LIMIT);
+
+        REQUIRE(CheckPhysicalFleetTurnCommand(
+                    PhysicalFleetCorrectionAction::TURN_CW,
+                    10.0f * kDegreesToRadians,
+                    false,
+                    PhysicalFleetCorrectionAction::REJECT,
+                    0,
+                    PhysicalFleetCorrectionPolicy::
+                            kMaximumCumulativeTurnRad -
+                        5.0f * kDegreesToRadians) ==
+                PhysicalFleetNonConvergenceReason::
+                    CUMULATIVE_TURN_LIMIT);
+
+        const auto node7Departure =
+            DecidePhysicalFleetPreDepartureAlignment(
+                14.6523f,
+                -86.7185f * kDegreesToRadians,
+                180.0f * kDegreesToRadians,
+                0);
+        REQUIRE(node7Departure.action ==
+                PhysicalFleetCorrectionAction::TURN_CW);
+        REQUIRE(NearlyEqual(
+            node7Departure.headingErrorRad,
+            -93.2815f * kDegreesToRadians,
+            0.0002f));
+        REQUIRE(NearlyEqual(
+            node7Departure.magnitude,
+            PhysicalFleetCorrectionPolicy::kMaximumTurnRad));
+
+        const auto measuredTurnResult =
+            DecidePhysicalFleetPreDepartureAlignment(
+                37.6955f,
+                2.27061f * kDegreesToRadians,
+                0.0f,
+                1);
+        REQUIRE(measuredTurnResult.action ==
+                PhysicalFleetCorrectionAction::ACCEPT);
+        const auto excessiveTurnDrift =
+            DecidePhysicalFleetPreDepartureAlignment(
+                40.01f,
+                2.27061f * kDegreesToRadians,
+                0.0f,
+                1);
+        REQUIRE(excessiveTurnDrift.action ==
+                PhysicalFleetCorrectionAction::REJECT);
+    }
 }
 
 int main()
@@ -574,6 +656,7 @@ int main()
     TestRecordedRecoveryRetainsTwoFinalPrimitives();
     TestRejectsEveryNonFiniteInput();
     TestPreDepartureAlignmentPolicy();
+    TestCorrectionObjectiveHistoryIsSeparated();
     std::cout << "Physical fleet correction tests passed\n";
     return 0;
 }

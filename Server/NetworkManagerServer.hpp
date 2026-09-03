@@ -90,6 +90,10 @@ private:
     bool HandlePhysicalFleetControllerEvent(uint32_t _agvID,
                                             const ControllerEvent& _event);
     void BeginPhysicalFleetCorrection(uint32_t _agvID, uint32_t _nodeID);
+    void BeginPhysicalFleetDepartureAlignment(
+        uint32_t _agvID,
+        uint32_t _startNodeID,
+        uint32_t _targetNodeID);
     void HandlePhysicalFleetCorrectionReport(
         uint32_t _agvID,
         const ControllerEvent& _event);
@@ -184,6 +188,15 @@ private:
         bool active() const { return phase != Phase::IDLE; }
     };
     PhysicalFleetCorrectionState m_PhysicalFleetCorrection;
+    struct PhysicalFleetDepartureSafetyCarry
+    {
+        uint32_t agvID = 0;
+        uint32_t nodeID = 0;
+        uint8_t primitiveCount = 0;
+        float cumulativeTurnRad = 0.0f;
+    };
+    std::optional<PhysicalFleetDepartureSafetyCarry>
+        m_PhysicalDepartureSafetyCarry;
     uint32_t m_NextCorrectionCommandID = 1;
 private:
     LinkingContext* m_LinkingContext; 

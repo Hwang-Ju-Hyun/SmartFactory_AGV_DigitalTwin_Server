@@ -40,10 +40,13 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 
 ### 2026-09-03 Physical-fleet 출발 전 Vision heading 정렬
 
+- 실차에서 `11 -> 12` coarse 위치 오차가 기존 `82.9974 mm`에서 pre-departure 적용 후 `38.2581 mm`로 감소해 기능 효과를 확인했다. 이후 node 7 도착 보정의 CW 2회 이력이 별도 목표인 `7 -> 6` departure CW에 이어져 `SAME_DIRECTION_TURN_LIMIT`가 잘못 발생했고, 도착 확정까지 departure 완료에 묶여 Server confirmed node가 12에 남는 상태 불일치가 드러났다.
+- post-arrival 성공 시 node/occupancy/route step과 accepted Vision heading을 먼저 한 번 확정하고, controller의 다음 edge는 별도 departure hold에 둔다. pre-departure 실패 시 route는 기존 safe-stop으로 취소되지만 confirmed node는 실제 도착 node를 유지한다. pre 성공에서는 ARRIVED/pickup/drop 이벤트를 다시 발행하지 않는다.
+- 모든 physical route의 `FollowRoute` 첫 edge와 같은 route의 후속 edge가 공통 departure request를 거친다. 따라서 pickup/drop 뒤 새 route도 gate 대상이다. objective 전환에서는 same-direction, non-improving, last-command 비교만 초기화하고 node당 primitive 총수와 누적 회전량은 이어받는다.
 - 도착 pose 승인을 바로 다음 edge 전송으로 연결하지 않고, 다음 edge bearing과 최신 `MEASURED + VERIFIED` Vision heading 차이가 10도를 넘으면 기존 `NODE_CORRECTION_COMMAND`로 정지 회전을 먼저 수행한다. 완료 report 뒤에는 그 회전에 사용한 sequence보다 새로운 관측만 승인하며, 최대 2회 안에 정렬되지 않으면 forward를 보내지 않고 기존 safe-stop을 사용한다.
 - 정렬 후 승인된 실제 Vision heading을 다음 one-edge trajectory의 start heading으로 넘겨 동일한 초기 회전을 반복하지 않는다. Vision source session/calibration/age가 달라지거나 robot session이 끊기면 출발을 해제하지 않는다. 기존 node당 primitive, 누적·동일방향 회전, 비수렴, position spike와 35/40 mm hysteresis 제한은 공유한다.
-- protocol packet과 ESP32는 변경하지 않았다. 현재 ESP32의 `NODE_WAIT`/마지막 완료 route ID 계약으로 edge 사이 정렬은 가능하지만, 최초 start node에는 완료된 route가 없어 같은 correction 명령을 사용할 수 없다. start node의 기존 20 mm/10도 승인 gate는 유지되며 최초 출발 정렬 지원에는 ESP32 상태 계약 변경이 필요하다.
-- WSL CMake configure/build와 CTest 6개가 통과했다. 실제 서버 실행과 실차 시험은 수행하지 않았다.
+- protocol packet과 ESP32는 변경하지 않았다. 현재 ESP32의 `NODE_WAIT`/마지막 완료 route ID 계약으로 edge 사이와 새 task 첫 edge 정렬은 가능하지만, 최초 start node에는 완료된 route가 없어 필요한 correction turn을 보낼 수 없다. 최초 edge도 gate와 fresh Vision 검사는 수행하며 이미 정렬됐으면 forward를 해제하고, 회전이 필요하면 안전 정지한다. 완전한 최초 출발 정렬 지원에는 ESP32 상태 계약 변경이 필요하다.
+- WSL CMake configure/build와 CTest 7개가 통과했다. 실제 서버 실행과 실차 재시험은 수행하지 않았다.
 
 ### 2026-09-03 Vision correction position hysteresis와 비수렴 guard
 

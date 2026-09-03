@@ -11,7 +11,8 @@ enum class ControllerEventType : uint8_t
     ERROR_SLIP, 
     EMERGENCY_STOP,
     EXECUTION_BLOCKED,
-    NODE_CORRECTION_REPORT
+    NODE_CORRECTION_REPORT,
+    DEPARTURE_REQUESTED
 };
 
 struct ControllerEvent 
