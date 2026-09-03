@@ -53,6 +53,9 @@ public:
                                     uint32_t& outStartNodeID) const;
     bool TryGetExpectedArrivalHeading(uint32_t nodeID,
                                       float& outHeadingRad) const;
+    bool TryGetNextDepartureHeading(uint32_t currentNodeID,
+                                    uint32_t& outNextNodeID,
+                                    float& outHeadingRad) const;
     uint32_t GetActivePhysicalRouteID() const;
     bool SupportsNodeCorrection() const;
     virtual void Update(float dt,float serverTime) override;

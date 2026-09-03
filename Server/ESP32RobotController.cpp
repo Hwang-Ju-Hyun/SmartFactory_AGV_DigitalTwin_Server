@@ -256,6 +256,28 @@ bool ESP32RobotController::TryGetExpectedPhysicalEdge(
     return true;
 }
 
+bool ESP32RobotController::TryGetNextDepartureHeading(
+    uint32_t currentNodeID,
+    uint32_t& outNextNodeID,
+    float& outHeadingRad) const
+{
+    if (!IsExpectedPhysicalArrival(currentNodeID) ||
+        m_CurrentEdgeStartIndex + 2 >= m_CurrentRoute.nodes.size())
+    {
+        return false;
+    }
+
+    outNextNodeID =
+        m_CurrentRoute.nodes[m_CurrentEdgeStartIndex + 2].nodeID;
+    const MapNode from =
+        MapManager::GetInstance().GetMapNode(currentNodeID);
+    const MapNode to =
+        MapManager::GetInstance().GetMapNode(outNextNodeID);
+    outHeadingRad = std::atan2(to.m_PosZ - from.m_PosZ,
+                               to.m_PosX - from.m_PosX);
+    return std::isfinite(outHeadingRad);
+}
+
 uint32_t ESP32RobotController::GetActivePhysicalRouteID() const
 {
     return m_RobotSession ?

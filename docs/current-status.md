@@ -1,6 +1,6 @@
 # Current project status
 
-Last verified: 2026-09-02
+Last verified: 2026-09-03
 
 Implementation base: Server `old-new-combined` 2026-08-25 working tree, ESP32 `668622cf`, Unity `b821d0c2`, VisionTracker `278cc431`
 
@@ -32,11 +32,18 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
 | Vision 관측 수신 기반 | 카메라·회전 검증 완료·Server 재시작 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[60,0]` body offset의 pose contract `fb3cad48a32b9893`, 현재 calibration `e7c58f032c843335`; 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
-| Vision node 보정 제어 | 구현됨·실차 재검증 필요 | `--physical-fleet`와 Vision을 함께 켜면 coarse ARRIVED 뒤 fresh MEASURED pose로 제한된 회전/직진 보정 후에만 NODE_ARRIVED 확정 |
+| Vision node 보정 제어 | 구현됨·실차 재검증 필요 | coarse ARRIVED 뒤 node 보정과 다음 edge 출발 heading 정렬을 완료한 뒤에만 NODE_ARRIVED를 확정하고 forward를 해제 |
 | 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy/diagnostics, motor fault diagnostic을 포함한 CTest 6개 통과; 전체 fleet TCP test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-09-03 Physical-fleet 출발 전 Vision heading 정렬
+
+- 도착 pose 승인을 바로 다음 edge 전송으로 연결하지 않고, 다음 edge bearing과 최신 `MEASURED + VERIFIED` Vision heading 차이가 10도를 넘으면 기존 `NODE_CORRECTION_COMMAND`로 정지 회전을 먼저 수행한다. 완료 report 뒤에는 그 회전에 사용한 sequence보다 새로운 관측만 승인하며, 최대 2회 안에 정렬되지 않으면 forward를 보내지 않고 기존 safe-stop을 사용한다.
+- 정렬 후 승인된 실제 Vision heading을 다음 one-edge trajectory의 start heading으로 넘겨 동일한 초기 회전을 반복하지 않는다. Vision source session/calibration/age가 달라지거나 robot session이 끊기면 출발을 해제하지 않는다. 기존 node당 primitive, 누적·동일방향 회전, 비수렴, position spike와 35/40 mm hysteresis 제한은 공유한다.
+- protocol packet과 ESP32는 변경하지 않았다. 현재 ESP32의 `NODE_WAIT`/마지막 완료 route ID 계약으로 edge 사이 정렬은 가능하지만, 최초 start node에는 완료된 route가 없어 같은 correction 명령을 사용할 수 없다. start node의 기존 20 mm/10도 승인 gate는 유지되며 최초 출발 정렬 지원에는 ESP32 상태 계약 변경이 필요하다.
+- WSL CMake configure/build와 CTest 6개가 통과했다. 실제 서버 실행과 실차 시험은 수행하지 않았다.
 
 ### 2026-09-03 Vision correction position hysteresis와 비수렴 guard
 
@@ -272,10 +279,11 @@ cmake --build build -j2
 ## 다음 우선 작업
 
 1. ESP32 trajectory validation이 10도 계약인지 확인한 뒤 로봇을 node 1 동쪽에 다시 두고 새 Server binary로 한 번만 시험한다.
-2. 성공 시 Server 로그의 `Node N accepted`와 다음 edge 전송을 확인하고, 실패 시 `TURN_POSITION_SPIKE`, `ERROR_NOT_DECREASING`, 반복/누적 회전 guard와 마지막 위치·두 heading 오차를 기록
-3. Unity Editor에서 planned AGV와 Vision marker가 보정 전후 의도대로 표시되는지 확인
-4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
-5. 전원 분배단자, fuse, switch와 기판 고정
+2. 다음 edge가 90도 꺾이는 node에서 `phase=PRE_DEPARTURE` 회전 report, 더 새로운 Vision sequence, `dispatchResult=RELEASED`, rotate 없는 forward trajectory 순서를 확인한다.
+3. 실패 시 forward가 전송되지 않았는지 확인하고 `TURN_POSITION_SPIKE`, `ERROR_NOT_DECREASING`, 2회 정렬 제한, 반복/누적 회전 guard와 마지막 pose를 기록한다.
+4. Unity Editor에서 planned AGV와 Vision marker가 보정 전후 의도대로 표시되는지 확인
+5. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리
+6. 전원 분배단자, fuse, switch와 기판 고정
 
 상세 순서는 [physical-agv-integration.md](physical-agv-integration.md)에 있다.
 

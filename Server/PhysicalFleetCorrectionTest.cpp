@@ -481,6 +481,76 @@ namespace
         REQUIRE(DecidePhysicalFleetCorrection(overflowingHeading).action ==
                 PhysicalFleetCorrectionAction::REJECT);
     }
+
+    void TestPreDepartureAlignmentPolicy()
+    {
+        const auto aligned = DecidePhysicalFleetPreDepartureAlignment(
+            20.0f,
+            5.0f * kDegreesToRadians,
+            0.0f,
+            0);
+        REQUIRE(aligned.action == PhysicalFleetCorrectionAction::ACCEPT);
+        REQUIRE(aligned.magnitude == 0.0f);
+
+        const auto toleranceBoundary =
+            DecidePhysicalFleetPreDepartureAlignment(
+                PhysicalFleetCorrectionPolicy::
+                    kMaximumFinalPositionErrorMm,
+                -PhysicalFleetCorrectionPolicy::kHeadingToleranceRad,
+                0.0f,
+                0);
+        REQUIRE(toleranceBoundary.action ==
+                PhysicalFleetCorrectionAction::ACCEPT);
+        const auto outsideTolerance =
+            DecidePhysicalFleetPreDepartureAlignment(
+                20.0f,
+                -PhysicalFleetCorrectionPolicy::kHeadingToleranceRad -
+                    0.0001f,
+                0.0f,
+                0);
+        REQUIRE(outsideTolerance.action ==
+                PhysicalFleetCorrectionAction::TURN_CCW);
+
+        const auto ninetyDegreeTurn =
+            DecidePhysicalFleetPreDepartureAlignment(
+                20.0f, 0.0f, 90.0f * kDegreesToRadians, 0);
+        REQUIRE(ninetyDegreeTurn.action ==
+                PhysicalFleetCorrectionAction::TURN_CCW);
+        REQUIRE(NearlyEqual(
+            ninetyDegreeTurn.magnitude,
+            PhysicalFleetCorrectionPolicy::kMaximumTurnRad));
+
+        const auto wrapped = DecidePhysicalFleetPreDepartureAlignment(
+            20.0f,
+            179.0f * kDegreesToRadians,
+            -179.0f * kDegreesToRadians,
+            0);
+        REQUIRE(wrapped.action == PhysicalFleetCorrectionAction::ACCEPT);
+        REQUIRE(NearlyEqual(
+            wrapped.headingErrorRad, 2.0f * kDegreesToRadians));
+
+        const auto secondAttempt = DecidePhysicalFleetPreDepartureAlignment(
+            20.0f, 0.0f, 30.0f * kDegreesToRadians, 1);
+        REQUIRE(secondAttempt.action ==
+                PhysicalFleetCorrectionAction::TURN_CCW);
+        REQUIRE(!secondAttempt.attemptLimitReached);
+
+        const auto exhausted = DecidePhysicalFleetPreDepartureAlignment(
+            20.0f, 0.0f, 30.0f * kDegreesToRadians, 2);
+        REQUIRE(exhausted.action == PhysicalFleetCorrectionAction::REJECT);
+        REQUIRE(exhausted.attemptLimitReached);
+
+        const auto excessivePosition =
+            DecidePhysicalFleetPreDepartureAlignment(
+                PhysicalFleetCorrectionPolicy::
+                        kMaximumFinalPositionErrorMm +
+                    0.01f,
+                0.0f,
+                0.0f,
+                0);
+        REQUIRE(excessivePosition.action ==
+                PhysicalFleetCorrectionAction::REJECT);
+    }
 }
 
 int main()
@@ -503,6 +573,7 @@ int main()
     TestRejectsExcessiveDistance();
     TestRecordedRecoveryRetainsTwoFinalPrimitives();
     TestRejectsEveryNonFiniteInput();
+    TestPreDepartureAlignmentPolicy();
     std::cout << "Physical fleet correction tests passed\n";
     return 0;
 }

@@ -50,6 +50,15 @@ struct PhysicalFleetCorrectionDecision
     float arrivalHeadingErrorRad = 0.0f;
 };
 
+struct PhysicalFleetPreDepartureDecision
+{
+    PhysicalFleetCorrectionAction action =
+        PhysicalFleetCorrectionAction::REJECT;
+    float magnitude = 0.0f;
+    float headingErrorRad = 0.0f;
+    bool attemptLimitReached = false;
+};
+
 enum class PhysicalFleetNonConvergenceReason
 {
     NONE,
@@ -99,6 +108,7 @@ namespace PhysicalFleetCorrectionPolicy
     inline constexpr float kMaximumCumulativeTurnRad =
         6.2831853071795865f; // one full revolution
     inline constexpr float kMaximumTurnPositionIncreaseMm = 25.0f;
+    inline constexpr uint8_t kMaximumPreDepartureAlignmentAttempts = 2;
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
@@ -111,6 +121,11 @@ PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
 PhysicalFleetCorrectionGoal SelectPhysicalFleetCorrectionGoal(
     bool positionToleranceReached,
     float positionErrorMm);
+PhysicalFleetPreDepartureDecision DecidePhysicalFleetPreDepartureAlignment(
+    float positionErrorMm,
+    float actualHeadingRad,
+    float targetHeadingRad,
+    uint8_t completedAttempts);
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check);
 PhysicalFleetNonConvergenceReason CheckPhysicalFleetTurnCommand(

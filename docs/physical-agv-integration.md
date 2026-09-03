@@ -183,8 +183,10 @@ PhysicalFleet의 `WHEEL_MISMATCH`는 기존 `MOTOR_FAULT/detail=65539`로 먼저
 4. 최초 coarse pose가 위치 40 mm 이하이고 arrival heading 10도 이내면 위치 primitive 없이 승인한다. 위치 correction은 40 mm 초과에서만 시작하며 목표 방향으로 최대 90도 회전하거나 최대 120 mm 직진하고, 완료 report 뒤 다시 측정한다.
 5. correction 중 위치가 35 mm 안에 들어오면 arrival-heading 단계로 전환한다. final turn 중심 이동은 위치 40 mm와 arrival heading 10도 이내까지 `NODE_ARRIVED`로 확정한다. heading 단계에서 위치가 40 mm를 넘으면 bounded position correction으로 복귀하고, 다시 35 mm 이내에 들어와야 heading 단계로 나간다.
 6. primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 회전 3회째, 누적 회전 360도 초과, 회전 한 번에 위치 오차 25 mm 초과 증가를 비수렴으로 처리한다. 이 조건과 일반 보정 중 200 mm 초과, node당 8회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
+7. 다음 edge가 있으면 node 승인을 보류한 채 그 edge bearing을 출발 heading으로 계산한다. 현재 heading과 10도를 넘게 차이나면 같은 완료 route/node ID의 `NODE_CORRECTION_COMMAND` 회전을 최대 2회 수행하고, 각 완료 report 뒤 명령 전보다 새로운 fresh `MEASURED + VERIFIED` pose로 다시 검사한다. 정렬된 실제 heading을 anchor로 확정한 뒤에만 다음 one-edge trajectory를 보낸다.
+8. pre-departure 단계에서는 HELD/LOST/stale, calibration/source session 불일치, robot disconnect, 40 mm 초과 위치 또는 정렬 실패가 모두 forward 미전송 safe-stop이다. 기존 primitive·누적 회전·동일 방향·비수렴 guard를 그대로 공유한다. `phase=PRE_DEPARTURE`, edge, heading, sequence, command/attempt와 `dispatchResult` 로그로 post-arrival 보정과 구분한다.
 
-Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
+Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. 현재 firmware는 `NODE_CORRECTION_COMMAND`를 완료된 route의 `NODE_WAIT`에서만 받으므로 최초 start node의 별도 pre-departure turn은 Server-only로 지원하지 않으며 기존 start gate를 유지한다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
 
 실차의 제자리회전은 encoder상 완료돼도 바닥 마찰 때문에 차체 중심을 수 cm 이동시킬 수 있다. 따라서 target bearing과 incoming-edge arrival heading을 별도 오차로 계산하고, 35 mm exit/40 mm entry hysteresis로 위치와 arrival-heading 단계를 전환한다. point turn 뒤 위치가 40 mm를 넘으면 위치 보정으로 복귀하며, 기존 position spike와 반복·누적 회전 비수렴 guard는 그대로 fail-stop한다.
 

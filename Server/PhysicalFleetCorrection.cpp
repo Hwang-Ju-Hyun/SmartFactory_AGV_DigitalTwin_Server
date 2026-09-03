@@ -149,6 +149,50 @@ PhysicalFleetCorrectionGoal SelectPhysicalFleetCorrectionGoal(
         : PhysicalFleetCorrectionGoal::POSITION_AND_HEADING;
 }
 
+PhysicalFleetPreDepartureDecision DecidePhysicalFleetPreDepartureAlignment(
+    float positionErrorMm,
+    float actualHeadingRad,
+    float targetHeadingRad,
+    uint8_t completedAttempts)
+{
+    PhysicalFleetPreDepartureDecision result;
+    if (!std::isfinite(positionErrorMm) || positionErrorMm < 0.0f ||
+        positionErrorMm >
+            PhysicalFleetCorrectionPolicy::kMaximumFinalPositionErrorMm ||
+        !std::isfinite(actualHeadingRad) ||
+        !std::isfinite(targetHeadingRad))
+    {
+        return result;
+    }
+
+    result.headingErrorRad = NormalizeAngle(
+        targetHeadingRad - actualHeadingRad);
+    if (!std::isfinite(result.headingErrorRad))
+        return PhysicalFleetPreDepartureDecision{};
+
+    if (std::abs(result.headingErrorRad) <=
+        PhysicalFleetCorrectionPolicy::kHeadingToleranceRad)
+    {
+        result.action = PhysicalFleetCorrectionAction::ACCEPT;
+        return result;
+    }
+
+    if (completedAttempts >= PhysicalFleetCorrectionPolicy::
+            kMaximumPreDepartureAlignmentAttempts)
+    {
+        result.attemptLimitReached = true;
+        return result;
+    }
+
+    result.action = result.headingErrorRad < 0.0f
+        ? PhysicalFleetCorrectionAction::TURN_CW
+        : PhysicalFleetCorrectionAction::TURN_CCW;
+    result.magnitude = std::min(
+        std::abs(result.headingErrorRad),
+        PhysicalFleetCorrectionPolicy::kMaximumTurnRad);
+    return result;
+}
+
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check)
 {

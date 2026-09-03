@@ -325,6 +325,25 @@ namespace
                   physicalFleetConfig.initialHeadingToleranceRad,
               "straight edge exceeded the physical-fleet heading acceptance contract");
 
+        TrajectoryBuildOptions alignedAfterCorrection = options;
+        alignedAfterCorrection.startHeadingRad =
+            8.0f * (3.14159265358979323846f / 180.0f);
+        RobotProtocol::TrajectoryCommandPayload alignedTrajectory;
+        error.clear();
+        Check(TrajectoryBuilder::BuildFromGeometry(
+                  { 3, 4 }, nodes, links, 106, alignedAfterCorrection,
+                  alignedTrajectory, error),
+              "post-alignment trajectory build failed: " + error);
+        bool sawPostAlignmentRotation = false;
+        for (const auto& waypoint : alignedTrajectory.waypoints)
+        {
+            sawPostAlignmentRotation = sawPostAlignmentRotation ||
+                HasFlag(waypoint,
+                        RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        }
+        Check(!sawPostAlignmentRotation,
+              "trajectory repeated a turn after pre-departure alignment");
+
         TrajectoryBuildOptions nominalTurn = options;
         nominalTurn.startHeadingRad = -1.5707963267948966f;
         RobotProtocol::TrajectoryCommandPayload turnedTrajectory;
@@ -433,7 +452,31 @@ namespace
                   200).has_value(),
               "fresh accepted Vision heading was rejected");
 
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   candidate,
+                   1,
+                   11,
+                   "e7c58f032c843335",
+                   7,
+                   99,
+                   1000,
+                   200,
+                   candidate.visionSequence).has_value(),
+              "Vision heading was accepted without a newer sequence");
+
         auto rejected = candidate;
+        rejected.measuredAndVerified = false;
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 7, 99, 1000, 200)
+                   .has_value(),
+              "HELD/LOST or unverified heading was accepted for departure");
+        rejected = candidate;
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 0, 0, 1000, 200)
+                   .has_value(),
+              "disconnected Vision session released departure");
+
+        rejected = candidate;
         rejected.nodeID = 12;
         Check(!ValidatePhysicalFleetVisionHeading(
                    rejected, 1, 11, "e7c58f032c843335", 7, 99, 1000, 200)

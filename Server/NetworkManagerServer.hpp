@@ -122,6 +122,12 @@ private:
     static uint32_t nextSessionID;
     struct PhysicalFleetCorrectionState
     {
+        enum class Stage
+        {
+            POST_ARRIVAL,
+            PRE_DEPARTURE_ALIGNMENT
+        };
+
         enum class Phase
         {
             IDLE,
@@ -129,6 +135,7 @@ private:
             WAITING_FOR_REPORT
         };
 
+        Stage stage = Stage::POST_ARRIVAL;
         Phase phase = Phase::IDLE;
         uint32_t agvID = 0;
         uint32_t startNodeID = 0;
@@ -141,6 +148,9 @@ private:
         float targetXMm = 0.0f;
         float targetZMm = 0.0f;
         float expectedHeadingRad = 0.0f;
+        uint32_t departureTargetNodeID = 0;
+        float departureTargetHeadingRad = 0.0f;
+        uint8_t departureAlignmentAttempts = 0;
         uint64_t startedAtMilliseconds = 0;
         uint64_t deadlineMilliseconds = 0;
         bool hasLastPoseDiagnostic = false;

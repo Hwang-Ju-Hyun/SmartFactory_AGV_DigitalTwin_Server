@@ -41,7 +41,8 @@ ValidatePhysicalFleetVisionHeading(
     uint32_t currentSourceID,
     uint64_t currentSessionID,
     uint64_t nowMilliseconds,
-    uint64_t maximumAgeMilliseconds)
+    uint64_t maximumAgeMilliseconds,
+    uint32_t minimumExclusiveVisionSequence = 0)
 {
     if (!candidate.measuredAndVerified ||
         candidate.agvID != expectedAgvID ||
@@ -51,6 +52,7 @@ ValidatePhysicalFleetVisionHeading(
         candidate.sessionID == 0 ||
         candidate.sessionID != currentSessionID ||
         candidate.visionSequence == 0 ||
+        candidate.visionSequence <= minimumExclusiveVisionSequence ||
         candidate.calibrationID != expectedCalibrationID ||
         candidate.receivedAtMilliseconds > nowMilliseconds ||
         nowMilliseconds - candidate.receivedAtMilliseconds >
