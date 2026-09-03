@@ -212,21 +212,34 @@ namespace
 
     void TestCoarsePoseEntryHysteresis()
     {
+        const float headingLimit =
+            PhysicalFleetCorrectionPolicy::kHeadingToleranceRad;
+        constexpr float epsilon = 0.0001f;
+
         REQUIRE(ClassifyPhysicalFleetCoarsePose(
-                    33.495f, 5.92218f * kDegreesToRadians) ==
+                    35.0f, headingLimit) ==
                 PhysicalFleetCoarsePoseDisposition::ACCEPT);
         REQUIRE(ClassifyPhysicalFleetCoarsePose(
-                    39.9f, 5.9f * kDegreesToRadians) ==
-                PhysicalFleetCoarsePoseDisposition::ACCEPT);
-        REQUIRE(ClassifyPhysicalFleetCoarsePose(
-                    40.01f, 5.9f * kDegreesToRadians) ==
-                PhysicalFleetCoarsePoseDisposition::CORRECT_POSITION);
-        REQUIRE(ClassifyPhysicalFleetCoarsePose(
-                    30.0f, 11.0f * kDegreesToRadians) ==
+                    35.0f, headingLimit + epsilon) ==
                 PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
         REQUIRE(ClassifyPhysicalFleetCoarsePose(
-                    36.0f, 11.0f * kDegreesToRadians) ==
-                PhysicalFleetCoarsePoseDisposition::REJECT);
+                    35.0f + epsilon, headingLimit + epsilon) ==
+                PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
+        REQUIRE(ClassifyPhysicalFleetCoarsePose(
+                    40.0f, headingLimit) ==
+                PhysicalFleetCoarsePoseDisposition::ACCEPT);
+        REQUIRE(ClassifyPhysicalFleetCoarsePose(
+                    40.0f, headingLimit + epsilon) ==
+                PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
+        REQUIRE(ClassifyPhysicalFleetCoarsePose(
+                    40.0f + epsilon, headingLimit - epsilon) ==
+                PhysicalFleetCoarsePoseDisposition::CORRECT_POSITION);
+        REQUIRE(ClassifyPhysicalFleetCoarsePose(
+                    35.0f - epsilon, headingLimit + epsilon) ==
+                PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
+        REQUIRE(ClassifyPhysicalFleetCoarsePose(
+                    37.1457f, -10.1535f * kDegreesToRadians) ==
+                PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING);
     }
 
     void TestNonConvergenceProgressGuards()

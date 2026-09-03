@@ -1112,6 +1112,18 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
 
     m_PhysicalFleetCorrection.hasLastPoseDiagnostic = true;
     m_PhysicalFleetCorrection.lastVisionSequence = latest->observation.sequence;
+    m_PhysicalFleetCorrection.lastVisionPoseAgvID =
+        latest->observation.agvID;
+    m_PhysicalFleetCorrection.lastVisionPoseNodeID =
+        m_PhysicalFleetCorrection.nodeID;
+    m_PhysicalFleetCorrection.lastVisionSourceID =
+        latest->observation.sourceID;
+    m_PhysicalFleetCorrection.lastVisionSessionID =
+        latest->observation.sessionID;
+    m_PhysicalFleetCorrection.lastVisionReceivedAtMilliseconds =
+        latest->receivedAtServerMilliseconds;
+    m_PhysicalFleetCorrection.lastVisionCalibrationID =
+        latest->observation.calibrationID;
     m_PhysicalFleetCorrection.lastPoseDiagnostic = poseDiagnostic;
     std::cout << "[PhysicalFleetDiag] MEASUREMENT"
               << " routeID=" << m_PhysicalFleetCorrection.routeID
@@ -1407,18 +1419,75 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
 {
     const uint32_t agvID = m_PhysicalFleetCorrection.agvID;
     const uint32_t nodeID = m_PhysicalFleetCorrection.nodeID;
+    const uint64_t nowMs = MonotonicMilliseconds();
+    uint32_t currentVisionSourceID = 0;
+    uint64_t currentVisionSessionID = 0;
+    for (const auto& [proxy, session] : m_ProxyToVisionSessionMap)
+    {
+        (void)proxy;
+        if (session.sourceID == m_PhysicalFleetCorrection.lastVisionSourceID &&
+            session.sessionID ==
+                m_PhysicalFleetCorrection.lastVisionSessionID)
+        {
+            currentVisionSourceID = session.sourceID;
+            currentVisionSessionID = session.sessionID;
+            break;
+        }
+    }
+
+    PhysicalFleetVisionHeadingCandidate visionCandidate;
+    visionCandidate.agvID = m_PhysicalFleetCorrection.lastVisionPoseAgvID;
+    visionCandidate.nodeID = m_PhysicalFleetCorrection.lastVisionPoseNodeID;
+    visionCandidate.sourceID = m_PhysicalFleetCorrection.lastVisionSourceID;
+    visionCandidate.sessionID = m_PhysicalFleetCorrection.lastVisionSessionID;
+    visionCandidate.visionSequence =
+        m_PhysicalFleetCorrection.lastVisionSequence;
+    visionCandidate.receivedAtMilliseconds =
+        m_PhysicalFleetCorrection.lastVisionReceivedAtMilliseconds;
+    visionCandidate.headingRad =
+        m_PhysicalFleetCorrection.lastPoseDiagnostic.actualHeadingDeg *
+        kDegreesToRadians;
+    visionCandidate.calibrationID =
+        m_PhysicalFleetCorrection.lastVisionCalibrationID;
+    visionCandidate.measuredAndVerified =
+        m_PhysicalFleetCorrection.hasLastPoseDiagnostic;
+    const std::optional<PhysicalFleetHeadingAnchor> visionAnchor =
+        ValidatePhysicalFleetVisionHeading(
+            visionCandidate,
+            agvID,
+            nodeID,
+            m_VisionConfig.expectedCalibrationID,
+            currentVisionSourceID,
+            currentVisionSessionID,
+            nowMs,
+            kCorrectionMaximumVisionAgeMs);
+    const bool visionHeadingValid = visionAnchor.has_value();
+
     auto* controller = dynamic_cast<ESP32RobotController*>(
         RobotManager::GetInstance().GetRobotController(agvID));
-    if (!controller || !controller->ConfirmCorrectedPhysicalArrival(nodeID))
+    if (!controller || !controller->ConfirmCorrectedPhysicalArrival(
+            nodeID, visionAnchor))
     {
         FailPhysicalFleetCorrection("corrected arrival confirmation failed");
         return;
     }
 
+    std::cout << "[PhysicalFleetDiag] HEADING_ANCHOR"
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << agvID
+              << " nodeID=" << nodeID
+              << " headingSource="
+              << (visionHeadingValid ? "VISION_ACCEPTED" : "NOMINAL_NODE")
+              << " visionSequence="
+              << (visionHeadingValid
+                      ? m_PhysicalFleetCorrection.lastVisionSequence
+                      : 0)
+              << "\n";
+
     const uint8_t primitiveCount =
         m_PhysicalFleetCorrection.primitiveCount;
     const uint64_t durationMs =
-        MonotonicMilliseconds() -
+        nowMs -
         m_PhysicalFleetCorrection.startedAtMilliseconds;
     std::cout << "[PhysicalFleetDiag] EDGE_ACCEPT"
               << " routeID=" << m_PhysicalFleetCorrection.routeID

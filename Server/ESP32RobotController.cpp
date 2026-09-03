@@ -98,8 +98,16 @@ bool ESP32RobotController::DispatchCurrentPhysicalEdge()
     std::cout << "[PhysicalFleet] Build edge " << nodeIDs.front()
               << " -> " << nodeIDs.back()
               << " startHeadingRad=" << options.startHeadingRad
-              << " source="
-              << (m_HasConfirmedStartHeading ? "CONFIRMED_NODE" : "ROBOT_STATUS")
+              << " headingSource="
+              << (!m_HasConfirmedStartHeading
+                      ? "ROBOT_STATUS"
+                      : (m_ConfirmedStartHeadingFromVision
+                             ? "VISION_ACCEPTED"
+                             : "NOMINAL_NODE"))
+              << " visionSequence="
+              << (m_ConfirmedStartHeadingFromVision
+                      ? m_ConfirmedStartHeadingVisionSequence
+                      : 0)
               << "\n";
 
     RobotProtocol::TrajectoryCommandPayload trajectory;
@@ -181,7 +189,9 @@ bool ESP32RobotController::IsExpectedPhysicalArrival(uint32_t nodeID) const
         m_CurrentRoute.nodes[m_CurrentEdgeStartIndex + 1].nodeID == nodeID;
 }
 
-bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(uint32_t nodeID)
+bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(
+    uint32_t nodeID,
+    std::optional<PhysicalFleetHeadingAnchor> visionAnchor)
 {
     if (!IsExpectedPhysicalArrival(nodeID))
         return false;
@@ -190,12 +200,22 @@ bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(uint32_t nodeID)
     if (!TryGetExpectedArrivalHeading(nodeID, confirmedHeadingRad))
         return false;
 
-    // Vision has accepted this node within the physical heading tolerance.
-    // Anchor the next edge to the confirmed link heading instead of reusing
-    // the ESP32's accumulated open-loop heading estimate. Correction turns
-    // can otherwise leave that estimate just outside the nominal-turn guard.
-    m_ConfirmedStartHeadingRad = confirmedHeadingRad;
+    // Prefer the accepted fresh Vision heading. If it is unavailable, anchor
+    // to the confirmed incoming-link heading instead of reusing the ESP32's
+    // accumulated open-loop estimate.
+    const ResolvedPhysicalFleetHeading resolved =
+        ResolvePhysicalFleetHeading(confirmedHeadingRad, visionAnchor);
+    if (!std::isfinite(resolved.headingRad))
+        return false;
+    m_ConfirmedStartHeadingRad = resolved.headingRad;
     m_HasConfirmedStartHeading = true;
+    m_ConfirmedStartHeadingFromVision = resolved.usedVision;
+    m_ConfirmedStartHeadingVisionSequence = resolved.visionSequence;
+    std::cout << "[PhysicalFleet] Arrival heading anchored. node=" << nodeID
+              << " headingRad=" << resolved.headingRad
+              << " headingSource="
+              << (resolved.usedVision ? "VISION_ACCEPTED" : "NOMINAL_NODE")
+              << " visionSequence=" << resolved.visionSequence << "\n";
 
     ++m_CurrentEdgeStartIndex;
     if (m_CurrentEdgeStartIndex + 1 < m_CurrentRoute.nodes.size())

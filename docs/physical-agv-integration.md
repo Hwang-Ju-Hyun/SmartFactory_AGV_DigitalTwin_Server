@@ -181,12 +181,14 @@ PhysicalFleet의 `WHEEL_MISMATCH`는 기존 `MOTOR_FAULT/detail=65539`로 먼저
 2. ESP32가 정지·settling 뒤 STATUS와 ARRIVED를 보내고 다음 trajectory를 기다린다.
 3. Server가 ARRIVED 이후의 새 `MEASURED + VERIFIED` AprilTag pose만 읽는다.
 4. 최초 coarse pose가 위치 40 mm 이하이고 arrival heading 10도 이내면 위치 primitive 없이 승인한다. 위치 correction은 40 mm 초과에서만 시작하며 목표 방향으로 최대 90도 회전하거나 최대 120 mm 직진하고, 완료 report 뒤 다시 측정한다.
-5. correction 중 위치가 35 mm 안에 들어오면 arrival-heading 단계로 고정한다. 최종 pose는 위치 35 mm와 arrival heading 10도를 모두 만족해야 `NODE_ARRIVED`를 확정한다. 최초 위치 35 mm 이하는 heading만 보정할 수 있지만, 35~40 mm에서 heading까지 벗어난 pose는 point-turn drift 위험 때문에 fail-stop한다.
+5. correction 중 위치가 35 mm 안에 들어오면 arrival-heading 단계로 고정한다. 최종 pose는 위치 35 mm와 arrival heading 10도를 모두 만족해야 `NODE_ARRIVED`를 확정한다. 최초 위치 40 mm 이하에서 heading만 벗어난 pose는 arrival heading correction으로 연결하되, 이후 최종 35 mm 한계를 벗어나면 승인하지 않는다.
 6. primitive 목적 오차가 2회 연속 감소하지 않음, 같은 방향 회전 3회째, 누적 회전 360도 초과, 회전 한 번에 위치 오차 20 mm 초과 증가를 비수렴으로 처리한다. 이 조건과 일반 보정 중 200 mm 초과, node당 8회 초과, LOST/HELD/stale, identity 불일치, 측정 2.5초/report 10초 timeout에서는 route를 취소하고 멈춘다.
 
 Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
 
 실차의 제자리회전은 encoder상 완료돼도 바닥 마찰 때문에 차체 중심을 수 cm 이동시킬 수 있다. 따라서 target bearing과 incoming-edge arrival heading을 별도 오차로 계산하고, node 보정은 `위치 수렴 -> arrival heading 정렬`의 단방향 단계로 처리한다. point turn 뒤 위치가 최종 35 mm 한계를 벗어나거나 급증하면 정상 도착으로 승인하지 않는다.
+
+승인된 node의 다음 edge start heading은 마지막 승인 판단에 사용한 fresh `MEASURED + VERIFIED` Vision heading을 우선한다. Server는 같은 AGV와 node인지, calibration ID와 현재 source session이 일치하는지, sequence가 유효하고 수신 후 200 ms 이내인지 다시 검사한다. 실패하면 incoming edge의 nominal heading으로 fallback한다. `headingSource=VISION_ACCEPTED|NOMINAL_NODE`와 `visionSequence`로 선택 원인을 확인한다.
 
 ## 단계별 통합 순서
 

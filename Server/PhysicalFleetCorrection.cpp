@@ -128,12 +128,7 @@ PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
     {
         return PhysicalFleetCoarsePoseDisposition::ACCEPT;
     }
-    if (positionErrorMm <=
-        PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm)
-    {
-        return PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING;
-    }
-    return PhysicalFleetCoarsePoseDisposition::REJECT;
+    return PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING;
 }
 
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(

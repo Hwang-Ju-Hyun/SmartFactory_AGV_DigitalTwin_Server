@@ -145,6 +145,12 @@ private:
         uint64_t deadlineMilliseconds = 0;
         bool hasLastPoseDiagnostic = false;
         uint32_t lastVisionSequence = 0;
+        uint32_t lastVisionPoseAgvID = 0;
+        uint32_t lastVisionPoseNodeID = 0;
+        uint32_t lastVisionSourceID = 0;
+        uint64_t lastVisionSessionID = 0;
+        uint64_t lastVisionReceivedAtMilliseconds = 0;
+        std::string lastVisionCalibrationID;
         PhysicalFleetPoseDiagnostic lastPoseDiagnostic;
         bool hasLastCommand = false;
         uint8_t lastCommandPrimitiveNumber = 0;

@@ -1,10 +1,12 @@
 #include "MemoryStream.hpp"
 #include "PacketSerializer.hpp"
 #include "ESP32RobotController.hpp"
+#include "PhysicalFleetHeadingAnchor.hpp"
 #include "TrajectoryBuilder.hpp"
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -342,6 +344,120 @@ namespace
               "90 degree physical-fleet heading change lost its rotation waypoint");
     }
 
+    void TestPhysicalFleetVisionHeadingAnchorAndWrapping()
+    {
+        constexpr float degreesToRadians =
+            3.14159265358979323846f / 180.0f;
+        const auto vision = ResolvePhysicalFleetHeading(
+            90.0f * degreesToRadians,
+            PhysicalFleetHeadingAnchor{
+                80.4681f * degreesToRadians,
+                14200
+            });
+        Check(vision.usedVision && vision.visionSequence == 14200,
+              "accepted Vision heading source or sequence was lost");
+        Check(Near(vision.headingRad, 80.4681f * degreesToRadians, 0.0001f),
+              "accepted Vision heading was replaced by nominal heading");
+
+        const auto invalidSequence = ResolvePhysicalFleetHeading(
+            90.0f * degreesToRadians,
+            PhysicalFleetHeadingAnchor{80.0f * degreesToRadians, 0});
+        Check(!invalidSequence.usedVision &&
+                  Near(invalidSequence.headingRad,
+                       90.0f * degreesToRadians,
+                       0.0001f),
+              "invalid Vision sequence did not fall back to nominal heading");
+
+        const auto invalidHeading = ResolvePhysicalFleetHeading(
+            -90.0f * degreesToRadians,
+            PhysicalFleetHeadingAnchor{
+                std::numeric_limits<float>::quiet_NaN(),
+                1
+            });
+        Check(!invalidHeading.usedVision &&
+                  Near(invalidHeading.headingRad,
+                       -90.0f * degreesToRadians,
+                       0.0001f),
+              "non-finite Vision heading did not fall back to nominal heading");
+
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 11, Node(11, 0.0f, 0.0f) },
+            { 12, Node(12,
+                       -std::cos(1.0f * degreesToRadians),
+                       -std::sin(1.0f * degreesToRadians)) }
+        };
+        const std::vector<MapLink> links = { Line(11, 11, 12) };
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = 179.0f * degreesToRadians;
+        options.millimetersPerMapUnit = 50.0f;
+        options.spacingMm = 50.0f;
+        options.cornerStopThresholdRad =
+            PhysicalFleetCorrectionPolicy::kHeadingToleranceRad;
+        options.lineEndpointOnly = true;
+        options.stopAtEveryNodeBoundary = true;
+
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        std::string error;
+        Check(TrajectoryBuilder::BuildFromGeometry(
+                  { 11, 12 }, nodes, links, 105, options, trajectory, error),
+              "wrapped Vision heading trajectory failed: " + error);
+        bool sawRotation = false;
+        for (const auto& waypoint : trajectory.waypoints)
+        {
+            sawRotation = sawRotation || HasFlag(
+                waypoint,
+                RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        }
+        Check(!sawRotation,
+              "wrapped 179 to -179 degree heading inserted a full rotation");
+
+        PhysicalFleetVisionHeadingCandidate candidate;
+        candidate.agvID = 1;
+        candidate.nodeID = 11;
+        candidate.sourceID = 7;
+        candidate.sessionID = 99;
+        candidate.visionSequence = 14200;
+        candidate.receivedAtMilliseconds = 900;
+        candidate.headingRad = 80.4681f * degreesToRadians;
+        candidate.calibrationID = "e7c58f032c843335";
+        candidate.measuredAndVerified = true;
+        Check(ValidatePhysicalFleetVisionHeading(
+                  candidate,
+                  1,
+                  11,
+                  "e7c58f032c843335",
+                  7,
+                  99,
+                  1000,
+                  200).has_value(),
+              "fresh accepted Vision heading was rejected");
+
+        auto rejected = candidate;
+        rejected.nodeID = 12;
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 7, 99, 1000, 200)
+                   .has_value(),
+              "Vision heading from another arrival node was accepted");
+        rejected = candidate;
+        rejected.calibrationID = "other-calibration";
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 7, 99, 1000, 200)
+                   .has_value(),
+              "Vision heading with another calibration was accepted");
+        rejected = candidate;
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 7, 100, 1000, 200)
+                   .has_value(),
+              "Vision heading from an old session was accepted");
+        rejected = candidate;
+        rejected.receivedAtMilliseconds = 799;
+        Check(!ValidatePhysicalFleetVisionHeading(
+                   rejected, 1, 11, "e7c58f032c843335", 7, 99, 1000, 200)
+                   .has_value(),
+              "stale Vision heading was accepted");
+    }
+
     void TestOptionalHelloCapabilities()
     {
         OutputMemoryStream legacyHello;
@@ -490,6 +606,7 @@ int main()
     TestMalformedWaypointCount();
     TestInitialHeadingAndWireGuards();
     TestPhysicalFleetHeadingToleranceContract();
+    TestPhysicalFleetVisionHeadingAnchorAndWrapping();
     TestOptionalHelloCapabilities();
     TestMaximumTrajectoryWireSize();
     TestNodeCorrectionWireFormat();

@@ -1,5 +1,6 @@
 #pragma once
 #include "IRobotController.hpp"
+#include "PhysicalFleetHeadingAnchor.hpp"
 #include "PhysicalFleetCorrection.hpp"
 #include "RobotSession.hpp"
 #include "TCPSession.hpp"
@@ -25,6 +26,8 @@ private:
     bool m_DispatchNextEdgePending = false;
     bool m_HasConfirmedStartHeading = false;
     float m_ConfirmedStartHeadingRad = 0.0f;
+    bool m_ConfirmedStartHeadingFromVision = false;
+    uint32_t m_ConfirmedStartHeadingVisionSequence = 0;
     std::queue<ControllerEvent> m_LocalEvents;
 
     std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
@@ -43,7 +46,9 @@ public:
     bool HasEvent() const override;
     ControllerEvent PopEvent() override;
     bool IsExpectedPhysicalArrival(uint32_t nodeID) const;
-    bool ConfirmCorrectedPhysicalArrival(uint32_t nodeID);
+    bool ConfirmCorrectedPhysicalArrival(
+        uint32_t nodeID,
+        std::optional<PhysicalFleetHeadingAnchor> visionAnchor = std::nullopt);
     bool TryGetExpectedPhysicalEdge(uint32_t targetNodeID,
                                     uint32_t& outStartNodeID) const;
     bool TryGetExpectedArrivalHeading(uint32_t nodeID,
