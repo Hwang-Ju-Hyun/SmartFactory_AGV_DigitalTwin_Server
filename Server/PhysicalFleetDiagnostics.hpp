@@ -25,13 +25,15 @@ struct PhysicalFleetPoseDiagnostic
     float longitudinalErrorMm = 0.0f;
     float lateralErrorMm = 0.0f;
     float positionErrorMm = 0.0f;
-    float headingErrorDeg = 0.0f;
+    float targetBearingDeg = 0.0f;
+    float targetBearingErrorDeg = 0.0f;
+    float arrivalHeadingErrorDeg = 0.0f;
 };
 
 struct PhysicalFleetErrorReduction
 {
     float positionErrorReductionMm = 0.0f;
-    float absoluteHeadingErrorReductionDeg = 0.0f;
+    float absoluteArrivalHeadingErrorReductionDeg = 0.0f;
 };
 
 PhysicalFleetPoseDiagnostic CalculatePhysicalFleetPoseDiagnostic(

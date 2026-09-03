@@ -13,8 +13,17 @@ enum class PhysicalFleetCorrectionAction
 
 enum class PhysicalFleetCorrectionGoal
 {
+    START_POSE_STRICT,
     POSITION_AND_HEADING,
     HEADING_ONLY
+};
+
+enum class PhysicalFleetCoarsePoseDisposition
+{
+    ACCEPT,
+    CORRECT_POSITION,
+    CORRECT_HEADING,
+    REJECT
 };
 
 struct PhysicalFleetCorrectionInput
@@ -36,27 +45,76 @@ struct PhysicalFleetCorrectionDecision
     // ACCEPT and REJECT use canonical zero.
     float magnitude = 0.0f;
     float positionErrorMm = 0.0f;
+    float targetBearingRad = 0.0f;
+    float targetBearingErrorRad = 0.0f;
+    float arrivalHeadingErrorRad = 0.0f;
+};
 
-    // Signed shortest angular error used for this decision. While position is
-    // outside tolerance this points toward the target; once position is
-    // accepted it points toward expectedArrivalHeadingRad.
-    float headingErrorRad = 0.0f;
+enum class PhysicalFleetNonConvergenceReason
+{
+    NONE,
+    ERROR_NOT_DECREASING,
+    SAME_DIRECTION_TURN_LIMIT,
+    CUMULATIVE_TURN_LIMIT,
+    TURN_POSITION_SPIKE
+};
+
+struct PhysicalFleetProgressCheck
+{
+    PhysicalFleetCorrectionAction action =
+        PhysicalFleetCorrectionAction::REJECT;
+    float beforePositionErrorMm = 0.0f;
+    float afterPositionErrorMm = 0.0f;
+    float beforeObjectiveHeadingErrorRad = 0.0f;
+    float afterObjectiveHeadingErrorRad = 0.0f;
+    uint8_t consecutiveNonImprovingPrimitives = 0;
+};
+
+struct PhysicalFleetProgressResult
+{
+    PhysicalFleetNonConvergenceReason reason =
+        PhysicalFleetNonConvergenceReason::NONE;
+    uint8_t consecutiveNonImprovingPrimitives = 0;
 };
 
 namespace PhysicalFleetCorrectionPolicy
 {
     inline constexpr uint8_t kMaximumPrimitivesPerNode = 8;
-    inline constexpr float kPositionToleranceMm = 20.0f;
+    inline constexpr float kStartPosePositionToleranceMm = 20.0f;
+    inline constexpr float kPositionCorrectionEntryMm = 40.0f;
+    inline constexpr float kPositionCorrectionExitMm = 35.0f;
+    inline constexpr float kMaximumFinalPositionErrorMm = 35.0f;
     inline constexpr float kHeadingToleranceRad =
         0.17453292519943295f; // 10 degrees; avoids unreliable floor micro-turns
     inline constexpr float kRejectDistanceMm = 200.0f;
-    inline constexpr float kMaximumHeadingAlignmentDriftMm = 75.0f;
     inline constexpr float kMaximumDriveMm = 120.0f;
     inline constexpr float kMaximumTurnRad =
         1.5707963267948966f; // 90 degrees
+    inline constexpr float kMinimumPositionProgressMm = 2.0f;
+    inline constexpr float kMinimumHeadingProgressRad =
+        0.03490658503988659f; // 2 degrees
+    inline constexpr uint8_t kMaximumConsecutiveNonImprovingPrimitives = 2;
+    inline constexpr uint8_t kMaximumConsecutiveSameDirectionTurns = 2;
+    inline constexpr float kMaximumCumulativeTurnRad =
+        6.2831853071795865f; // one full revolution
+    inline constexpr float kMaximumTurnPositionIncreaseMm = 20.0f;
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
     const PhysicalFleetCorrectionInput& input,
     PhysicalFleetCorrectionGoal goal =
         PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);
+PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
+    float positionErrorMm,
+    float arrivalHeadingErrorRad);
+PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
+    const PhysicalFleetProgressCheck& check);
+PhysicalFleetNonConvergenceReason CheckPhysicalFleetTurnCommand(
+    PhysicalFleetCorrectionAction action,
+    float magnitudeRad,
+    bool hasPreviousTurn,
+    PhysicalFleetCorrectionAction previousTurnAction,
+    uint8_t consecutiveSameDirectionTurns,
+    float cumulativeTurnRad);
+const char* PhysicalFleetNonConvergenceReasonName(
+    PhysicalFleetNonConvergenceReason reason);

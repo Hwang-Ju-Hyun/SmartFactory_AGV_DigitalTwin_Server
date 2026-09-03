@@ -151,9 +151,19 @@ private:
         uint32_t lastCommandID = 0;
         RobotProtocol::NodeCorrectionAction lastCommandAction =
             RobotProtocol::NodeCorrectionAction::DRIVE_FORWARD;
+        PhysicalFleetCorrectionAction lastCorrectionAction =
+            PhysicalFleetCorrectionAction::REJECT;
         float lastCommandMagnitude = 0.0f;
+        float lastCommandObjectiveHeadingRad = 0.0f;
+        float lastCommandObjectiveHeadingErrorRad = 0.0f;
         PhysicalFleetPoseDiagnostic lastCommandBefore;
         bool awaitingPostCommandMeasurement = false;
+        uint8_t consecutiveNonImprovingPrimitives = 0;
+        bool hasPreviousTurn = false;
+        PhysicalFleetCorrectionAction previousTurnAction =
+            PhysicalFleetCorrectionAction::REJECT;
+        uint8_t consecutiveSameDirectionTurns = 0;
+        float cumulativeTurnRad = 0.0f;
 
         bool active() const { return phase != Phase::IDLE; }
     };

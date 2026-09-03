@@ -39,7 +39,10 @@ namespace
         REQUIRE(NearlyEqual(before.deltaXMm, 30.0f));
         REQUIRE(NearlyEqual(before.deltaZMm, 20.0f));
         REQUIRE(NearlyEqual(before.positionErrorMm, std::hypot(30.0f, 20.0f)));
-        REQUIRE(NearlyEqual(before.headingErrorDeg, 15.0f));
+        REQUIRE(NearlyEqual(before.arrivalHeadingErrorDeg, 15.0f));
+        REQUIRE(NearlyEqual(
+            before.targetBearingDeg,
+            std::atan2(20.0f, 30.0f) / degreesToRadians));
 
         input.actualXMm = 125.0f;
         input.actualZMm = 48.0f;
@@ -49,7 +52,7 @@ namespace
             before, after);
         REQUIRE(reduction.positionErrorReductionMm > 30.0f);
         REQUIRE(NearlyEqual(
-            reduction.absoluteHeadingErrorReductionDeg, 13.0f));
+            reduction.absoluteArrivalHeadingErrorReductionDeg, 13.0f));
     }
 
     void TestCardinalEdgeProjectionAndHeadingWrap()
@@ -70,7 +73,7 @@ namespace
         northbound.actualHeadingRad = 179.0f * degreesToRadians;
         northbound.expectedHeadingRad = -179.0f * degreesToRadians;
         const auto wrapped = CalculatePhysicalFleetPoseDiagnostic(northbound);
-        REQUIRE(NearlyEqual(wrapped.headingErrorDeg, 2.0f));
+        REQUIRE(NearlyEqual(wrapped.arrivalHeadingErrorDeg, 2.0f));
     }
 
     void TestActionNames()

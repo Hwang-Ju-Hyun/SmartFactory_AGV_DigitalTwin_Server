@@ -22,10 +22,11 @@ namespace
     }
 
     PhysicalFleetCorrectionDecision MakeTurnDecision(
-        PhysicalFleetCorrectionDecision decision)
+        PhysicalFleetCorrectionDecision decision,
+        float headingErrorRad)
     {
-        const float absoluteHeadingError = std::abs(decision.headingErrorRad);
-        decision.action = decision.headingErrorRad < 0.0f
+        const float absoluteHeadingError = std::abs(headingErrorRad);
+        decision.action = headingErrorRad < 0.0f
             ? PhysicalFleetCorrectionAction::TURN_CW
             : PhysicalFleetCorrectionAction::TURN_CCW;
         decision.magnitude = std::min(
@@ -55,20 +56,31 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
         return decision;
     }
 
+    decision.targetBearingRad = std::atan2(deltaZ, deltaX);
+    decision.targetBearingErrorRad = NormalizeAngle(
+        decision.targetBearingRad - input.actualHeadingRad);
+    decision.arrivalHeadingErrorRad = NormalizeAngle(
+        input.expectedArrivalHeadingRad - input.actualHeadingRad);
+    if (!std::isfinite(decision.targetBearingRad) ||
+        !std::isfinite(decision.targetBearingErrorRad) ||
+        !std::isfinite(decision.arrivalHeadingErrorRad))
+    {
+        return PhysicalFleetCorrectionDecision{};
+    }
+
+    const float positionExitMm =
+        goal == PhysicalFleetCorrectionGoal::START_POSE_STRICT
+            ? PhysicalFleetCorrectionPolicy::kStartPosePositionToleranceMm
+            : PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm;
     if (goal != PhysicalFleetCorrectionGoal::HEADING_ONLY &&
         decision.positionErrorMm >
-        PhysicalFleetCorrectionPolicy::kPositionToleranceMm)
+        positionExitMm)
     {
-        const float targetBearingRad = std::atan2(deltaZ, deltaX);
-        decision.headingErrorRad = NormalizeAngle(
-            targetBearingRad - input.actualHeadingRad);
-        if (!std::isfinite(decision.headingErrorRad))
-            return PhysicalFleetCorrectionDecision{};
-
-        if (std::abs(decision.headingErrorRad) >
+        if (std::abs(decision.targetBearingErrorRad) >
             PhysicalFleetCorrectionPolicy::kHeadingToleranceRad)
         {
-            return MakeTurnDecision(decision);
+            return MakeTurnDecision(
+                decision, decision.targetBearingErrorRad);
         }
 
         decision.action = PhysicalFleetCorrectionAction::DRIVE_FORWARD;
@@ -78,22 +90,151 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
         return decision;
     }
 
-    decision.headingErrorRad = NormalizeAngle(
-        input.expectedArrivalHeadingRad - input.actualHeadingRad);
-    if (!std::isfinite(decision.headingErrorRad))
-        return PhysicalFleetCorrectionDecision{};
     if (goal == PhysicalFleetCorrectionGoal::HEADING_ONLY &&
         decision.positionErrorMm >
-            PhysicalFleetCorrectionPolicy::kMaximumHeadingAlignmentDriftMm)
+            PhysicalFleetCorrectionPolicy::kMaximumFinalPositionErrorMm)
     {
         return decision;
     }
-    if (std::abs(decision.headingErrorRad) >
+    if (std::abs(decision.arrivalHeadingErrorRad) >
         PhysicalFleetCorrectionPolicy::kHeadingToleranceRad)
     {
-        return MakeTurnDecision(decision);
+        return MakeTurnDecision(
+            decision, decision.arrivalHeadingErrorRad);
     }
 
     decision.action = PhysicalFleetCorrectionAction::ACCEPT;
     return decision;
+}
+
+PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
+    float positionErrorMm,
+    float arrivalHeadingErrorRad)
+{
+    if (!std::isfinite(positionErrorMm) ||
+        !std::isfinite(arrivalHeadingErrorRad) ||
+        positionErrorMm < 0.0f ||
+        positionErrorMm > PhysicalFleetCorrectionPolicy::kRejectDistanceMm)
+    {
+        return PhysicalFleetCoarsePoseDisposition::REJECT;
+    }
+    if (positionErrorMm >
+        PhysicalFleetCorrectionPolicy::kPositionCorrectionEntryMm)
+    {
+        return PhysicalFleetCoarsePoseDisposition::CORRECT_POSITION;
+    }
+    if (std::abs(arrivalHeadingErrorRad) <=
+        PhysicalFleetCorrectionPolicy::kHeadingToleranceRad)
+    {
+        return PhysicalFleetCoarsePoseDisposition::ACCEPT;
+    }
+    if (positionErrorMm <=
+        PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm)
+    {
+        return PhysicalFleetCoarsePoseDisposition::CORRECT_HEADING;
+    }
+    return PhysicalFleetCoarsePoseDisposition::REJECT;
+}
+
+PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
+    const PhysicalFleetProgressCheck& check)
+{
+    PhysicalFleetProgressResult result;
+    const bool isTurn =
+        check.action == PhysicalFleetCorrectionAction::TURN_CW ||
+        check.action == PhysicalFleetCorrectionAction::TURN_CCW;
+    if (isTurn &&
+        check.afterPositionErrorMm - check.beforePositionErrorMm >
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm)
+    {
+        result.reason =
+            PhysicalFleetNonConvergenceReason::TURN_POSITION_SPIKE;
+        return result;
+    }
+
+    bool improved = false;
+    if (check.action == PhysicalFleetCorrectionAction::DRIVE_FORWARD)
+    {
+        improved =
+            check.beforePositionErrorMm - check.afterPositionErrorMm >=
+            PhysicalFleetCorrectionPolicy::kMinimumPositionProgressMm;
+    }
+    else if (isTurn)
+    {
+        improved =
+            check.beforeObjectiveHeadingErrorRad -
+                check.afterObjectiveHeadingErrorRad >=
+            PhysicalFleetCorrectionPolicy::kMinimumHeadingProgressRad;
+    }
+    else
+    {
+        result.reason =
+            PhysicalFleetNonConvergenceReason::ERROR_NOT_DECREASING;
+        return result;
+    }
+
+    result.consecutiveNonImprovingPrimitives = improved
+        ? 0
+        : static_cast<uint8_t>(
+              check.consecutiveNonImprovingPrimitives + 1);
+    if (result.consecutiveNonImprovingPrimitives >=
+        PhysicalFleetCorrectionPolicy::
+            kMaximumConsecutiveNonImprovingPrimitives)
+    {
+        result.reason =
+            PhysicalFleetNonConvergenceReason::ERROR_NOT_DECREASING;
+    }
+    return result;
+}
+
+PhysicalFleetNonConvergenceReason CheckPhysicalFleetTurnCommand(
+    PhysicalFleetCorrectionAction action,
+    float magnitudeRad,
+    bool hasPreviousTurn,
+    PhysicalFleetCorrectionAction previousTurnAction,
+    uint8_t consecutiveSameDirectionTurns,
+    float cumulativeTurnRad)
+{
+    const bool isTurn =
+        action == PhysicalFleetCorrectionAction::TURN_CW ||
+        action == PhysicalFleetCorrectionAction::TURN_CCW;
+    if (!isTurn)
+        return PhysicalFleetNonConvergenceReason::NONE;
+
+    const uint8_t nextSameDirectionTurns =
+        hasPreviousTurn && previousTurnAction == action
+            ? static_cast<uint8_t>(consecutiveSameDirectionTurns + 1)
+            : 1;
+    if (nextSameDirectionTurns >
+        PhysicalFleetCorrectionPolicy::
+            kMaximumConsecutiveSameDirectionTurns)
+    {
+        return PhysicalFleetNonConvergenceReason::
+            SAME_DIRECTION_TURN_LIMIT;
+    }
+    if (cumulativeTurnRad + magnitudeRad >
+        PhysicalFleetCorrectionPolicy::kMaximumCumulativeTurnRad)
+    {
+        return PhysicalFleetNonConvergenceReason::CUMULATIVE_TURN_LIMIT;
+    }
+    return PhysicalFleetNonConvergenceReason::NONE;
+}
+
+const char* PhysicalFleetNonConvergenceReasonName(
+    PhysicalFleetNonConvergenceReason reason)
+{
+    switch (reason)
+    {
+    case PhysicalFleetNonConvergenceReason::NONE:
+        return "NONE";
+    case PhysicalFleetNonConvergenceReason::ERROR_NOT_DECREASING:
+        return "ERROR_NOT_DECREASING";
+    case PhysicalFleetNonConvergenceReason::SAME_DIRECTION_TURN_LIMIT:
+        return "SAME_DIRECTION_TURN_LIMIT";
+    case PhysicalFleetNonConvergenceReason::CUMULATIVE_TURN_LIMIT:
+        return "CUMULATIVE_TURN_LIMIT";
+    case PhysicalFleetNonConvergenceReason::TURN_POSITION_SPIKE:
+        return "TURN_POSITION_SPIKE";
+    }
+    return "UNKNOWN";
 }

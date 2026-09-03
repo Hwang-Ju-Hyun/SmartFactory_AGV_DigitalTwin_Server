@@ -38,7 +38,12 @@ PhysicalFleetPoseDiagnostic CalculatePhysicalFleetPoseDiagnostic(
         diagnostic.deltaXMm * leftX + diagnostic.deltaZMm * leftZ;
     diagnostic.positionErrorMm =
         std::hypot(diagnostic.deltaXMm, diagnostic.deltaZMm);
-    diagnostic.headingErrorDeg = NormalizeAngle(
+    const float targetBearingRad = std::atan2(
+        diagnostic.deltaZMm, diagnostic.deltaXMm);
+    diagnostic.targetBearingDeg = targetBearingRad * kRadiansToDegrees;
+    diagnostic.targetBearingErrorDeg = NormalizeAngle(
+        targetBearingRad - input.actualHeadingRad) * kRadiansToDegrees;
+    diagnostic.arrivalHeadingErrorDeg = NormalizeAngle(
         input.expectedHeadingRad - input.actualHeadingRad) *
         kRadiansToDegrees;
     return diagnostic;
@@ -51,8 +56,9 @@ PhysicalFleetErrorReduction CalculatePhysicalFleetErrorReduction(
     PhysicalFleetErrorReduction reduction;
     reduction.positionErrorReductionMm =
         before.positionErrorMm - after.positionErrorMm;
-    reduction.absoluteHeadingErrorReductionDeg =
-        std::abs(before.headingErrorDeg) - std::abs(after.headingErrorDeg);
+    reduction.absoluteArrivalHeadingErrorReductionDeg =
+        std::abs(before.arrivalHeadingErrorDeg) -
+        std::abs(after.arrivalHeadingErrorDeg);
     return reduction;
 }
 
