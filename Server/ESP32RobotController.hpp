@@ -23,6 +23,8 @@ private:
     ESP32TrajectoryExecutionConfig m_TrajectoryConfig;
     size_t m_CurrentEdgeStartIndex = 0;
     bool m_DispatchNextEdgePending = false;
+    bool m_HasConfirmedStartHeading = false;
+    float m_ConfirmedStartHeadingRad = 0.0f;
     std::queue<ControllerEvent> m_LocalEvents;
 
     std::function<bool(uint32_t, uint32_t, float, float)> m_TryOccupyEdgeCallback;
@@ -42,6 +44,8 @@ public:
     ControllerEvent PopEvent() override;
     bool IsExpectedPhysicalArrival(uint32_t nodeID) const;
     bool ConfirmCorrectedPhysicalArrival(uint32_t nodeID);
+    bool TryGetExpectedPhysicalEdge(uint32_t targetNodeID,
+                                    uint32_t& outStartNodeID) const;
     bool TryGetExpectedArrivalHeading(uint32_t nodeID,
                                       float& outHeadingRad) const;
     uint32_t GetActivePhysicalRouteID() const;

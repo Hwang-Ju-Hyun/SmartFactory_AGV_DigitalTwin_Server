@@ -107,6 +107,32 @@ namespace
                 std::chrono::steady_clock::now().time_since_epoch()).count());
     }
 
+    const char* CorrectionMagnitudeUnit(
+        RobotProtocol::NodeCorrectionAction action)
+    {
+        return action == RobotProtocol::NodeCorrectionAction::DRIVE_FORWARD
+            ? "mm"
+            : "rad";
+    }
+
+    void WritePhysicalFleetPoseDiagnostic(
+        const PhysicalFleetPoseDiagnostic& diagnostic)
+    {
+        std::cout << " actualPose=(xMm=" << diagnostic.actualXMm
+                  << ",zMm=" << diagnostic.actualZMm
+                  << ",headingDeg=" << diagnostic.actualHeadingDeg << ")"
+                  << " targetPose=(xMm=" << diagnostic.targetXMm
+                  << ",zMm=" << diagnostic.targetZMm
+                  << ",headingDeg=" << diagnostic.targetHeadingDeg << ")"
+                  << " worldDeltaMm=(x=" << diagnostic.deltaXMm
+                  << ",z=" << diagnostic.deltaZMm << ")"
+                  << " edgeErrorMm=(longitudinal="
+                  << diagnostic.longitudinalErrorMm
+                  << ",lateral=" << diagnostic.lateralErrorMm << ")"
+                  << " positionErrorMm=" << diagnostic.positionErrorMm
+                  << " headingErrorDeg=" << diagnostic.headingErrorDeg;
+    }
+
     const char* VisionStoreResultName(VisionObservationStoreResult result)
     {
         switch (result)
@@ -889,6 +915,17 @@ void NetworkManagerServer::BeginPhysicalFleetCorrection(
         return;
     }
 
+    uint32_t startNodeID = 0;
+    controller->TryGetExpectedPhysicalEdge(_nodeID, startNodeID);
+    const MapNode targetNode = MapManager::GetInstance().GetMapNode(_nodeID);
+    const float targetXMm =
+        (targetNode.m_PosX - kVisionLocalOriginServerX) *
+        kVisionScaleMmPerMapUnit;
+    const float targetZMm =
+        (targetNode.m_PosZ - kVisionLocalOriginServerZ) *
+        kVisionScaleMmPerMapUnit;
+    const uint64_t startedAtMs = MonotonicMilliseconds();
+
     uint32_t baselineSequence = 0;
     if (m_VisionObservationStore)
     {
@@ -901,15 +938,31 @@ void NetworkManagerServer::BeginPhysicalFleetCorrection(
     m_PhysicalFleetCorrection.phase =
         PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT;
     m_PhysicalFleetCorrection.agvID = _agvID;
+    m_PhysicalFleetCorrection.startNodeID = startNodeID;
     m_PhysicalFleetCorrection.nodeID = _nodeID;
     m_PhysicalFleetCorrection.routeID = routeID;
     m_PhysicalFleetCorrection.baselineVisionSequence = baselineSequence;
+    m_PhysicalFleetCorrection.targetXMm = targetXMm;
+    m_PhysicalFleetCorrection.targetZMm = targetZMm;
     m_PhysicalFleetCorrection.expectedHeadingRad = expectedHeadingRad;
+    m_PhysicalFleetCorrection.startedAtMilliseconds = startedAtMs;
     m_PhysicalFleetCorrection.deadlineMilliseconds =
-        MonotonicMilliseconds() + kCorrectionMeasurementWaitMs;
+        startedAtMs + kCorrectionMeasurementWaitMs;
 
     std::cout << "[VisionCorrection] Coarse node " << _nodeID
               << " reached; waiting for post-stop MEASURED pose\n";
+    std::cout << "[PhysicalFleetDiag] EDGE_BEGIN"
+              << " routeID=" << routeID
+              << " agvID=" << _agvID
+              << " edge=" << startNodeID << "->" << _nodeID
+              << " frame=VISION_LOCAL_METRIC_XZ"
+              << " positionUnit=mm headingUnit=deg"
+              << " deltaConvention=target-actual"
+              << " edgeAxes=forward,ccw-left"
+              << " targetPose=(xMm=" << targetXMm
+              << ",zMm=" << targetZMm
+              << ",headingDeg="
+              << expectedHeadingRad / kDegreesToRadians << ")\n";
 }
 
 void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
@@ -943,6 +996,20 @@ void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
         return;
     }
 
+    std::cout << "[PhysicalFleetDiag] PRIMITIVE_REPORT"
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << _agvID
+              << " edge=" << m_PhysicalFleetCorrection.startNodeID
+              << "->" << m_PhysicalFleetCorrection.nodeID
+              << " primitive=" << static_cast<unsigned>(
+                     m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
+              << " commandID=" << _event.commandID
+              << " action=" << NodeCorrectionActionName(
+                     m_PhysicalFleetCorrection.lastCommandAction)
+              << " result=" << static_cast<unsigned>(
+                     _event.correctionResult)
+              << " detail=" << _event.detail << "\n";
+
     if (_event.correctionResult !=
         RobotProtocol::NodeCorrectionResult::COMPLETED)
     {
@@ -965,6 +1032,7 @@ void NetworkManagerServer::HandlePhysicalFleetCorrectionReport(
     }
     m_PhysicalFleetCorrection.phase =
         PhysicalFleetCorrectionState::Phase::WAITING_FOR_MEASUREMENT;
+    m_PhysicalFleetCorrection.awaitingPostCommandMeasurement = true;
     m_PhysicalFleetCorrection.deadlineMilliseconds =
         MonotonicMilliseconds() + kCorrectionMeasurementWaitMs;
     std::cout << "[VisionCorrection] Primitive completed; remeasuring\n";
@@ -1012,19 +1080,75 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         return;
     }
 
-    const MapNode target = MapManager::GetInstance().GetMapNode(
-        m_PhysicalFleetCorrection.nodeID);
     const VisionMetricPose& actual = *latest->observation.pose;
     PhysicalFleetCorrectionInput input;
     input.actualXMm = actual.xMillimeters;
     input.actualZMm = actual.zMillimeters;
     input.actualHeadingRad = actual.headingDegrees * kDegreesToRadians;
-    input.targetXMm =
-        (target.m_PosX - kVisionLocalOriginServerX) * kVisionScaleMmPerMapUnit;
-    input.targetZMm =
-        (target.m_PosZ - kVisionLocalOriginServerZ) * kVisionScaleMmPerMapUnit;
+    input.targetXMm = m_PhysicalFleetCorrection.targetXMm;
+    input.targetZMm = m_PhysicalFleetCorrection.targetZMm;
     input.expectedArrivalHeadingRad =
         m_PhysicalFleetCorrection.expectedHeadingRad;
+
+    PhysicalFleetPoseDiagnosticInput diagnosticInput;
+    diagnosticInput.actualXMm = input.actualXMm;
+    diagnosticInput.actualZMm = input.actualZMm;
+    diagnosticInput.actualHeadingRad = input.actualHeadingRad;
+    diagnosticInput.targetXMm = input.targetXMm;
+    diagnosticInput.targetZMm = input.targetZMm;
+    diagnosticInput.expectedHeadingRad = input.expectedArrivalHeadingRad;
+    const PhysicalFleetPoseDiagnostic poseDiagnostic =
+        CalculatePhysicalFleetPoseDiagnostic(diagnosticInput);
+
+    if (m_PhysicalFleetCorrection.awaitingPostCommandMeasurement &&
+        m_PhysicalFleetCorrection.hasLastCommand)
+    {
+        const PhysicalFleetErrorReduction reduction =
+            CalculatePhysicalFleetErrorReduction(
+                m_PhysicalFleetCorrection.lastCommandBefore,
+                poseDiagnostic);
+        std::cout << "[PhysicalFleetDiag] PRIMITIVE_EFFECT"
+                  << " routeID=" << m_PhysicalFleetCorrection.routeID
+                  << " agvID=" << m_PhysicalFleetCorrection.agvID
+                  << " edge=" << m_PhysicalFleetCorrection.startNodeID
+                  << "->" << m_PhysicalFleetCorrection.nodeID
+                  << " primitive=" << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
+                  << " commandID="
+                  << m_PhysicalFleetCorrection.lastCommandID
+                  << " action=" << NodeCorrectionActionName(
+                         m_PhysicalFleetCorrection.lastCommandAction)
+                  << " magnitude="
+                  << m_PhysicalFleetCorrection.lastCommandMagnitude
+                  << " magnitudeUnit=" << CorrectionMagnitudeUnit(
+                         m_PhysicalFleetCorrection.lastCommandAction)
+                  << " beforePositionErrorMm="
+                  << m_PhysicalFleetCorrection.lastCommandBefore.positionErrorMm
+                  << " afterPositionErrorMm="
+                  << poseDiagnostic.positionErrorMm
+                  << " positionReductionMm="
+                  << reduction.positionErrorReductionMm
+                  << " beforeAbsHeadingErrorDeg="
+                  << std::abs(m_PhysicalFleetCorrection.lastCommandBefore.headingErrorDeg)
+                  << " afterAbsHeadingErrorDeg="
+                  << std::abs(poseDiagnostic.headingErrorDeg)
+                  << " headingReductionDeg="
+                  << reduction.absoluteHeadingErrorReductionDeg << "\n";
+        m_PhysicalFleetCorrection.awaitingPostCommandMeasurement = false;
+    }
+
+    m_PhysicalFleetCorrection.hasLastPoseDiagnostic = true;
+    m_PhysicalFleetCorrection.lastVisionSequence = latest->observation.sequence;
+    m_PhysicalFleetCorrection.lastPoseDiagnostic = poseDiagnostic;
+    std::cout << "[PhysicalFleetDiag] MEASUREMENT"
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << m_PhysicalFleetCorrection.agvID
+              << " edge=" << m_PhysicalFleetCorrection.startNodeID
+              << "->" << m_PhysicalFleetCorrection.nodeID
+              << " visionSequence=" << latest->observation.sequence
+              << " frame=VISION_LOCAL_METRIC_XZ";
+    WritePhysicalFleetPoseDiagnostic(poseDiagnostic);
+    std::cout << "\n";
 
     const PhysicalFleetCorrectionGoal correctionGoal =
         m_PhysicalFleetCorrection.positionToleranceReached
@@ -1041,12 +1165,6 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
         std::cout << "[VisionCorrection] Position tolerance reached; "
                      "heading-alignment phase locked\n";
     }
-    std::cout << "[VisionCorrection] node="
-              << m_PhysicalFleetCorrection.nodeID
-              << " positionErrorMm=" << decision.positionErrorMm
-              << " headingErrorDeg="
-              << decision.headingErrorRad / kDegreesToRadians << "\n";
-
     if (decision.action == PhysicalFleetCorrectionAction::ACCEPT)
     {
         if (decision.positionErrorMm >
@@ -1113,11 +1231,34 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     command.commandID = m_NextCorrectionCommandID++;
     command.action = action;
     command.magnitude = decision.magnitude;
+
+    m_PhysicalFleetCorrection.hasLastCommand = true;
+    m_PhysicalFleetCorrection.lastCommandPrimitiveNumber =
+        static_cast<uint8_t>(m_PhysicalFleetCorrection.primitiveCount + 1);
+    m_PhysicalFleetCorrection.lastCommandID = command.commandID;
+    m_PhysicalFleetCorrection.lastCommandAction = command.action;
+    m_PhysicalFleetCorrection.lastCommandMagnitude = command.magnitude;
+    m_PhysicalFleetCorrection.lastCommandBefore = poseDiagnostic;
     if (!sessionIt->second->SendNodeCorrection(command))
     {
         FailPhysicalFleetCorrection("correction command send failed");
         return;
     }
+
+    std::cout << "[PhysicalFleetDiag] PRIMITIVE_COMMAND"
+              << " routeID=" << command.routeID
+              << " agvID=" << m_PhysicalFleetCorrection.agvID
+              << " edge=" << m_PhysicalFleetCorrection.startNodeID
+              << "->" << command.nodeID
+              << " primitive=" << static_cast<unsigned>(
+                     m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
+              << " commandID=" << command.commandID
+              << " action=" << NodeCorrectionActionName(command.action)
+              << " magnitude=" << command.magnitude
+              << " magnitudeUnit=" << CorrectionMagnitudeUnit(command.action)
+              << " beforePositionErrorMm=" << poseDiagnostic.positionErrorMm
+              << " beforeHeadingErrorDeg=" << poseDiagnostic.headingErrorDeg
+              << "\n";
 
     m_PhysicalFleetCorrection.commandID = command.commandID;
     m_PhysicalFleetCorrection.baselineVisionSequence =
@@ -1143,6 +1284,36 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
 
     const uint8_t primitiveCount =
         m_PhysicalFleetCorrection.primitiveCount;
+    const uint64_t durationMs =
+        MonotonicMilliseconds() -
+        m_PhysicalFleetCorrection.startedAtMilliseconds;
+    std::cout << "[PhysicalFleetDiag] EDGE_ACCEPT"
+              << " routeID=" << m_PhysicalFleetCorrection.routeID
+              << " agvID=" << agvID
+              << " edge=" << m_PhysicalFleetCorrection.startNodeID
+              << "->" << nodeID
+              << " frame=VISION_LOCAL_METRIC_XZ"
+              << " visionSequence="
+              << m_PhysicalFleetCorrection.lastVisionSequence;
+    if (m_PhysicalFleetCorrection.hasLastPoseDiagnostic)
+    {
+        WritePhysicalFleetPoseDiagnostic(
+            m_PhysicalFleetCorrection.lastPoseDiagnostic);
+    }
+    else
+    {
+        std::cout << " actualPose=unavailable"
+                  << " targetPose=(xMm="
+                  << m_PhysicalFleetCorrection.targetXMm
+                  << ",zMm=" << m_PhysicalFleetCorrection.targetZMm
+                  << ",headingDeg="
+                  << m_PhysicalFleetCorrection.expectedHeadingRad /
+                         kDegreesToRadians << ")";
+    }
+    std::cout << " totalPrimitives="
+              << static_cast<unsigned>(primitiveCount)
+              << " durationMs=" << durationMs << "\n";
+
     m_PhysicalFleetCorrection = {};
     EventManager::GetInstance().Publish(
         { RobotEventType::NODE_ARRIVED,
@@ -1158,6 +1329,58 @@ void NetworkManagerServer::CompletePhysicalFleetCorrection()
 void NetworkManagerServer::FailPhysicalFleetCorrection(const char* _reason)
 {
     const uint32_t agvID = m_PhysicalFleetCorrection.agvID;
+    if (m_PhysicalFleetCorrection.active())
+    {
+        const uint64_t durationMs =
+            MonotonicMilliseconds() -
+            m_PhysicalFleetCorrection.startedAtMilliseconds;
+        std::cout << "[PhysicalFleetDiag] EDGE_SAFE_STOP"
+                  << " reason=\"" << _reason << "\""
+                  << " routeID=" << m_PhysicalFleetCorrection.routeID
+                  << " agvID=" << agvID
+                  << " edge=" << m_PhysicalFleetCorrection.startNodeID
+                  << "->" << m_PhysicalFleetCorrection.nodeID
+                  << " frame=VISION_LOCAL_METRIC_XZ"
+                  << " visionSequence="
+                  << m_PhysicalFleetCorrection.lastVisionSequence;
+        if (m_PhysicalFleetCorrection.hasLastPoseDiagnostic)
+        {
+            WritePhysicalFleetPoseDiagnostic(
+                m_PhysicalFleetCorrection.lastPoseDiagnostic);
+        }
+        else
+        {
+            std::cout << " actualPose=unavailable"
+                      << " targetPose=(xMm="
+                      << m_PhysicalFleetCorrection.targetXMm
+                      << ",zMm=" << m_PhysicalFleetCorrection.targetZMm
+                      << ",headingDeg="
+                      << m_PhysicalFleetCorrection.expectedHeadingRad /
+                             kDegreesToRadians << ")";
+        }
+        if (m_PhysicalFleetCorrection.hasLastCommand)
+        {
+            std::cout << " lastCommandPrimitive="
+                      << static_cast<unsigned>(
+                             m_PhysicalFleetCorrection.lastCommandPrimitiveNumber)
+                      << " lastCommandID="
+                      << m_PhysicalFleetCorrection.lastCommandID
+                      << " lastCommandAction=" << NodeCorrectionActionName(
+                             m_PhysicalFleetCorrection.lastCommandAction)
+                      << " lastCommandMagnitude="
+                      << m_PhysicalFleetCorrection.lastCommandMagnitude
+                      << " lastCommandMagnitudeUnit=" << CorrectionMagnitudeUnit(
+                             m_PhysicalFleetCorrection.lastCommandAction);
+        }
+        else
+        {
+            std::cout << " lastCommand=none";
+        }
+        std::cout << " totalPrimitives="
+                  << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.primitiveCount)
+                  << " durationMs=" << durationMs << "\n";
+    }
     std::cout << "[VisionCorrection] SAFE STOP: " << _reason << "\n";
     m_PhysicalFleetCorrection = {};
     if (agvID != 0)

@@ -84,7 +84,9 @@ bool ESP32RobotController::DispatchCurrentPhysicalEdge()
 
     TrajectoryBuildOptions options;
     options.hasTrustedStartHeading = true;
-    options.startHeadingRad = m_RobotSession->GetStatus().heading;
+    options.startHeadingRad = m_HasConfirmedStartHeading
+        ? m_ConfirmedStartHeadingRad
+        : m_RobotSession->GetStatus().heading;
     options.millimetersPerMapUnit = m_TrajectoryConfig.millimetersPerMapUnit;
     options.spacingMm = m_TrajectoryConfig.millimetersPerMapUnit;
     options.cruiseSpeedMmPerSecond = m_TrajectoryConfig.cruiseSpeedMmPerSecond;
@@ -92,6 +94,13 @@ bool ESP32RobotController::DispatchCurrentPhysicalEdge()
         m_TrajectoryConfig.initialHeadingToleranceRad;
     options.lineEndpointOnly = true;
     options.stopAtEveryNodeBoundary = true;
+
+    std::cout << "[PhysicalFleet] Build edge " << nodeIDs.front()
+              << " -> " << nodeIDs.back()
+              << " startHeadingRad=" << options.startHeadingRad
+              << " source="
+              << (m_HasConfirmedStartHeading ? "CONFIRMED_NODE" : "ROBOT_STATUS")
+              << "\n";
 
     RobotProtocol::TrajectoryCommandPayload trajectory;
     std::string error;
@@ -177,6 +186,17 @@ bool ESP32RobotController::ConfirmCorrectedPhysicalArrival(uint32_t nodeID)
     if (!IsExpectedPhysicalArrival(nodeID))
         return false;
 
+    float confirmedHeadingRad = 0.0f;
+    if (!TryGetExpectedArrivalHeading(nodeID, confirmedHeadingRad))
+        return false;
+
+    // Vision has accepted this node within the physical heading tolerance.
+    // Anchor the next edge to the confirmed link heading instead of reusing
+    // the ESP32's accumulated open-loop heading estimate. Correction turns
+    // can otherwise leave that estimate just outside the nominal-turn guard.
+    m_ConfirmedStartHeadingRad = confirmedHeadingRad;
+    m_HasConfirmedStartHeading = true;
+
     ++m_CurrentEdgeStartIndex;
     if (m_CurrentEdgeStartIndex + 1 < m_CurrentRoute.nodes.size())
         m_DispatchNextEdgePending = true;
@@ -202,6 +222,18 @@ bool ESP32RobotController::TryGetExpectedArrivalHeading(
     outHeadingRad = std::atan2(to.m_PosZ - from.m_PosZ,
                                to.m_PosX - from.m_PosX);
     return std::isfinite(outHeadingRad);
+}
+
+bool ESP32RobotController::TryGetExpectedPhysicalEdge(
+    uint32_t targetNodeID,
+    uint32_t& outStartNodeID) const
+{
+    if (!IsExpectedPhysicalArrival(targetNodeID))
+        return false;
+
+    outStartNodeID =
+        m_CurrentRoute.nodes[m_CurrentEdgeStartIndex].nodeID;
+    return true;
 }
 
 uint32_t ESP32RobotController::GetActivePhysicalRouteID() const

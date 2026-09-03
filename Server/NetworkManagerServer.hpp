@@ -6,6 +6,7 @@
 #include "VisionObservationStore.hpp"
 #include "VisionObservationRelay.hpp"
 #include "PhysicalFleetCorrection.hpp"
+#include "PhysicalFleetDiagnostics.hpp"
 #include "MotorFaultDiagnostic.hpp"
 #include <optional>
 #include <string>
@@ -130,14 +131,29 @@ private:
 
         Phase phase = Phase::IDLE;
         uint32_t agvID = 0;
+        uint32_t startNodeID = 0;
         uint32_t nodeID = 0;
         uint32_t routeID = 0;
         uint32_t commandID = 0;
         uint32_t baselineVisionSequence = 0;
         uint8_t primitiveCount = 0;
         bool positionToleranceReached = false;
+        float targetXMm = 0.0f;
+        float targetZMm = 0.0f;
         float expectedHeadingRad = 0.0f;
+        uint64_t startedAtMilliseconds = 0;
         uint64_t deadlineMilliseconds = 0;
+        bool hasLastPoseDiagnostic = false;
+        uint32_t lastVisionSequence = 0;
+        PhysicalFleetPoseDiagnostic lastPoseDiagnostic;
+        bool hasLastCommand = false;
+        uint8_t lastCommandPrimitiveNumber = 0;
+        uint32_t lastCommandID = 0;
+        RobotProtocol::NodeCorrectionAction lastCommandAction =
+            RobotProtocol::NodeCorrectionAction::DRIVE_FORWARD;
+        float lastCommandMagnitude = 0.0f;
+        PhysicalFleetPoseDiagnostic lastCommandBefore;
+        bool awaitingPostCommandMeasurement = false;
 
         bool active() const { return phase != Phase::IDLE; }
     };
