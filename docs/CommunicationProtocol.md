@@ -366,6 +366,8 @@ Server sampler는 directed node link를 순서대로 확인한 뒤 다음처럼 
 - synthetic rotate waypoint는 node 도착을 중복 보고하지 않도록 `nodeID=0`이며 `NODE_BOUNDARY`를 갖지 않음
 - 접선이 이어지는 LINE/BEZIER 경계는 정지 없이 연속 waypoint 생성
 
+일반 builder와 preview의 threshold 기본값은 0.35 rad다. `--physical-fleet`의 one-edge LINE trajectory만 Vision correction과 같은 heading 허용치 10도(`0.174532925` rad)를 명시적으로 사용한다. 이 범위 안에서는 별도 초기 rotate waypoint를 만들지 않으며 ESP32 trajectory validation도 같은 허용치를 사용해야 한다.
+
 2026-08-11 기준 `60 mm/map-unit` TestCase03 `[1 -> 4]` preview와 ESP32 motor-disabled follower trace가 통과했다. `--trajectory-preview`는 preview-only client에 speed 0만 보내고, `--trajectory-raised-wheel`은 command-capable client에만 `80 mm/s` 실행 trajectory를 보낸다. 두 mode 모두 자동 배차와 RoutePlanner를 사용하지 않으며, 기존 `--physical-demo`는 계속 `[1 -> 2]` `ROUTE_COMMAND`를 사용한다.
 
 ### 10.3.2 NODE_CORRECTION_COMMAND / NODE_CORRECTION_REPORT
@@ -398,7 +400,7 @@ Server 제어 순서는 다음과 같다.
 one-edge TRAJECTORY_COMMAND
   -> Robot safe stop + STATUS + coarse ARRIVED
   -> Server waits for a newer, receive-age <= 200 ms MEASURED + VERIFIED pose
-  -> within 20 mm and 5 deg: confirm NODE_ARRIVED
+  -> within 20 mm and 10 deg: confirm NODE_ARRIVED
   -> otherwise one bounded turn or forward command
   -> Robot safe completion STATUS + NODE_CORRECTION_REPORT
   -> Server requires another newer MEASURED pose and repeats or confirms
@@ -539,7 +541,30 @@ Payload 없음.
 
 긴급 상황에서 즉시 모터 출력을 차단하기 위한 패킷이다. ESP32에서는 `motorDriver.emergencyStop()`이 TB6612FNG STBY까지 LOW로 내리는 강한 정지 역할을 한다.
 
-### 10.8 PING / PONG
+### 10.8 ERROR_PACKET과 WHEEL_MISMATCH 진단
+
+Direction: Robot -> Server
+
+| Field | Type | 설명 |
+|---|---|---|
+| errorCode | uint16 | `ErrorCode`; `WHEEL_MISMATCH`는 기존과 같이 `MOTOR_FAULT=100` |
+| detail | uint32 | 기존 fault detail 또는 아래 tagged diagnostic record |
+
+ESP32 physical-fleet의 `WHEEL_MISMATCH`는 먼저 기존 `detail=65539` (`0x00010003`)를 보내므로 이전 Server도 즉시 안전 정지한다. 이어서 같은 AGV TCP stream에 다음 5개 `MOTOR_FAULT` packet을 연속 전송한다. packet ID, payload field와 크기는 변경하지 않는다.
+
+| detail 형식 | 의미 |
+|---|---|
+| `0xD0VVOOMP` | context: `VV=01`, `OO=operation`, `M=motion mode`, `P=profile` |
+| `0xD1xxxxxx` | 왼쪽 normalized encoder progress |
+| `0xD2xxxxxx` | 오른쪽 normalized encoder progress |
+| `0xD3xxxxxx` | 왼쪽 target count |
+| `0xD4xxxxxx` | 오른쪽 target count |
+
+count는 하위 24 bit signed two's-complement다. operation은 `1=TRAJECTORY_DRIVE`, `2=TRAJECTORY_TURN`, `3=CORRECTION_DRIVE`, `4=CORRECTION_TURN`이고 motion mode는 `1=FORWARD`, `2=TURN_CW`, `3=TURN_CCW`, profile은 `0=NORMAL`, `1=PHYSICAL_FLEET`, `2=CORRECTION`이다.
+
+Server는 선행 `65539`에서 기존 safe-stop을 수행하고, 뒤의 tagged record는 진단 snapshot으로만 조립한다. version, tag 순서 또는 context 값이 잘못되면 완성된 snapshot으로 출력하지 않는다. 이 확장은 wheel mismatch 임계값과 motor safety 동작을 변경하지 않는다.
+
+### 10.9 PING / PONG
 
 Direction: 양방향
 

@@ -88,6 +88,8 @@ bool ESP32RobotController::DispatchCurrentPhysicalEdge()
     options.millimetersPerMapUnit = m_TrajectoryConfig.millimetersPerMapUnit;
     options.spacingMm = m_TrajectoryConfig.millimetersPerMapUnit;
     options.cruiseSpeedMmPerSecond = m_TrajectoryConfig.cruiseSpeedMmPerSecond;
+    options.cornerStopThresholdRad =
+        m_TrajectoryConfig.initialHeadingToleranceRad;
     options.lineEndpointOnly = true;
     options.stopAtEveryNodeBoundary = true;
 

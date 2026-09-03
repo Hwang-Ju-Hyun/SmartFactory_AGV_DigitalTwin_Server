@@ -1,5 +1,6 @@
 #include "MemoryStream.hpp"
 #include "PacketSerializer.hpp"
+#include "ESP32RobotController.hpp"
 #include "TrajectoryBuilder.hpp"
 #include <cmath>
 #include <cstdint>
@@ -275,6 +276,72 @@ namespace
               "builder accepted a route without a trusted start heading");
     }
 
+    void TestPhysicalFleetHeadingToleranceContract()
+    {
+        constexpr float kReproducedStartHeadingRad = -0.100539568f; // -5.7605 degrees
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 3, Node(3, 0.0f, 0.0f) },
+            { 4, Node(4, 7.0f, 0.0f) }
+        };
+        const std::vector<MapLink> links = { Line(3, 3, 4) };
+
+        ESP32TrajectoryExecutionConfig physicalFleetConfig;
+        Check(Near(physicalFleetConfig.initialHeadingToleranceRad,
+                   PhysicalFleetCorrectionPolicy::kHeadingToleranceRad,
+                   0.000001f),
+              "physical-fleet trajectory and correction heading tolerances diverged");
+
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = kReproducedStartHeadingRad;
+        options.millimetersPerMapUnit = 50.0f;
+        options.spacingMm = 50.0f;
+        options.cruiseSpeedMmPerSecond = 80.0f;
+        options.cornerStopThresholdRad =
+            physicalFleetConfig.initialHeadingToleranceRad;
+        options.lineEndpointOnly = true;
+        options.stopAtEveryNodeBoundary = true;
+
+        RobotProtocol::TrajectoryCommandPayload trajectory;
+        std::string error;
+        const bool built = TrajectoryBuilder::BuildFromGeometry(
+            { 3, 4 }, nodes, links, 103, options, trajectory, error);
+        Check(built, "-5.7605 degree physical-fleet edge build failed: " + error);
+        if (!built) return;
+
+        bool sawRotation = false;
+        for (const auto& waypoint : trajectory.waypoints)
+        {
+            sawRotation = sawRotation ||
+                HasFlag(waypoint, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        }
+        Check(trajectory.waypoints.size() == 2,
+              "-5.7605 degree one-edge trajectory did not stay endpoint-only");
+        Check(!sawRotation,
+              "heading inside the physical-fleet 10 degree contract inserted a rotation");
+        Check(std::abs(trajectory.waypoints.back().headingRad) <=
+                  physicalFleetConfig.initialHeadingToleranceRad,
+              "straight edge exceeded the physical-fleet heading acceptance contract");
+
+        TrajectoryBuildOptions nominalTurn = options;
+        nominalTurn.startHeadingRad = -1.5707963267948966f;
+        RobotProtocol::TrajectoryCommandPayload turnedTrajectory;
+        error.clear();
+        const bool turnedBuilt = TrajectoryBuilder::BuildFromGeometry(
+            { 3, 4 }, nodes, links, 104, nominalTurn, turnedTrajectory, error);
+        Check(turnedBuilt, "90 degree physical-fleet edge build failed: " + error);
+        if (!turnedBuilt) return;
+
+        bool sawNominalRotation = false;
+        for (const auto& waypoint : turnedTrajectory.waypoints)
+        {
+            sawNominalRotation = sawNominalRotation ||
+                HasFlag(waypoint, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        }
+        Check(sawNominalRotation,
+              "90 degree physical-fleet heading change lost its rotation waypoint");
+    }
+
     void TestOptionalHelloCapabilities()
     {
         OutputMemoryStream legacyHello;
@@ -422,6 +489,7 @@ int main()
     TestSharpCornerRotation();
     TestMalformedWaypointCount();
     TestInitialHeadingAndWireGuards();
+    TestPhysicalFleetHeadingToleranceContract();
     TestOptionalHelloCapabilities();
     TestMaximumTrajectoryWireSize();
     TestNodeCorrectionWireFormat();
@@ -432,6 +500,6 @@ int main()
         return 1;
     }
 
-    std::cout << "[TrajectorySmokeTest] PASS mixed LINE/BEZIER/LINE, corner rotation, serializer limits\n";
+    std::cout << "[TrajectorySmokeTest] PASS mixed LINE/BEZIER/LINE, physical-fleet heading contract, corner rotation, serializer limits\n";
     return 0;
 }

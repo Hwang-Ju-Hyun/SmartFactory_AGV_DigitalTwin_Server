@@ -162,6 +162,8 @@ ESP32 -> Server : NODE_CORRECTION_REPORT (primitive 안전 완료/거절/fault)
 
 추가 packet으로 `CANCEL_ROUTE`, `PING/PONG`, `ERROR_PACKET`, `EMERGENCY_STOP`이 정의돼 있다. 정확한 field와 크기는 [CommunicationProtocol.md](CommunicationProtocol.md)와 `Shared/Protocol.hpp`를 기준으로 한다.
 
+PhysicalFleet의 `WHEEL_MISMATCH`는 기존 `MOTOR_FAULT/detail=65539`로 먼저 fail-stop한 뒤, 같은 ERROR payload의 `detail`을 재사용한 5개 tagged record로 operation, motion mode/profile, 좌우 normalized encoder progress와 개별 target count를 전송한다. Server는 이를 한 snapshot 로그로 조립한다. 이 진단은 기존 wheel mismatch 임계값, fault latch, PWM zero와 `STBY=LOW` 안전 동작을 변경하지 않는다.
+
 통합 원칙:
 
 - Wi-Fi가 끊겨도 ESP32가 local stop 조건을 유지한다.
@@ -229,6 +231,8 @@ Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 �
 단일 직선 `[1 -> 2]`에 대해서는 위 항목을 완료했다. 다음 executor 확장은 기존 경로를 다시 하드코딩하지 않고, Server가 LINE/BEZIER map link를 robot-local metric waypoint로 샘플링한 `TRAJECTORY_COMMAND`를 따르는 방식으로 진행한다. capability가 없는 기존 firmware에는 계속 `ROUTE_COMMAND`만 보내 기존 검증본을 보존한다.
 
 현재 실제 TestCase0 단계는 Bezier를 제외한다. `--physical-fleet`에서 AGV 1을 node 1, 동쪽 방향으로 배치하고 COMMAND-capable firmware 연결 뒤에만 자동 임무를 시작한다. map scale은 `50 mm/unit`이고 정사각 격자의 각 link는 7 unit, 즉 350 mm다. 각 LINE node boundary에서 정지·ARRIVED 후 필요하면 제자리 회전한다.
+
+PhysicalFleet의 correction 승인과 다음 one-edge trajectory의 초기 heading 검사는 같은 10도(`0.174532925` rad) 허용치를 사용한다. Server는 이 범위 안의 잔여 heading에는 불필요한 rotate waypoint를 만들지 않는다. ESP32 follower도 동일한 10도 validation 계약이어야 하며, 기존 0.08 rad firmware에서는 4.58~10도 구간을 계속 `INVALID_COMMAND`로 거절하므로 실차 재시험 전에 반드시 대조한다.
 
 ### 5. Digital Twin 비교
 

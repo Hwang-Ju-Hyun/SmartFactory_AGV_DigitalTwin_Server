@@ -1,5 +1,6 @@
 #pragma once
 #include "IRobotController.hpp"
+#include "PhysicalFleetCorrection.hpp"
 #include "RobotSession.hpp"
 #include "TCPSession.hpp"
 #include <functional>
@@ -10,6 +11,8 @@ struct ESP32TrajectoryExecutionConfig
     bool enabled = false;
     float millimetersPerMapUnit = 50.0f;
     float cruiseSpeedMmPerSecond = 80.0f;
+    float initialHeadingToleranceRad =
+        PhysicalFleetCorrectionPolicy::kHeadingToleranceRad;
 };
 
 class ESP32RobotController : public IRobotController

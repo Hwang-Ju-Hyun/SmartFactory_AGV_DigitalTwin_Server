@@ -33,10 +33,25 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | Vision 관측 수신 기반 | 카메라·회전 검증 완료·Server 재시작 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[60,0]` body offset의 pose contract `fb3cad48a32b9893`, calibration `68011668e298c992`; CCW 격리 시험에서 회전 중 보고 위치 이동이 81.2 mm에서 20.8 mm로 감소했으며, 새 HELLO 승인은 Server 재시작 뒤 확인 필요 |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
 | Vision node 보정 제어 | 구현됨·실차 재검증 필요 | `--physical-fleet`와 Vision을 함께 켜면 coarse ARRIVED 뒤 fresh MEASURED pose로 제한된 회전/직진 보정 후에만 NODE_ARRIVED 확정 |
-| 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy를 포함한 CTest 4개 통과; 전체 fleet TCP test framework는 없음 |
+| 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy, motor fault diagnostic을 포함한 CTest 5개 통과; 전체 fleet TCP test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-09-03 WHEEL_MISMATCH Server 상세 진단
+
+- ESP32 `4a8c381`의 기존 ERROR payload 재사용 계약에 맞춰 `MOTOR_FAULT/detail=65539` 뒤의 `D0~D4` tagged record 5개를 AGV별로 조립한다. packet ID, payload field와 wire size는 변경하지 않았다.
+- Server 로그에서 `AGV 1 WHEEL_MISMATCH operation=CORRECTION_DRIVE mode=FORWARD profile=CORRECTION targetLeft=213 targetRight=203 left=205 right=117` 형태로 fault 시점의 좌우 normalized progress와 개별 target을 확인할 수 있다.
+- 최초 legacy `65539`에서 기존 PhysicalFleet safe-stop을 그대로 수행하고 tagged 후속 packet은 중복 fault로 처리하지 않는다. 잘못된 version, orphan tag와 순서 오류는 완성된 snapshot으로 승인하지 않는다.
+- signed 24-bit count, 실제 재현 snapshot, 최종 로그 문자열과 순서 guard host test를 추가했다. WSL CMake configure/build 및 CTest 5개가 통과했다.
+
+### 2026-09-02 Physical-fleet trajectory heading 계약 정렬
+
+- Vision correction은 node 3을 위치 25.9 mm, heading 7.84도 상태에서 승인했지만, 누적된 ESP32 논리 heading과 다음 LINE edge의 차이가 약 5.7605도인 trajectory를 기존 firmware의 0.08 rad 검사가 `INVALID_COMMAND`로 거절했다. Server correction 허용치는 10도였지만 physical-fleet trajectory는 전역 builder 기본값 0.35 rad를 암묵적으로 사용해 양쪽 계약이 분리돼 있었다.
+- physical-fleet trajectory의 초기 회전 판단을 correction과 같은 `PhysicalFleetCorrectionPolicy::kHeadingToleranceRad` 10도(`0.174532925` rad)로 명시했다. 일반 `TrajectoryBuilder`와 preview의 0.35 rad 기본값은 변경하지 않았다.
+- `-5.7605도 -> 0도 LINE`은 endpoint-only waypoint 2개와 rotate 없음, nominal 90도 차이는 rotate waypoint 유지로 회귀시험했다. WSL CMake configure/build와 CTest 4개가 통과했다.
+- `ERROR code=100 detail=1`은 로그에서 `INVALID_COMMAND`로 구분한다. PhysicalFleet의 route cancel/safe-stop 동작은 유지한다.
+- 이 검증은 Server hardware-free 범위다. 실차 E2E 전에는 연결할 ESP32 firmware의 trajectory heading validation도 동일한 10도 계약인지 확인해야 한다.
 
 ### 2026-08-31 Vision 기반 node 도착 보정 Server 구현
 
@@ -228,6 +243,7 @@ cmake --build build -j2
 
 - Vision node 보정의 실제 바닥 흐름과 fail-stop은 확인했지만, node 위치 20 mm 수렴 뒤 heading-only 단계로 고정하는 Server 정책은 아직 실차 재검증하지 않았다.
 - 보정 실패 시 Server가 확정하는 node는 마지막 검증 node로 유지된다. 실제 차체는 coarse target 부근에 있을 수 있으므로 fail-stop 뒤 자동 재개하지 말고 사람이 위치를 다시 확인해야 한다.
+- Server physical-fleet의 10도 trajectory heading 계약은 hardware-free test만 통과했다. ESP32 firmware가 기존 0.08 rad validation을 유지한 상태라면 4.58~10도 구간은 계속 `INVALID_COMMAND`가 되므로 실차 연결 전 동일 계약을 확인해야 한다.
 
 - TestCase03 export는 Server working tree에 반영됐지만 아직 Server와 Unity 저장소의 기준 commit으로 함께 확정되지 않았다. Unity의 수정 scene/export도 별도 commit으로 보존해야 한다.
 - `60 mm/map-unit`은 TestCase03 곡선 demo용 선택값이며 시설 전체의 최종 실측 calibration은 아니다.
@@ -245,7 +261,7 @@ cmake --build build -j2
 
 ## 다음 우선 작업
 
-1. 로봇을 node 1 동쪽에 다시 둔 뒤 새 Server binary로 한 번만 시험한다. 이번 변경은 Server 전용이므로 ESP32 재업로드는 필요 없다.
+1. ESP32 trajectory validation이 10도 계약인지 확인한 뒤 로봇을 node 1 동쪽에 다시 두고 새 Server binary로 한 번만 시험한다.
 2. 성공 시 Server 로그의 `Node N accepted`와 다음 edge 전송을 확인하고, 실패 시 새 `Primitive limit exhausted` 로그의 남은 위치·heading 오차를 기록
 3. Unity Editor에서 planned AGV와 Vision marker가 보정 전후 의도대로 표시되는지 확인
 4. 노출된 Wi-Fi 비밀번호 변경과 저장소 secret 정리

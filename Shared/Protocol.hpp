@@ -83,6 +83,21 @@ namespace RobotProtocol
         OBSTACLE_DETECTED = 102
     };
 
+    // A WHEEL_MISMATCH keeps the legacy MOTOR_FAULT detail first so existing
+    // receivers still fail safe. Five immediately following MOTOR_FAULT
+    // records may carry a tagged, frozen encoder snapshot in the same uint32
+    // detail field; ERROR_PACKET and ErrorPayload remain unchanged.
+    constexpr uint32_t kWheelMismatchLegacyDetail = 65539u;
+    constexpr uint8_t kMotorFaultDiagnosticVersion = 1;
+    enum class MotorFaultDiagnosticTag : uint8_t
+    {
+        CONTEXT = 0xD0,
+        LEFT_PROGRESS = 0xD1,
+        RIGHT_PROGRESS = 0xD2,
+        LEFT_TARGET = 0xD3,
+        RIGHT_TARGET = 0xD4
+    };
+
     enum class VisionHelloRejectionReason : uint16_t
     {
         NONE = 0,

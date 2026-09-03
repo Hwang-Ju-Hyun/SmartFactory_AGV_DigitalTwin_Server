@@ -6,6 +6,7 @@
 #include "VisionObservationStore.hpp"
 #include "VisionObservationRelay.hpp"
 #include "PhysicalFleetCorrection.hpp"
+#include "MotorFaultDiagnostic.hpp"
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -99,6 +100,8 @@ private:
     // 접속한 클라이언트들을 관리하는 명부 (ID -> 세션 )    
     std::unordered_map<uint32_t,ClientProxy*> m_SessionIdToProxyMap;
     std::unordered_map<uint32_t, RobotSessionPtr> m_AgvIdToRobotSessionMap;
+    std::unordered_map<uint32_t, MotorFaultDiagnosticDecoder>
+        m_MotorFaultDiagnosticDecoders;
     std::unordered_map<ClientProxy*, RobotSessionPtr> m_ProxyToRobotSessionMap;
     std::unordered_map<ClientProxy*, VisionClientSession> m_ProxyToVisionSessionMap;
     std::unordered_map<uint32_t, ClientProxy*> m_VisionSourceToProxyMap;

@@ -1403,6 +1403,7 @@ void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
         {
             m_AgvIdToRobotSessionMap.erase(agvSessionIt);
         }
+        m_MotorFaultDiagnosticDecoders.erase(agvID);
         m_ProxyToRobotSessionMap.erase(robotProxyIt);
     }
 
@@ -1711,22 +1712,65 @@ void NetworkManagerServer::UpdateWorld(float _deltaTime)
             }
             else if (ev.type == ControllerEventType::ERROR_SLIP)
             {
+                const auto errorCode = static_cast<RobotProtocol::ErrorCode>(
+                    ev.nodeID);
+                WheelMismatchDiagnostic wheelMismatch;
+                const MotorFaultDiagnosticConsumeResult diagnosticResult =
+                    m_MotorFaultDiagnosticDecoders[it->first].Consume(
+                        errorCode, ev.detail, wheelMismatch);
+                if (diagnosticResult ==
+                    MotorFaultDiagnosticConsumeResult::IN_PROGRESS)
+                {
+                    continue;
+                }
+                if (diagnosticResult ==
+                    MotorFaultDiagnosticConsumeResult::COMPLETE)
+                {
+                    std::cout << "[RobotProtocol] AGV " << it->first << " "
+                              << FormatWheelMismatchDiagnostic(wheelMismatch)
+                              << "\n";
+                    continue;
+                }
+                if (diagnosticResult ==
+                    MotorFaultDiagnosticConsumeResult::MALFORMED)
+                {
+                    std::cout << "[RobotProtocol] AGV " << it->first
+                              << " malformed WHEEL_MISMATCH diagnostic"
+                              << " detail=" << ev.detail << "\n";
+                }
+
+                const bool invalidCommand =
+                    m_RunMode == ServerRunMode::PhysicalFleet &&
+                    errorCode == RobotProtocol::ErrorCode::MOTOR_FAULT &&
+                    ev.detail == 1;
+                const bool wheelMismatchStarted =
+                    diagnosticResult == MotorFaultDiagnosticConsumeResult::
+                        WHEEL_MISMATCH_STARTED;
+                const char* errorMeaning = wheelMismatchStarted
+                    ? "WHEEL_MISMATCH"
+                    : (invalidCommand ? "INVALID_COMMAND" : "robot fault");
                 std::cout << "[RobotProtocol] AGV " << it->first
                           << " reported ERROR code=" << ev.nodeID
-                          << " detail=" << ev.detail << "\n";
+                          << " detail=" << ev.detail
+                          << " meaning=" << errorMeaning << "\n";
                 if (m_RunMode == ServerRunMode::PhysicalFleet)
                 {
+                    const char* safetyReason = wheelMismatchStarted
+                        ? "ESP32 reported WHEEL_MISMATCH"
+                        : (invalidCommand
+                            ? "ESP32 rejected command as INVALID_COMMAND"
+                            : "ESP32 reported motion fault");
                     if (m_PhysicalFleetCorrection.active() &&
                         m_PhysicalFleetCorrection.agvID == it->first)
                     {
-                        FailPhysicalFleetCorrection("ESP32 reported motion fault");
+                        FailPhysicalFleetCorrection(safetyReason);
                     }
                     else
                     {
                         RoutePlanner::GetInstance().StopActiveRouteForSafety(
                             it->first,
                             m_TotalElapsedServerTime,
-                            "ESP32 reported motion fault");
+                            safetyReason);
                     }
                 }
             }

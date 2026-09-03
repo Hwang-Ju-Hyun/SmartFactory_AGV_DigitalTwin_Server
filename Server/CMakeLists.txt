@@ -13,6 +13,7 @@ add_executable(AGV_Server
     VisionObservationStore.cpp
     VisionObservationRelay.cpp
     PhysicalFleetCorrection.cpp
+    MotorFaultDiagnostic.cpp
 )
 
 #  정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
@@ -50,10 +51,18 @@ add_executable(PhysicalFleetCorrectionTest
     PhysicalFleetCorrection.cpp
 )
 
+add_executable(MotorFaultDiagnosticTest
+    MotorFaultDiagnosticTest.cpp
+    MotorFaultDiagnostic.cpp
+)
+
+target_link_libraries(MotorFaultDiagnosticTest PRIVATE Shared)
+
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
     add_test(NAME vision_observation COMMAND VisionObservationTest)
     add_test(NAME physical_fleet_correction COMMAND PhysicalFleetCorrectionTest)
+    add_test(NAME motor_fault_diagnostic COMMAND MotorFaultDiagnosticTest)
     add_test(
         NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview
