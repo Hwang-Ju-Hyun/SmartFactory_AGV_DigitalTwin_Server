@@ -160,6 +160,7 @@ Unity protocol은 `packetSize` 뒤에 1 byte짜리 `UnityPacketType`을 둔다. 
 - `UPT_MAZE_DATA`: map nodes, links를 전송한다.
 - `UPT_REPLICATION`: object create/update/destroy command를 전송한다.
 - `UPT_VISION_OBSERVATION`: 검증된 Vision pose를 기존 AGV와 분리된 비교 marker용으로 전송한다.
+- `UPT_CARGO_STATE`: 상차·하차가 완료된 cargo의 현재 부착 상태를 AGV별로 전송한다.
 - `UPT_READY_MAP`, `UPT_READY_OBJECT`: legacy 준비 완료 packet이다.
 
 `UPT_REPLICATION` payload는 다음 구조를 가진다.
@@ -173,6 +174,34 @@ commandCount
 ```
 
 Unity protocol은 화면 동기화용이므로 `agvID`, `sequence`를 공통 header에 두지 않았다. 대신 object 식별은 replication payload 안의 `networkID`가 담당한다.
+
+#### Unity cargo state
+
+`UPT_CARGO_STATE=7`은 Server의 실제 `PICKUP_COMPLETED`와
+`DROP_COMPLETED` 이벤트에서만 갱신되는 viewer용 현재 상태다. 이동 경로 진행률로
+상·하차 시점을 추측하지 않는다. Server는 AGV별 최신 상태를 보관하며 새로운 Unity
+session에도 snapshot을 다시 보내므로, Unity는 `(agvID, sequence)` 기준으로
+idempotent하게 적용한다.
+
+Direction은 Server -> Unity이며 outer `uint16 packetSize` 뒤 body는 다음 고정
+22 byte다. 기존 Unity packet과 동일한 little-endian field serializer를 사용하고
+C++ 구조체 padding은 전송하지 않는다.
+
+| field | type | 의미 |
+|---|---:|---|
+| packetType | uint8 | `7` (`UPT_CARGO_STATE`) |
+| sequence | uint32 | Server process 안에서 cargo 상태 전환마다 증가 |
+| agvID | uint32 | cargo를 운반하는 replication network ID |
+| taskID | uint32 | 해당 pickup/drop delivery의 식별자 |
+| cargoID | uint32 | Unity가 box prefab을 안정적으로 선택·추적할 식별자 |
+| nodeID | uint32 | 완료 이벤트가 발생한 pickup 또는 drop-off node |
+| state | uint8 | `0=UNLOADED`, `1=LOADED` |
+
+`LOADED`에서는 Unity가 `cargoID`에 대응하는 box를 `agvID` body의 child로
+부착하고, 같은 `taskID/cargoID`의 `UNLOADED`에서는 제거한다. packet 재전송은
+새로운 상·하차 이벤트를 뜻하지 않으므로 이미 적용한 sequence는 다시 연출하지
+않는다. task/cargo ID는 현재 Server process lifetime 동안만 유효하며 재시작 뒤
+영속 복구는 제공하지 않는다.
 
 ### 5.2 RobotProtocol Frame
 

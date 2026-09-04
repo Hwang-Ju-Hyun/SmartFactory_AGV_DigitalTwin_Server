@@ -8,6 +8,7 @@
 #include "PhysicalFleetCorrection.hpp"
 #include "PhysicalFleetDiagnostics.hpp"
 #include "MotorFaultDiagnostic.hpp"
+#include "UnityCargoState.hpp"
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -86,6 +87,10 @@ private:
     void SendTrajectoryPreview(uint32_t _agvID, const RobotSessionPtr& _robotSession);
     void SendTrajectoryRaisedWheel(uint32_t _agvID, const RobotSessionPtr& _robotSession);
     void SendOutgoingVisionObservationPackets();
+    void InitializeUnityCargoStateTracking();
+    void HandleUnityCargoLoaded(uint32_t _agvID);
+    void HandleUnityCargoUnloaded(uint32_t _agvID);
+    void SendOutgoingCargoStatePackets();
     void TryActivatePhysicalFleet();
     bool HandlePhysicalFleetControllerEvent(uint32_t _agvID,
                                             const ControllerEvent& _event);
@@ -123,6 +128,11 @@ private:
         uint32_t,
         std::unordered_map<uint32_t, VisionViewerDeliveryState>>
         m_LastVisionDeliveryByUnitySession;
+    UnityCargoStateStore m_UnityCargoStateStore;
+    std::unordered_map<
+        uint32_t,
+        std::unordered_map<uint32_t, uint32_t>>
+        m_LastCargoSequenceByUnitySession;
     static uint32_t nextSessionID;
     struct PhysicalFleetCorrectionState
     {

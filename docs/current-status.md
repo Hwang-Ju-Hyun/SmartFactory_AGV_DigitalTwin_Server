@@ -32,11 +32,23 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 | FakeRobot | 검증 완료 | localhost에서 AGV 1로 연결해 여러 route와 arrival 확인 |
 | Vision 관측 수신 기반 | calibration 검증 완료·Server 연동 재검증 필요 | 기준/AGV 태그 높이 140 mm, 측정된 `[60,0]` body offset의 pose contract `fb3cad48a32b9893`, 현재 calibration `068cdfb9c783cc74`; 5/5 검증, RMS 1.54 mm, 최대 오차 2.56 mm, `VERIFIED` |
 | Vision 관측 Unity 중계 | wire E2E 검증 완료·실화면 검증 필요 | 별도 packet type 6, mm→map unit/radian 변환, 500 ms timeout LOST; authoritative pose와 분리 |
+| Unity cargo 상태 중계 | Server 구현·Unity 연동 필요 | `PICKUP_COMPLETED`/`DROP_COMPLETED` 기반 `UPT_CARGO_STATE=7`; AGV별 snapshot과 sequence로 재접속·중복 적용 지원 |
 | Vision node 보정 제어 | 구현됨·실차 재검증 필요 | coarse ARRIVED 뒤 node 보정과 다음 edge 출발 heading 정렬을 완료한 뒤에만 NODE_ARRIVED를 확정하고 forward를 해제 |
-| 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy/diagnostics, motor fault diagnostic을 포함한 CTest 6개 통과; 전체 fleet TCP test framework는 없음 |
+| 자동화된 test target | 일부 구현 | trajectory, Vision serializer/store/Unity relay, correction policy/diagnostics, motor fault 및 Unity cargo state를 포함한 CTest 8개 통과; 전체 fleet TCP test framework는 없음 |
 | native Windows server build | 계획 아님 | POSIX socket 의존성 때문에 Linux/WSL이 기본 환경 |
 
 ## 최근 software 검증
+
+### 2026-09-04 Unity cargo 상·하차 상태 계약
+
+- 가상 fleet의 실제 `PICKUP_COMPLETED`에서 `LOADED`, `DROP_COMPLETED`에서
+  `UNLOADED` 상태를 생성하며 경로 진행률로 완료 시점을 추측하지 않는다.
+- payload는 `sequence, agvID, taskID, cargoID, nodeID, state`를 포함한다.
+  AGV별 최신 상태를 유지해 Unity 재접속 시 snapshot으로 다시 보내고 동일 상태
+  이벤트는 무시한다.
+- 기존 `UPT_REPLICATION` layout과 RobotProtocol/ESP32/Vision packet은 변경하지
+  않았다. Unity의 `SampleScene`에서 packet type 7을 해석해 box prefab을 AGV body에
+  부착·제거하는 작업과 실제 화면 검증이 남아 있다.
 
 ### 2026-09-04 Vision 재캘리브레이션
 

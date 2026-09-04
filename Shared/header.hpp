@@ -26,6 +26,8 @@ enum UnityPacketType : uint8_t
     // Observation-only physical pose for a separate Unity comparison marker.
     // This never replaces the authoritative UPT_REPLICATION AGV pose.
     UPT_VISION_OBSERVATION = 6,
+    // Idempotent cargo attachment state for the Unity viewer.
+    UPT_CARGO_STATE = 7,
     
     // ==========================================
     // Deprecated legacy robot IDs from the old uint8_t packet scheme.

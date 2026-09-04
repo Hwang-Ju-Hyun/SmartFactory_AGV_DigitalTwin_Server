@@ -190,6 +190,8 @@ void NetworkManagerServer::StaticInit(
     ObjectRegistry::sInstance->RegisterCreationFunction(ClassID::OBJ_AGV,RoboServer::StaticCreate);
     srand((unsigned int)time(NULL));
     sInstance->CreateSimulationWorld();
+    if (_runMode == ServerRunMode::AutomaticFleet)
+        sInstance->InitializeUnityCargoStateTracking();
     sInstance->InitializeVisionObservationStore();
     sInstance->StartSimulation();
 }
@@ -2528,6 +2530,7 @@ void NetworkManagerServer::OnClientDisconnected(ClientProxy* _proxy)
         if (it->second == _proxy)
         {
             m_LastVisionDeliveryByUnitySession.erase(it->first);
+            m_LastCargoSequenceByUnitySession.erase(it->first);
             it = m_SessionIdToProxyMap.erase(it);
         }
         else
@@ -2585,6 +2588,99 @@ void NetworkManagerServer::SendOutgoingReplicationPackets()
     }
 
     SendOutgoingVisionObservationPackets();
+    SendOutgoingCargoStatePackets();
+}
+
+void NetworkManagerServer::InitializeUnityCargoStateTracking()
+{
+    EventManager::GetInstance().Subscribe(
+        RobotEventType::PICKUP_COMPLETED,
+        [this](const RobotEvent& event)
+        {
+            HandleUnityCargoLoaded(event.agvID);
+        });
+    EventManager::GetInstance().Subscribe(
+        RobotEventType::DROP_COMPLETED,
+        [this](const RobotEvent& event)
+        {
+            HandleUnityCargoUnloaded(event.agvID);
+        });
+}
+
+void NetworkManagerServer::HandleUnityCargoLoaded(uint32_t _agvID)
+{
+    Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+    if (!agv)
+    {
+        std::cout << "[Cargo] PICKUP_COMPLETED ignored for unknown agvID="
+                  << _agvID << "\n";
+        return;
+    }
+
+    const auto payload = m_UnityCargoStateStore.MarkLoaded(
+        _agvID, agv->GetCurrentNodeID());
+    if (!payload)
+        return;
+
+    std::cout << "[Cargo] state=LOADED agvID=" << payload->agvID
+              << " taskID=" << payload->taskID
+              << " cargoID=" << payload->cargoID
+              << " nodeID=" << payload->nodeID
+              << " sequence=" << payload->sequence << "\n";
+}
+
+void NetworkManagerServer::HandleUnityCargoUnloaded(uint32_t _agvID)
+{
+    Robo* agv = dynamic_cast<Robo*>(AGVManager::GetInstance().FindAGV(_agvID));
+    if (!agv)
+    {
+        std::cout << "[Cargo] DROP_COMPLETED ignored for unknown agvID="
+                  << _agvID << "\n";
+        return;
+    }
+
+    const auto payload = m_UnityCargoStateStore.MarkUnloaded(
+        _agvID, agv->GetCurrentNodeID());
+    if (!payload)
+        return;
+
+    std::cout << "[Cargo] state=UNLOADED agvID=" << payload->agvID
+              << " taskID=" << payload->taskID
+              << " cargoID=" << payload->cargoID
+              << " nodeID=" << payload->nodeID
+              << " sequence=" << payload->sequence << "\n";
+}
+
+void NetworkManagerServer::SendOutgoingCargoStatePackets()
+{
+    if (m_SessionIdToProxyMap.empty())
+        return;
+
+    const auto snapshot = m_UnityCargoStateStore.GetSnapshot();
+    for (const auto& [sessionID, proxy] : m_SessionIdToProxyMap)
+    {
+        auto& delivered = m_LastCargoSequenceByUnitySession[sessionID];
+        for (const UnityCargoStatePayload& payload : snapshot)
+        {
+            const auto previous = delivered.find(payload.agvID);
+            if (previous != delivered.end() &&
+                previous->second == payload.sequence)
+            {
+                continue;
+            }
+
+            OutputMemoryStream stream;
+            if (!WriteUnityCargoStatePacket(stream, payload))
+            {
+                std::cout << "[Cargo] Invalid Unity cargo state suppressed. agvID="
+                          << payload.agvID << "\n";
+                continue;
+            }
+
+            proxy->SendPacket(stream);
+            delivered[payload.agvID] = payload.sequence;
+        }
+    }
 }
 
 void NetworkManagerServer::SendOutgoingVisionObservationPackets()

@@ -15,6 +15,7 @@ add_executable(AGV_Server
     PhysicalFleetCorrection.cpp
     MotorFaultDiagnostic.cpp
     PhysicalFleetDiagnostics.cpp
+    UnityCargoState.cpp
 )
 
 #  정적 라이브러리(SharedLib)를 이 실행 파일에 조립(Link)하기!
@@ -70,6 +71,13 @@ add_executable(PhysicalFleetDispatchStateTest
     PhysicalFleetDispatchStateTest.cpp
 )
 
+add_executable(UnityCargoStateTest
+    UnityCargoStateTest.cpp
+    UnityCargoState.cpp
+)
+
+target_link_libraries(UnityCargoStateTest PRIVATE Shared)
+
 if(BUILD_TESTING)
     add_test(NAME trajectory_smoke COMMAND TrajectorySmokeTest)
     add_test(NAME vision_observation COMMAND VisionObservationTest)
@@ -77,6 +85,7 @@ if(BUILD_TESTING)
     add_test(NAME motor_fault_diagnostic COMMAND MotorFaultDiagnosticTest)
     add_test(NAME physical_fleet_diagnostics COMMAND PhysicalFleetDiagnosticsTest)
     add_test(NAME physical_fleet_dispatch_state COMMAND PhysicalFleetDispatchStateTest)
+    add_test(NAME unity_cargo_state COMMAND UnityCargoStateTest)
     add_test(
         NAME trajectory_testcase0_line_preview
         COMMAND TrajectoryPreview
