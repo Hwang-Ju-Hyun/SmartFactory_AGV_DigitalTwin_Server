@@ -393,6 +393,26 @@ namespace
         REQUIRE(decision.action != PhysicalFleetCorrectionAction::ACCEPT);
     }
 
+    void TestInitialDeparturePoseContract()
+    {
+        auto input = AtOrigin();
+        input.actualXMm = 1.01713f;
+        input.actualZMm = 1.19058f;
+        input.actualHeadingRad = 0.429089f * kDegreesToRadians;
+        REQUIRE(IsPhysicalFleetInitialDeparturePoseAccepted(input));
+
+        input.actualXMm =
+            PhysicalFleetCorrectionPolicy::kStartPosePositionToleranceMm +
+            0.01f;
+        input.actualZMm = 0.0f;
+        REQUIRE(!IsPhysicalFleetInitialDeparturePoseAccepted(input));
+
+        input = AtOrigin();
+        input.actualHeadingRad =
+            PhysicalFleetCorrectionPolicy::kHeadingToleranceRad + 0.0001f;
+        REQUIRE(!IsPhysicalFleetInitialDeparturePoseAccepted(input));
+    }
+
     void TestUsesShortestWrappedHeadingError()
     {
         auto input = AtOrigin();
@@ -737,6 +757,7 @@ int main()
     TestNonConvergenceProgressGuards();
     TestTurnSequenceGuards();
     TestStartPoseApprovalRemainsStrict();
+    TestInitialDeparturePoseContract();
     TestUsesShortestWrappedHeadingError();
     TestRejectsExcessiveDistance();
     TestRecordedRecoveryRetainsTwoFinalPrimitives();

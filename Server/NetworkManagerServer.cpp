@@ -50,6 +50,7 @@ namespace
     constexpr float kTrajectoryRaisedWheelSpeedMmPerSecond = 80.0f;
     constexpr uint32_t kPhysicalFleetAgvID = 1;
     constexpr uint32_t kPhysicalFleetStartNodeID = 1;
+    constexpr float kPhysicalFleetInitialHeadingRad = 0.0f;
     constexpr float kPhysicalFleetScaleMmPerMapUnit = 50.0f;
     constexpr float kPhysicalFleetCruiseSpeedMmPerSecond = 80.0f;
     constexpr float kVisionScaleMmPerMapUnit = 50.0f;
@@ -1407,6 +1408,59 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                 "pre-departure recenter did not reduce position error");
             return;
         }
+    }
+
+    if (preDeparture && m_PhysicalFleetCorrection.routeID == 0)
+    {
+        auto* controller = dynamic_cast<ESP32RobotController*>(
+            RobotManager::GetInstance().GetRobotController(
+                m_PhysicalFleetCorrection.agvID));
+        PhysicalFleetCorrectionInput initialPose = input;
+        initialPose.expectedArrivalHeadingRad =
+            kPhysicalFleetInitialHeadingRad;
+        const bool validInitialContext = controller &&
+            m_PhysicalFleetCorrection.nodeID ==
+                kPhysicalFleetStartNodeID &&
+            !controller->HasCommittedPhysicalArrival();
+        if (!validInitialContext ||
+            !IsPhysicalFleetInitialDeparturePoseAccepted(initialPose))
+        {
+            FailPhysicalFleetCorrection(
+                "initial physical departure pose outside safety bounds");
+            return;
+        }
+
+        const float trajectoryHeadingChangeRad = std::abs(std::remainder(
+            m_PhysicalFleetCorrection.departureTargetHeadingRad -
+                initialPose.actualHeadingRad,
+            360.0f * kDegreesToRadians));
+        std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
+                  << " phase=PRE_DEPARTURE"
+                  << " physicalArrivalCommitted=0"
+                  << " departureHold=1"
+                  << " confirmedNode="
+                  << controller->GetCommittedPhysicalNodeID()
+                  << " routeID=PENDING"
+                  << " agvID=" << m_PhysicalFleetCorrection.agvID
+                  << " edge=" << m_PhysicalFleetCorrection.nodeID
+                  << "->"
+                  << m_PhysicalFleetCorrection.departureTargetNodeID
+                  << " initialPoseHeadingDeg="
+                  << initialPose.actualHeadingRad / kDegreesToRadians
+                  << " officialInitialHeadingDeg=0"
+                  << " trajectoryHeadingChangeDeg="
+                  << trajectoryHeadingChangeRad / kDegreesToRadians
+                  << " visionSequence="
+                  << m_PhysicalFleetCorrection.lastVisionSequence
+                  << " dispatchResult="
+                  << (trajectoryHeadingChangeRad >
+                              PhysicalFleetCorrectionPolicy::
+                                  kHeadingToleranceRad
+                          ? "INITIAL_TRAJECTORY_ROTATE"
+                          : "INITIAL_TRAJECTORY_DIRECT")
+                  << "\n";
+        CompletePhysicalFleetCorrection();
+        return;
     }
 
     const bool isInitialCoarseMeasurement =

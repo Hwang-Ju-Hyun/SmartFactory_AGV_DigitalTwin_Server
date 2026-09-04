@@ -145,6 +145,8 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
     const PhysicalFleetCorrectionInput& input,
     PhysicalFleetCorrectionGoal goal =
         PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);
+bool IsPhysicalFleetInitialDeparturePoseAccepted(
+    const PhysicalFleetCorrectionInput& input);
 PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
     float positionErrorMm,
     float arrivalHeadingErrorRad);

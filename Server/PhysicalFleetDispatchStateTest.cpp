@@ -27,6 +27,7 @@ namespace
         REQUIRE(!state.GrantDeparture(1, 7));
         REQUIRE(state.GrantDeparture(1, 6));
         REQUIRE(!state.IsDepartureHeld());
+        REQUIRE(!state.GrantDeparture(1, 6));
 
         REQUIRE(state.CommitArrival(6));
         REQUIRE(state.HoldDeparture(6, 11));

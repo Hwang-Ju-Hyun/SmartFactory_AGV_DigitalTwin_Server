@@ -187,7 +187,7 @@ PhysicalFleet의 `WHEEL_MISMATCH`는 기존 `MOTOR_FAULT/detail=65539`로 먼저
 8. pre-departure 단계에서는 HELD/LOST/stale, calibration/source session 불일치, robot disconnect, 40 mm 초과 위치 또는 정렬 실패가 모두 forward 미전송 safe-stop이다. 기존 primitive·누적 회전·동일 방향·비수렴 guard를 그대로 공유한다. `phase=PRE_DEPARTURE`, edge, heading, sequence, command/attempt와 `dispatchResult` 로그로 post-arrival 보정과 구분한다.
 9. post-arrival과 pre-departure는 서로 다른 correction objective다. 전환 시 동일 방향 반복, 비감소와 이전 command 비교 이력은 초기화하지만 node당 primitive 총수와 누적 회전량은 유지한다. pre 실패 후에도 이미 검증된 도착 node는 confirmed node로 남으며 ARRIVED/pickup/drop 이벤트는 중복 발행하지 않는다.
 
-Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. 현재 firmware는 `NODE_CORRECTION_COMMAND`를 완료된 route의 `NODE_WAIT`에서만 받으므로 최초 start node의 별도 pre-departure turn은 Server-only로 지원하지 않으며 기존 start gate를 유지한다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
+Server 시작 시에도 AGV 1이 node 1 중심 20 mm 이내이고 동쪽 10도 이내인 fresh pose가 확인돼야 첫 자동 route를 보낸다. 완료 route ID가 없는 최초 start node에서는 `NODE_CORRECTION_COMMAND`를 보내지 않고 departure hold를 해제한다. 승인된 실제 Vision heading과 첫 link 방향이 10도를 넘게 다르면 정상 `TRAJECTORY_COMMAND`에 `ROTATE_IN_PLACE` waypoint를 넣어 회전 후 첫 edge를 주행한다. 첫 edge 완료 뒤부터는 완료 route ID와 `NODE_WAIT`에 묶인 기존 pre-departure correction을 사용한다. correction firmware를 실제 차체에 올리기 전에는 바퀴를 띄운 상태에서 방향·거리·report·BOOT E-stop을 먼저 확인한다.
 
 실차의 제자리회전은 encoder상 완료돼도 바닥 마찰 때문에 차체 중심을 수 cm 이동시킬 수 있다. 따라서 target bearing과 incoming-edge arrival heading을 별도 오차로 계산하고, 35 mm exit/40 mm entry hysteresis로 위치와 arrival-heading 단계를 전환한다. point turn 뒤 위치가 40 mm를 넘으면 위치 보정으로 복귀하며, 기존 position spike와 반복·누적 회전 비수렴 guard는 그대로 fail-stop한다.
 

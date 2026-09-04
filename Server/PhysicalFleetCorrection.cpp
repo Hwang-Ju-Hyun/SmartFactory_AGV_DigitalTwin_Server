@@ -107,6 +107,15 @@ PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
     return decision;
 }
 
+bool IsPhysicalFleetInitialDeparturePoseAccepted(
+    const PhysicalFleetCorrectionInput& input)
+{
+    return DecidePhysicalFleetCorrection(
+               input,
+               PhysicalFleetCorrectionGoal::START_POSE_STRICT).action ==
+        PhysicalFleetCorrectionAction::ACCEPT;
+}
+
 PhysicalFleetCoarsePoseDisposition ClassifyPhysicalFleetCoarsePose(
     float positionErrorMm,
     float arrivalHeadingErrorRad)

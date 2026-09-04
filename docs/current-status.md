@@ -51,7 +51,7 @@ Purpose: Windows, WSL, 새 Codex 세션 사이의 공용 handoff
 - 모든 physical route의 `FollowRoute` 첫 edge와 같은 route의 후속 edge가 공통 departure request를 거친다. 따라서 pickup/drop 뒤 새 route도 gate 대상이다. objective 전환에서는 same-direction, non-improving, last-command 비교만 초기화하고 node당 primitive 총수와 누적 회전량은 이어받는다.
 - 도착 pose 승인을 바로 다음 edge 전송으로 연결하지 않고, 다음 edge bearing과 최신 `MEASURED + VERIFIED` Vision heading 차이가 10도를 넘으면 기존 `NODE_CORRECTION_COMMAND`로 정지 회전을 먼저 수행한다. 완료 report 뒤에는 그 회전에 사용한 sequence보다 새로운 관측만 승인하며, 최대 2회 안에 정렬되지 않으면 forward를 보내지 않고 기존 safe-stop을 사용한다.
 - 정렬 후 승인된 실제 Vision heading을 다음 one-edge trajectory의 start heading으로 넘겨 동일한 초기 회전을 반복하지 않는다. Vision source session/calibration/age가 달라지거나 robot session이 끊기면 출발을 해제하지 않는다. 기존 node당 primitive, 누적·동일방향 회전, 비수렴, position spike와 35/40 mm hysteresis 제한은 공유한다.
-- protocol packet과 ESP32는 변경하지 않았다. 현재 ESP32의 `NODE_WAIT`/마지막 완료 route ID 계약으로 edge 사이와 새 task 첫 edge 정렬은 가능하지만, 최초 start node에는 완료된 route가 없어 필요한 correction turn을 보낼 수 없다. 최초 edge도 gate와 fresh Vision 검사는 수행하며 이미 정렬됐으면 forward를 해제하고, 회전이 필요하면 안전 정지한다. 완전한 최초 출발 정렬 지원에는 ESP32 상태 계약 변경이 필요하다.
+- protocol packet과 ESP32는 변경하지 않았다. 완료 route가 없는 최초 start node에서는 `NODE_CORRECTION_COMMAND`를 보내지 않는다. 대신 fresh `MEASURED + VERIFIED` pose가 Node 1 중심 20 mm와 공식 초기 heading 동쪽 10도 이내인지 다시 확인하고 departure hold를 해제한다. 첫 edge trajectory는 승인된 실제 heading을 기준으로 생성하므로 `1 -> 2`는 바로 직진하고 `1 -> 6`처럼 방향이 다른 합법적 edge는 기존 `ROTATE_IN_PLACE` waypoint로 회전한 뒤 같은 trajectory에서 직진한다. 첫 edge 완료 뒤부터는 기존 완료 route ID 기반 pre-departure correction을 사용한다.
 - WSL CMake configure/build와 CTest 7개가 통과했다. 실제 서버 실행과 실차 재시험은 수행하지 않았다.
 
 ### 2026-09-03 Vision correction position hysteresis와 비수렴 guard

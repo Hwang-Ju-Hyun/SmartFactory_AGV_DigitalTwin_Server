@@ -501,6 +501,66 @@ namespace
               "stale Vision heading was accepted");
     }
 
+    void TestPhysicalFleetInitialEdgeTrajectoryDispatch()
+    {
+        constexpr float pi = 3.14159265358979323846f;
+        const std::unordered_map<uint32_t, MapNode> nodes = {
+            { 1, Node(1, 0.0f, 0.0f) },
+            { 2, Node(2, 7.0f, 0.0f) },
+            { 6, Node(6, 0.0f, 7.0f) }
+        };
+        const std::vector<MapLink> links = {
+            Line(1, 1, 2),
+            Line(2, 1, 6)
+        };
+        TrajectoryBuildOptions options;
+        options.hasTrustedStartHeading = true;
+        options.startHeadingRad = 0.0f;
+        options.millimetersPerMapUnit = 50.0f;
+        options.spacingMm = 50.0f;
+        options.cruiseSpeedMmPerSecond = 80.0f;
+        options.cornerStopThresholdRad =
+            PhysicalFleetCorrectionPolicy::kHeadingToleranceRad;
+        options.lineEndpointOnly = true;
+        options.stopAtEveryNodeBoundary = true;
+
+        RobotProtocol::TrajectoryCommandPayload east;
+        std::string error;
+        Check(TrajectoryBuilder::BuildFromGeometry(
+                  { 1, 2 }, nodes, links, 201, options, east, error),
+              "initial 1->2 trajectory failed: " + error);
+        Check(east.routeID == 201 && east.waypoints.size() == 2,
+              "initial 1->2 route context or endpoint count changed");
+        bool eastRotates = false;
+        for (const auto& waypoint : east.waypoints)
+            eastRotates = eastRotates || HasFlag(
+                waypoint, RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE);
+        Check(!eastRotates, "aligned initial 1->2 edge inserted a turn");
+
+        RobotProtocol::TrajectoryCommandPayload north;
+        error.clear();
+        Check(TrajectoryBuilder::BuildFromGeometry(
+                  { 1, 6 }, nodes, links, 202, options, north, error),
+              "initial 1->6 trajectory failed: " + error);
+        Check(north.routeID == 202 && north.startNodeID == 1 &&
+                  north.finalNodeID == 6 && north.waypoints.size() == 3,
+              "initial 1->6 route context or waypoint count changed");
+        if (north.waypoints.size() == 3)
+        {
+            const auto& rotate = north.waypoints[1];
+            Check(HasFlag(
+                      rotate,
+                      RobotProtocol::TRAJECTORY_FLAG_ROTATE_IN_PLACE) &&
+                      rotate.nodeID == 0 &&
+                      Near(rotate.headingRad, pi / 2.0f),
+                  "initial 1->6 did not encode a 90 degree CCW turn");
+            Check(HasFlag(
+                      north.waypoints.back(),
+                      RobotProtocol::TRAJECTORY_FLAG_FINAL),
+                  "initial 1->6 forward endpoint is not final");
+        }
+    }
+
     void TestOptionalHelloCapabilities()
     {
         OutputMemoryStream legacyHello;
@@ -650,6 +710,7 @@ int main()
     TestInitialHeadingAndWireGuards();
     TestPhysicalFleetHeadingToleranceContract();
     TestPhysicalFleetVisionHeadingAnchorAndWrapping();
+    TestPhysicalFleetInitialEdgeTrajectoryDispatch();
     TestOptionalHelloCapabilities();
     TestMaximumTrajectoryWireSize();
     TestNodeCorrectionWireFormat();
