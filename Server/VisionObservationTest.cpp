@@ -26,7 +26,7 @@ namespace
     {
         const VisionObservationServerConfig config;
         REQUIRE(config.expectedMapContractID == "67254eca75c55e5c");
-        REQUIRE(config.expectedPoseContractID == "fb3cad48a32b9893");
+        REQUIRE(config.expectedPoseContractID == "344e8fbf8d04d6ae");
     }
 
     template <typename Payload, typename Writer, typename Reader>

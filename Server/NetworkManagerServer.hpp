@@ -29,7 +29,7 @@ struct VisionObservationServerConfig
     uint32_t expectedSourceID = 1;
     std::string expectedCalibrationID;
     std::string expectedMapContractID = "67254eca75c55e5c";
-    std::string expectedPoseContractID = "fb3cad48a32b9893";
+    std::string expectedPoseContractID = "344e8fbf8d04d6ae";
 };
 
 struct VisionClientSession
