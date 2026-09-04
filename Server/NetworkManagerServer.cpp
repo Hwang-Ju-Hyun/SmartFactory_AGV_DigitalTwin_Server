@@ -1307,6 +1307,10 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     WritePhysicalFleetPoseDiagnostic(poseDiagnostic);
     std::cout << "\n";
 
+    bool completedFreshCommandMeasurement = false;
+    PhysicalFleetCorrectionAction completedAction =
+        PhysicalFleetCorrectionAction::REJECT;
+    float completedTurnPositionIncreaseMm = 0.0f;
     if (m_PhysicalFleetCorrection.awaitingPostCommandMeasurement &&
         m_PhysicalFleetCorrection.hasLastCommand)
     {
@@ -1379,12 +1383,28 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << PhysicalFleetNonConvergenceReasonName(progress.reason)
                   << "\n";
         m_PhysicalFleetCorrection.awaitingPostCommandMeasurement = false;
+        completedFreshCommandMeasurement = true;
+        completedAction = m_PhysicalFleetCorrection.lastCorrectionAction;
+        completedTurnPositionIncreaseMm =
+            poseDiagnostic.positionErrorMm -
+            m_PhysicalFleetCorrection.lastCommandBefore.positionErrorMm;
         m_PhysicalFleetCorrection.consecutiveNonImprovingPrimitives =
             progress.consecutiveNonImprovingPrimitives;
         if (progress.reason != PhysicalFleetNonConvergenceReason::NONE)
         {
             FailPhysicalFleetCorrection(
                 PhysicalFleetNonConvergenceReasonName(progress.reason));
+            return;
+        }
+        if (preDeparture &&
+            m_PhysicalFleetCorrection.departureObjective ==
+                PhysicalFleetPreDepartureObjective::RECENTER_POSITION &&
+            completedAction ==
+                PhysicalFleetCorrectionAction::DRIVE_FORWARD &&
+            progress.consecutiveNonImprovingPrimitives != 0)
+        {
+            FailPhysicalFleetCorrection(
+                "pre-departure recenter did not reduce position error");
             return;
         }
     }
@@ -1455,22 +1475,95 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     }
     else
     {
-        const PhysicalFleetPreDepartureDecision departureDecision =
-            DecidePhysicalFleetPreDepartureAlignment(
-                poseDiagnostic.positionErrorMm,
-                input.actualHeadingRad,
-                m_PhysicalFleetCorrection.departureTargetHeadingRad,
-                m_PhysicalFleetCorrection.departureAlignmentAttempts);
-        decision.action = departureDecision.action;
-        decision.magnitude = departureDecision.magnitude;
-        decision.positionErrorMm = poseDiagnostic.positionErrorMm;
-        decision.arrivalHeadingErrorRad =
-            departureDecision.headingErrorRad;
-        if (departureDecision.attemptLimitReached)
+        PhysicalFleetPreDepartureRecoveryInput recoveryInput;
+        recoveryInput.objective =
+            m_PhysicalFleetCorrection.departureObjective;
+        recoveryInput.positionErrorMm = poseDiagnostic.positionErrorMm;
+        recoveryInput.completedFreshCommandMeasurement =
+            completedFreshCommandMeasurement;
+        recoveryInput.completedAction = completedAction;
+        recoveryInput.turnPositionIncreaseMm =
+            completedTurnPositionIncreaseMm;
+        recoveryInput.completedRecoveries =
+            m_PhysicalFleetCorrection.departureRecenterRecoveries;
+        const PhysicalFleetPreDepartureTransition transition =
+            DecidePhysicalFleetPreDepartureRecoveryTransition(recoveryInput);
+
+        if (transition == PhysicalFleetPreDepartureTransition::SAFE_STOP)
         {
             FailPhysicalFleetCorrection(
-                "pre-departure alignment attempt limit exhausted");
+                "pre-departure alignment pose outside safety bounds");
             return;
+        }
+        if (transition ==
+            PhysicalFleetPreDepartureTransition::ENTER_RECENTER)
+        {
+            m_PhysicalFleetCorrection.departureObjective =
+                PhysicalFleetPreDepartureObjective::RECENTER_POSITION;
+            ++m_PhysicalFleetCorrection.departureRecenterRecoveries;
+            m_PhysicalFleetCorrection.hasPreviousTurn = false;
+            m_PhysicalFleetCorrection.previousTurnAction =
+                PhysicalFleetCorrectionAction::REJECT;
+            m_PhysicalFleetCorrection.consecutiveSameDirectionTurns = 0;
+            m_PhysicalFleetCorrection.consecutiveNonImprovingPrimitives = 0;
+            std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
+                      << " phase=PRE_DEPARTURE objective=RECENTER_POSITION"
+                      << " edge=" << m_PhysicalFleetCorrection.nodeID
+                      << "->"
+                      << m_PhysicalFleetCorrection.departureTargetNodeID
+                      << " positionErrorMm="
+                      << poseDiagnostic.positionErrorMm
+                      << " recovery=" << static_cast<unsigned>(
+                             m_PhysicalFleetCorrection.
+                                 departureRecenterRecoveries)
+                      << " dispatchResult=RECENTER_REQUIRED\n";
+        }
+        else if (transition ==
+            PhysicalFleetPreDepartureTransition::RETURN_TO_ALIGNMENT)
+        {
+            m_PhysicalFleetCorrection.departureObjective =
+                PhysicalFleetPreDepartureObjective::ALIGN_HEADING;
+            m_PhysicalFleetCorrection.hasPreviousTurn = false;
+            m_PhysicalFleetCorrection.previousTurnAction =
+                PhysicalFleetCorrectionAction::REJECT;
+            m_PhysicalFleetCorrection.consecutiveSameDirectionTurns = 0;
+            m_PhysicalFleetCorrection.consecutiveNonImprovingPrimitives = 0;
+            std::cout << "[PhysicalFleetDiag] PRE_DEPARTURE"
+                      << " phase=PRE_DEPARTURE objective=ALIGN_HEADING"
+                      << " edge=" << m_PhysicalFleetCorrection.nodeID
+                      << "->"
+                      << m_PhysicalFleetCorrection.departureTargetNodeID
+                      << " positionErrorMm="
+                      << poseDiagnostic.positionErrorMm
+                      << " dispatchResult=RECENTERED\n";
+        }
+
+        if (m_PhysicalFleetCorrection.departureObjective ==
+            PhysicalFleetPreDepartureObjective::RECENTER_POSITION)
+        {
+            correctionGoal =
+                PhysicalFleetCorrectionGoal::POSITION_AND_HEADING;
+            decision = DecidePhysicalFleetCorrection(input, correctionGoal);
+        }
+        else
+        {
+            const PhysicalFleetPreDepartureDecision departureDecision =
+                DecidePhysicalFleetPreDepartureAlignment(
+                    poseDiagnostic.positionErrorMm,
+                    input.actualHeadingRad,
+                    m_PhysicalFleetCorrection.departureTargetHeadingRad,
+                    m_PhysicalFleetCorrection.departureAlignmentAttempts);
+            decision.action = departureDecision.action;
+            decision.magnitude = departureDecision.magnitude;
+            decision.positionErrorMm = poseDiagnostic.positionErrorMm;
+            decision.arrivalHeadingErrorRad =
+                departureDecision.headingErrorRad;
+            if (departureDecision.attemptLimitReached)
+            {
+                FailPhysicalFleetCorrection(
+                    "pre-departure alignment attempt limit exhausted");
+                return;
+            }
         }
     }
 
@@ -1505,6 +1598,18 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << decision.arrivalHeadingErrorRad / kDegreesToRadians
                   << "\n";
         FailPhysicalFleetCorrection("correction primitive limit exhausted");
+        return;
+    }
+    const bool recenterObjective = preDeparture &&
+        m_PhysicalFleetCorrection.departureObjective ==
+            PhysicalFleetPreDepartureObjective::RECENTER_POSITION;
+    if (recenterObjective &&
+        m_PhysicalFleetCorrection.departureRecenterPrimitives >=
+            PhysicalFleetCorrectionPolicy::
+                kMaximumPreDepartureRecenterPrimitives)
+    {
+        FailPhysicalFleetCorrection(
+            "pre-departure recenter primitive limit exhausted");
         return;
     }
     if (m_PhysicalFleetCorrection.stage ==
@@ -1546,6 +1651,19 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     {
         FailPhysicalFleetCorrection(
             PhysicalFleetNonConvergenceReasonName(turnCommandGuard));
+        return;
+    }
+    const bool decisionIsTurn =
+        decision.action == PhysicalFleetCorrectionAction::TURN_CW ||
+        decision.action == PhysicalFleetCorrectionAction::TURN_CCW;
+    if (recenterObjective && decisionIsTurn &&
+        m_PhysicalFleetCorrection.departureRecenterCumulativeTurnRad +
+                decision.magnitude >
+            PhysicalFleetCorrectionPolicy::
+                kMaximumPreDepartureRecenterTurnRad)
+    {
+        FailPhysicalFleetCorrection(
+            "pre-departure recenter cumulative turn limit exhausted");
         return;
     }
 
@@ -1621,7 +1739,22 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
     if (m_PhysicalFleetCorrection.stage ==
         PhysicalFleetCorrectionState::Stage::PRE_DEPARTURE_ALIGNMENT)
     {
-        ++m_PhysicalFleetCorrection.departureAlignmentAttempts;
+        const bool headingAlignmentTurn =
+            m_PhysicalFleetCorrection.departureObjective ==
+                PhysicalFleetPreDepartureObjective::ALIGN_HEADING &&
+            (decision.action == PhysicalFleetCorrectionAction::TURN_CW ||
+             decision.action == PhysicalFleetCorrectionAction::TURN_CCW);
+        if (headingAlignmentTurn)
+            ++m_PhysicalFleetCorrection.departureAlignmentAttempts;
+        if (recenterObjective)
+        {
+            ++m_PhysicalFleetCorrection.departureRecenterPrimitives;
+            if (decisionIsTurn)
+            {
+                m_PhysicalFleetCorrection.
+                    departureRecenterCumulativeTurnRad += decision.magnitude;
+            }
+        }
         const uint8_t dispatchedSameDirectionCount =
             m_PhysicalFleetCorrection.hasPreviousTurn &&
                 m_PhysicalFleetCorrection.previousTurnAction ==
@@ -1652,6 +1785,22 @@ void NetworkManagerServer::UpdatePhysicalFleetCorrection()
                   << " alignmentAttempt=" << static_cast<unsigned>(
                          m_PhysicalFleetCorrection.
                              departureAlignmentAttempts)
+                  << " recovery=" << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.
+                             departureRecenterRecoveries)
+                  << " recoveryPrimitive=" << static_cast<unsigned>(
+                         m_PhysicalFleetCorrection.
+                             departureRecenterPrimitives)
+                  << " recoveryCumulativeTurnDeg="
+                  << m_PhysicalFleetCorrection.
+                             departureRecenterCumulativeTurnRad /
+                         kDegreesToRadians
+                  << " objective="
+                  << (m_PhysicalFleetCorrection.departureObjective ==
+                              PhysicalFleetPreDepartureObjective::
+                                  RECENTER_POSITION
+                          ? "RECENTER_POSITION"
+                          : "ALIGN_HEADING")
                   << " sameDirectionCount=" << static_cast<unsigned>(
                          dispatchedSameDirectionCount)
                   << " cumulativeTurnDeg="

@@ -633,6 +633,92 @@ namespace
         REQUIRE(excessiveTurnDrift.action ==
                 PhysicalFleetCorrectionAction::REJECT);
     }
+
+    void TestPreDepartureBoundedRecenterRecovery()
+    {
+        PhysicalFleetPreDepartureRecoveryInput input;
+        input.positionErrorMm = 49.0177f;
+        input.completedFreshCommandMeasurement = true;
+        input.completedAction = PhysicalFleetCorrectionAction::TURN_CW;
+        input.turnPositionIncreaseMm = 20.6913f;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::ENTER_RECENTER);
+
+        PhysicalFleetCorrectionInput recordedPose;
+        recordedPose.actualXMm = 1446.9629f;
+        recordedPose.actualZMm = 14.0437f;
+        recordedPose.actualHeadingRad = -168.569f * kDegreesToRadians;
+        recordedPose.targetXMm = 1400.0f;
+        recordedPose.targetZMm = 0.0f;
+        recordedPose.expectedArrivalHeadingRad =
+            180.0f * kDegreesToRadians;
+        const auto recenterCommand = DecidePhysicalFleetCorrection(
+            recordedPose,
+            PhysicalFleetCorrectionGoal::POSITION_AND_HEADING);
+        REQUIRE(recenterCommand.action ==
+                PhysicalFleetCorrectionAction::DRIVE_FORWARD);
+        REQUIRE(NearlyEqual(recenterCommand.positionErrorMm, 49.0177f, 0.01f));
+
+        recordedPose.actualXMm = 1420.0f;
+        recordedPose.actualZMm = 0.0f;
+        const auto realignedAfterRecenter = DecidePhysicalFleetCorrection(
+            recordedPose,
+            PhysicalFleetCorrectionGoal::HEADING_ONLY);
+        REQUIRE(realignedAfterRecenter.action ==
+                PhysicalFleetCorrectionAction::TURN_CW);
+
+        input.objective =
+            PhysicalFleetPreDepartureObjective::RECENTER_POSITION;
+        input.completedRecoveries = 1;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::STAY);
+
+        input.positionErrorMm =
+            PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::RETURN_TO_ALIGNMENT);
+
+        input.objective =
+            PhysicalFleetPreDepartureObjective::ALIGN_HEADING;
+        input.positionErrorMm = 49.0f;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::SAFE_STOP);
+
+        input.completedRecoveries = 0;
+        input.completedFreshCommandMeasurement = false;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::SAFE_STOP);
+
+        input.completedFreshCommandMeasurement = true;
+        input.turnPositionIncreaseMm =
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm +
+            0.01f;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::SAFE_STOP);
+
+        input.turnPositionIncreaseMm = 20.0f;
+        input.positionErrorMm =
+            PhysicalFleetCorrectionPolicy::kRejectDistanceMm + 0.01f;
+        REQUIRE(DecidePhysicalFleetPreDepartureRecoveryTransition(input) ==
+                PhysicalFleetPreDepartureTransition::SAFE_STOP);
+
+        PhysicalFleetProgressCheck stalledRecovery;
+        stalledRecovery.action =
+            PhysicalFleetCorrectionAction::DRIVE_FORWARD;
+        stalledRecovery.beforePositionErrorMm = 49.0177f;
+        stalledRecovery.afterPositionErrorMm = 48.5f;
+        REQUIRE(CheckPhysicalFleetCorrectionProgress(stalledRecovery).
+                    consecutiveNonImprovingPrimitives == 1);
+
+        REQUIRE(PhysicalFleetCorrectionPolicy::
+                    kMaximumPreDepartureRecenterRecoveries == 1);
+        REQUIRE(PhysicalFleetCorrectionPolicy::
+                    kMaximumPreDepartureRecenterPrimitives <
+                PhysicalFleetCorrectionPolicy::kMaximumPrimitivesPerNode);
+        REQUIRE(PhysicalFleetCorrectionPolicy::
+                    kMaximumPreDepartureRecenterTurnRad <
+                PhysicalFleetCorrectionPolicy::kMaximumCumulativeTurnRad);
+    }
 }
 
 int main()
@@ -657,6 +743,7 @@ int main()
     TestRejectsEveryNonFiniteInput();
     TestPreDepartureAlignmentPolicy();
     TestCorrectionObjectiveHistoryIsSeparated();
+    TestPreDepartureBoundedRecenterRecovery();
     std::cout << "Physical fleet correction tests passed\n";
     return 0;
 }

@@ -193,6 +193,48 @@ PhysicalFleetPreDepartureDecision DecidePhysicalFleetPreDepartureAlignment(
     return result;
 }
 
+PhysicalFleetPreDepartureTransition
+DecidePhysicalFleetPreDepartureRecoveryTransition(
+    const PhysicalFleetPreDepartureRecoveryInput& input)
+{
+    if (!std::isfinite(input.positionErrorMm) ||
+        !std::isfinite(input.turnPositionIncreaseMm) ||
+        input.positionErrorMm < 0.0f ||
+        input.positionErrorMm >
+            PhysicalFleetCorrectionPolicy::kRejectDistanceMm)
+    {
+        return PhysicalFleetPreDepartureTransition::SAFE_STOP;
+    }
+
+    if (input.objective ==
+        PhysicalFleetPreDepartureObjective::RECENTER_POSITION)
+    {
+        return input.positionErrorMm <=
+                PhysicalFleetCorrectionPolicy::kPositionCorrectionExitMm
+            ? PhysicalFleetPreDepartureTransition::RETURN_TO_ALIGNMENT
+            : PhysicalFleetPreDepartureTransition::STAY;
+    }
+
+    if (input.positionErrorMm <=
+        PhysicalFleetCorrectionPolicy::kMaximumFinalPositionErrorMm)
+    {
+        return PhysicalFleetPreDepartureTransition::STAY;
+    }
+
+    const bool completedTurn =
+        input.completedAction == PhysicalFleetCorrectionAction::TURN_CW ||
+        input.completedAction == PhysicalFleetCorrectionAction::TURN_CCW;
+    if (input.completedFreshCommandMeasurement && completedTurn &&
+        input.turnPositionIncreaseMm <=
+            PhysicalFleetCorrectionPolicy::kMaximumTurnPositionIncreaseMm &&
+        input.completedRecoveries < PhysicalFleetCorrectionPolicy::
+            kMaximumPreDepartureRecenterRecoveries)
+    {
+        return PhysicalFleetPreDepartureTransition::ENTER_RECENTER;
+    }
+    return PhysicalFleetPreDepartureTransition::SAFE_STOP;
+}
+
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check)
 {

@@ -59,6 +59,32 @@ struct PhysicalFleetPreDepartureDecision
     bool attemptLimitReached = false;
 };
 
+enum class PhysicalFleetPreDepartureObjective
+{
+    ALIGN_HEADING,
+    RECENTER_POSITION
+};
+
+enum class PhysicalFleetPreDepartureTransition
+{
+    STAY,
+    ENTER_RECENTER,
+    RETURN_TO_ALIGNMENT,
+    SAFE_STOP
+};
+
+struct PhysicalFleetPreDepartureRecoveryInput
+{
+    PhysicalFleetPreDepartureObjective objective =
+        PhysicalFleetPreDepartureObjective::ALIGN_HEADING;
+    float positionErrorMm = 0.0f;
+    bool completedFreshCommandMeasurement = false;
+    PhysicalFleetCorrectionAction completedAction =
+        PhysicalFleetCorrectionAction::REJECT;
+    float turnPositionIncreaseMm = 0.0f;
+    uint8_t completedRecoveries = 0;
+};
+
 enum class PhysicalFleetNonConvergenceReason
 {
     NONE,
@@ -109,6 +135,10 @@ namespace PhysicalFleetCorrectionPolicy
         6.2831853071795865f; // one full revolution
     inline constexpr float kMaximumTurnPositionIncreaseMm = 25.0f;
     inline constexpr uint8_t kMaximumPreDepartureAlignmentAttempts = 2;
+    inline constexpr uint8_t kMaximumPreDepartureRecenterRecoveries = 1;
+    inline constexpr uint8_t kMaximumPreDepartureRecenterPrimitives = 3;
+    inline constexpr float kMaximumPreDepartureRecenterTurnRad =
+        3.1415926535897932f; // bounded independently; global limit also applies
 }
 
 PhysicalFleetCorrectionDecision DecidePhysicalFleetCorrection(
@@ -126,6 +156,9 @@ PhysicalFleetPreDepartureDecision DecidePhysicalFleetPreDepartureAlignment(
     float actualHeadingRad,
     float targetHeadingRad,
     uint8_t completedAttempts);
+PhysicalFleetPreDepartureTransition
+DecidePhysicalFleetPreDepartureRecoveryTransition(
+    const PhysicalFleetPreDepartureRecoveryInput& input);
 PhysicalFleetProgressResult CheckPhysicalFleetCorrectionProgress(
     const PhysicalFleetProgressCheck& check);
 PhysicalFleetNonConvergenceReason CheckPhysicalFleetTurnCommand(

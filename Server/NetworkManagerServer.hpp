@@ -155,6 +155,11 @@ private:
         uint32_t departureTargetNodeID = 0;
         float departureTargetHeadingRad = 0.0f;
         uint8_t departureAlignmentAttempts = 0;
+        PhysicalFleetPreDepartureObjective departureObjective =
+            PhysicalFleetPreDepartureObjective::ALIGN_HEADING;
+        uint8_t departureRecenterRecoveries = 0;
+        uint8_t departureRecenterPrimitives = 0;
+        float departureRecenterCumulativeTurnRad = 0.0f;
         uint64_t startedAtMilliseconds = 0;
         uint64_t deadlineMilliseconds = 0;
         bool hasLastPoseDiagnostic = false;
