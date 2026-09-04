@@ -7,9 +7,10 @@
 #include "AGVManager.hpp"
 #include "Robo.hpp"
 #include "WarehouseManager.hpp"
+#include <unordered_set>
 
-#define _TESTCASE0
-//#define _TESTCASE1
+//#define _TESTCASE0
+#define _TESTCASE1
 //#define _TESTCASE2
 //#define _TESTCASE3
 //#define _TESTCASE4
@@ -50,9 +51,25 @@ public:
         dispatchNodes.push_back(6);
         dispatchNodes.push_back(7);
         #elifdef _TESTCASE1
-        for(int i=5; i<=460; i++) { loadNodes.push_back(i); }
-        for(int i=1; i<=4; i++) { dispatchNodes.push_back(i); }
+        std::vector<uint32_t>  notLoadNodes =
+        {
+            190,191,192,169,170,171,134,135,136,113,114,
+            115,80,81,82,61,62,63,26,27,28,1,2,3,4,5,6,7,
+            172,173,151,152,116,117,78,79,43,44,22,23,174,
+            175,153,154,118,119,83,84,45,46,24,25,204
+        };
+        std::unordered_set<uint32_t> notLoadSet(notLoadNodes.begin(), notLoadNodes.end());       
 
+    
+        for (uint32_t i = 8; i <= 204; ++i) 
+        {    
+            if (notLoadSet.find(i) == notLoadSet.end()) 
+            {
+                loadNodes.push_back(i);
+            }
+        }
+        for(int i=1; i<=7; i++) { dispatchNodes.push_back(i); }
+        dispatchNodes.push_back(204);
         #elifdef _TESTCASE2
         for(int i=56; i<=61; i++) { loadNodes.push_back(i); }
         for(int i=4; i<=9; i++) { loadNodes.push_back(i); }

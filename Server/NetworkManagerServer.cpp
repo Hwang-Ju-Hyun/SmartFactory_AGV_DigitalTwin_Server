@@ -2656,8 +2656,8 @@ void NetworkManagerServer::HandleReadyObject_Packet(ClientProxy* _proxy,InputMem
     std::cout << "[서버] Unity viewer object ready\n";
 }
 
-#define _TESTCASE0
-//#define _TESTCASE1
+//#define _TESTCASE0
+#define _TESTCASE1
 //#define _TESTCASE2
 //#define _TESTCASE3
 //#define _TESTCASE4
@@ -2683,7 +2683,8 @@ void NetworkManagerServer::CreateSimulationWorld()
         #ifdef _TESTCASE0
         initNodes = {1, 2, 3, 4};
         #elifdef _TESTCASE1
-        initNodes = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22};
+        initNodes = //{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22};
+        {190,191,192,169,170,171,134,135,136,113,114,115,80,81,82,61,62,63,26,27,28,1,2,3,4,5,6,7};
         #elifdef _TESTCASE2
         initNodes = {75,65,76,73,66,74,68,67,69,70,71,72,20,21,22,23,24,39,38,40,37,41};
         #elifdef _TESTCASE3
