@@ -27,7 +27,7 @@ struct NodeDistance
     }
 };
 
-class DispatchManager 
+class DispatchManager
 {
 public:
     std::vector<uint32_t> loadNodes;
